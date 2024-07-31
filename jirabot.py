@@ -24,7 +24,6 @@ jira = JIRA(server=JIRA_SERVER, basic_auth=(JIRA_USERNAME, JIRA_PASS))
 # Define states
 SUMMARY, DESCRIPTION, COMPONENT, ASSIGNEE, PRIORITY, IMAGE = range(6)
 
-
 async def check_user_allowed(update: Update) -> bool:
     user_id = update.message.from_user.username
     chat_type = update.message.chat.type
@@ -66,7 +65,7 @@ async def add_summary(update: Update, context: CallbackContext) -> int:
         return ConversationHandler.END
     user = update.message.from_user
     logger.info("User %s sent a summary: %s", user.first_name, update.message.text)
-
+    
     task_summary = update.message.text
     context.user_data['task_summary'] = task_summary
     await update.message.reply_text('Got it! Now send me the description of the task (or type "skip" to skip).')
@@ -78,17 +77,17 @@ async def add_description(update: Update, context: CallbackContext) -> int:
         return ConversationHandler.END
     user = update.message.from_user
     task_description = update.message.text
-
+    
     if task_description.lower() == 'skip':
         task_description = None
-
+    
     context.user_data['task_description'] = task_description
     logger.info("Description received: %s", task_description)
 
     # Fetch components from Jira
     components = jira.project_components(JIRA_PROJECT_KEY)
     components_text = "\n".join([component.name for component in components])
-
+    
     await update.message.reply_text(f'Got it! Now choose a component from the following list:\n{components_text}')
     logger.info("Components listed")
     return COMPONENT
@@ -124,7 +123,7 @@ async def add_assignee(update: Update, context: CallbackContext) -> int:
         return ConversationHandler.END
     user = update.message.from_user
     assignee = update.message.text
-
+    
     if assignee.lower() == 'skip':
         assignee = None
 
@@ -144,7 +143,7 @@ async def add_priority(update: Update, context: CallbackContext) -> int:
         return ConversationHandler.END
     user = update.message.from_user
     priority = update.message.text
-
+    
     if priority.lower() == 'skip':
         priority = None
 
@@ -202,7 +201,7 @@ async def handle_image(update: Update, context: CallbackContext) -> int:
     # Attach the images to the issue
     for image_stream in image_streams:
         jira.add_attachment(issue=new_issue, attachment=image_stream, filename='task_image.jpg')
-
+    
     await update.message.reply_text(f'Task created successfully! Issue key: {new_issue.key}')
     logger.info("Images attached to Jira issue")
     return ConversationHandler.END
