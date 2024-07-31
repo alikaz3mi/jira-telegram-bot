@@ -1,6 +1,6 @@
 import logging
-from telegram import Update
-from telegram.ext import CommandHandler, MessageHandler, filters, CallbackContext, Application, ConversationHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CommandHandler, MessageHandler, filters, CallbackContext, Application, ConversationHandler, CallbackQueryHandler
 from jira import JIRA
 import requests
 from io import BytesIO
@@ -110,46 +110,49 @@ async def add_component(update: Update, context: CallbackContext) -> int:
     context.user_data['component'] = component_name
     logger.info("Component received: %s", component_name)
 
-    # Fetch assignees from Jira (replace this with a real function to get assignees)
+    # Present assignees as inline buttons
     assignees = ['O_Sadeghnezhad', 'm_fouladpanah', 'ah_ahmadi', 'z_lotfian', 'k_korminejad', 'a_janloo', 'm_Mousavi', 'p_etemad', 'a_kazemi', 'M_samei']
-    assignees_text = "\n".join(assignees)
+    keyboard = [[InlineKeyboardButton(assignee, callback_data=assignee) for assignee in assignees]]
+    keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
 
-    await update.message.reply_text(f'Got it! Now choose an assignee from the following list (or type "skip" to skip):\n{assignees_text}')
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text('Got it! Now choose an assignee from the list below:', reply_markup=reply_markup)
     logger.info("Assignees listed")
     return ASSIGNEE
 
-async def add_assignee(update: Update, context: CallbackContext) -> int:
-    if not await check_user_allowed(update):
-        return ConversationHandler.END
-    user = update.message.from_user
-    assignee = update.message.text
+async def button_assignee(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+    assignee = query.data
     
-    if assignee.lower() == 'skip':
+    if assignee == 'skip':
         assignee = None
-
+    
     context.user_data['assignee'] = assignee
-    logger.info("Assignee received: %s", assignee)
-
-    # Fetch priorities from Jira
+    logger.info("Assignee selected: %s", assignee)
+    
+    # Present priorities as inline buttons
     priorities = jira.priorities()
-    priorities_text = "\n".join([priority.name for priority in priorities])
+    keyboard = [[InlineKeyboardButton(priority.name, callback_data=priority.name) for priority in priorities]]
+    keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
 
-    await update.message.reply_text(f'Got it! Now choose a priority from the following list (or type "skip" to skip):\n{priorities_text}')
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text('Got it! Now choose a priority from the list below:', reply_markup=reply_markup)
     logger.info("Priorities listed")
     return PRIORITY
 
-async def add_priority(update: Update, context: CallbackContext) -> int:
-    if not await check_user_allowed(update):
-        return ConversationHandler.END
-    user = update.message.from_user
-    priority = update.message.text
+async def button_priority(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+    priority = query.data
     
-    if priority.lower() == 'skip':
+    if priority == 'skip':
         priority = None
-
+    
     context.user_data['priority'] = priority
-    await update.message.reply_text('Got it! Now send me one or more images.')
-    logger.info("Priority received: %s", priority)
+    logger.info("Priority selected: %s", priority)
+    
+    await query.edit_message_text('Got it! Now send me one or more images.')
     return IMAGE
 
 async def handle_image(update: Update, context: CallbackContext) -> int:
@@ -224,8 +227,8 @@ def main() -> None:
             SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_summary)],
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_description)],
             COMPONENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_component)],
-            ASSIGNEE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_assignee)],
-            PRIORITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_priority)],
+            ASSIGNEE: [CallbackQueryHandler(button_assignee)],
+            PRIORITY: [CallbackQueryHandler(button_priority)],
             IMAGE: [MessageHandler(filters.PHOTO, handle_image)]
         },
         fallbacks=[CommandHandler('cancel', cancel), CommandHandler('terminate', terminate)]
