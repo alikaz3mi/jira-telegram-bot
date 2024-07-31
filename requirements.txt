@@ -1,3 +1,5 @@
 python-telegram-bot
 requests
 jira
+pydantic
+pydantic-settings
