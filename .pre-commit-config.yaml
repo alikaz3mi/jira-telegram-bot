@@ -1,0 +1,55 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: end-of-file-fixer
+        exclude_types: [svg, plain-text]
+      - id: trailing-whitespace
+        exclude_types: [svg]
+      - id: check-added-large-files
+      - id: check-shebang-scripts-are-executable
+      - id: mixed-line-ending
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        exclude: ^(.+)\/migrations\/(.+)$
+        stages: [commit]
+        args: [
+          --tee,
+          --format=gl-codeclimate,
+          --output-file=flake8-code-quality-report.json,
+          --max-line-length=120
+        ]
+        additional_dependencies: [
+          flake8-mutable,
+          flake8-gl-codeclimate,
+          flake8-bugbear,
+          flake8-comprehensions,
+          flake8-print,
+          flake8-simplify,
+          flake8-django,
+        ]
+  - repo: https://github.com/psf/black
+    rev: 23.7.0
+    hooks:
+      - id: black
+        language_version: python3
+        exclude: ^(.+)\/migrations\/(.+)$
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.32.0
+    hooks:
+      - id: yamllint
+  - repo: https://github.com/adamchainz/django-upgrade
+    rev: 1.14.1
+    hooks:
+      - id: django-upgrade
+        args: [--target-version, "4.2"]
+  - repo: https://gitlab.com/bmares/check-json5
+    rev: v1.0.0
+    hooks:
+      - id: check-json5

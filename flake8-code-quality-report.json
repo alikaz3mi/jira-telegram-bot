@@ -1,0 +1,13 @@
+[
+    {"type": "issue", "check_name": "unknown", "description": "Unnecessary generator - rewrite as a list comprehension. [C400]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 47, "end": 47}}, "fingerprint": "7a6f03eb33839d6668b70744d147def9fe29ed46", "severity": "minor"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "whitespace before ':' [E203]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 195, "end": 195}}, "fingerprint": "400db9b4d5f338a5d4a28d89bbfa5eb085c3c69d", "severity": "major"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "whitespace before ':' [E203]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 276, "end": 276}}, "fingerprint": "a5697262932f3a3fe5fbddfcb2f120e7b3ed65fb", "severity": "major"}
+]
+[
+    {"type": "issue", "check_name": "unknown", "description": "Unnecessary generator - rewrite as a list comprehension. [C400]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 47, "end": 47}}, "fingerprint": "7a6f03eb33839d6668b70744d147def9fe29ed46", "severity": "minor"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "whitespace before ':' [E203]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 195, "end": 195}}, "fingerprint": "400db9b4d5f338a5d4a28d89bbfa5eb085c3c69d", "severity": "major"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "whitespace before ':' [E203]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 276, "end": 276}}, "fingerprint": "a5697262932f3a3fe5fbddfcb2f120e7b3ed65fb", "severity": "major"}
+]
+[
+    {"type": "issue", "check_name": "unknown", "description": "Unnecessary generator - rewrite as a list comprehension. [C400]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 47, "end": 47}}, "fingerprint": "7a6f03eb33839d6668b70744d147def9fe29ed46", "severity": "minor"}
+]
