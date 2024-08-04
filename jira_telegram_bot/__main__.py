@@ -11,7 +11,6 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 from jira import JIRA
-import requests
 from io import BytesIO
 
 # Enable logging
@@ -58,7 +57,11 @@ for board in jira.boards():
         break
 
 sprints = jira.sprints(board_id=board_id)  # Assuming board_id=1, adjust as necessary
-latest_sprint = next(sprint for sprint in sprints if sprint.state == "active")
+try:
+    latest_sprint = next(sprint for sprint in sprints if sprint.state == "active")
+except Exception as e:
+    logger.error(f"No sprint is active: {e}.")
+    latest_sprint = sprints[-1]
 priorities = jira.priorities()
 task_types = [z.name for z in jira.issue_types_for_project(JIRA_PROJECT_KEY)]
 story_points_values = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4.0, 7]
@@ -196,7 +199,7 @@ async def button_component(update: Update, context: CallbackContext) -> int:
     for i in range(0, len(assignees), 4):
         row = [
             InlineKeyboardButton(assignee, callback_data=assignee)
-            for assignee in assignees[i: i + 4]
+            for assignee in assignees[i : i + 4]
         ]
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
@@ -224,7 +227,7 @@ async def button_assignee(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [
             InlineKeyboardButton(priority.name, callback_data=priority.name)
-            for priority in priorities[i: i + 3]
+            for priority in priorities[i : i + 3]
         ]
         for i in range(0, len(priorities), 3)
     ]
@@ -279,7 +282,7 @@ async def button_sprint(update: Update, context: CallbackContext) -> int:
     for i in range(0, len(epics), 3):
         row = [
             InlineKeyboardButton(epic.fields.summary, callback_data=epic.key)
-            for epic in epics[i: i + 3]
+            for epic in epics[i : i + 3]
         ]
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
@@ -307,7 +310,7 @@ async def button_epic(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [
             InlineKeyboardButton(task_type, callback_data=task_type)
-            for task_type in task_types[i: i + 3]
+            for task_type in task_types[i : i + 3]
         ]
         for i in range(0, len(task_types), 3)
     ]
@@ -332,7 +335,7 @@ async def button_task_type(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [
             InlineKeyboardButton(str(sp), callback_data=str(sp))
-            for sp in story_points_values[i: i + 3]
+            for sp in story_points_values[i : i + 3]
         ]
         for i in range(0, len(story_points_values), 3)
     ]

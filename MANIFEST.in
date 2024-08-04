@@ -1,0 +1,6 @@
+include requirements.txt
+include README.md
+recursive-exclude tests *
+recursive-exclude docker *
+recursive-exclude scripts *
+global-exclude __pycache__/*
