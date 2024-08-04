@@ -11,3 +11,21 @@
 [
     {"type": "issue", "check_name": "unknown", "description": "Unnecessary generator - rewrite as a list comprehension. [C400]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 47, "end": 47}}, "fingerprint": "7a6f03eb33839d6668b70744d147def9fe29ed46", "severity": "minor"}
 ]
+[
+    {"type": "issue", "check_name": "unknown", "description": "Unnecessary generator - rewrite as a list comprehension. [C400]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 48, "end": 48}}, "fingerprint": "df33af10e0d0c3f251e1258348954dd2662d19f8", "severity": "minor"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "too many blank lines (3) [E303]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 67, "end": 67}}, "fingerprint": "b1295f3074623cf5b8631c69991ac983683c8a1a", "severity": "major"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "too many blank lines (3) [E303]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 351, "end": 351}}, "fingerprint": "fc5fcca0380e881e399d05899659fa677502543e", "severity": "major"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "expected 2 blank lines, found 1 [E302]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 354, "end": 354}}, "fingerprint": "dbeb2d66043c1e20da7e84a3e3a368324e28b9f3", "severity": "major"},
+    {"type": "issue", "check_name": "pyflakes", "description": "local variable 'original_time_estimate_seconds' is assigned to but never used [F841]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 383, "end": 383}}, "fingerprint": "b6aae190b7340e102b03e47353548e1e4aa930a3", "severity": "minor"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "expected 2 blank lines, found 1 [E302]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 433, "end": 433}}, "fingerprint": "ae42f106f7c25391db129a24a2f880eb69dc45e7", "severity": "major"}
+]
+[
+    {"type": "issue", "check_name": "unknown", "description": "Unnecessary generator - rewrite as a list comprehension. [C400]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 48, "end": 48}}, "fingerprint": "df33af10e0d0c3f251e1258348954dd2662d19f8", "severity": "minor"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "whitespace before ':' [E203]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 198, "end": 198}}, "fingerprint": "accac0c80d569e0b6ee37fabb932ff47b54ca9bd", "severity": "major"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "whitespace before ':' [E203]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 279, "end": 279}}, "fingerprint": "3053d9e0b9bd0530586f04aeaeed886e1093e864", "severity": "major"},
+    {"type": "issue", "check_name": "pycodestyle", "description": "whitespace before ':' [E203]", "categories": ["Style"], "location": {"path": "jirabot.py", "lines": {"begin": 331, "end": 331}}, "fingerprint": "54004afc10d4b1484579fee4613854d6fe0bd3a3", "severity": "major"},
+    {"type": "issue", "check_name": "pyflakes", "description": "local variable 'original_time_estimate_seconds' is assigned to but never used [F841]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 384, "end": 384}}, "fingerprint": "232caaeac7ebc3783655dfc71f536f5b5fadf21b", "severity": "minor"}
+]
+[
+    {"type": "issue", "check_name": "unknown", "description": "Unnecessary generator - rewrite as a list comprehension. [C400]", "categories": ["Bug Risk"], "location": {"path": "jirabot.py", "lines": {"begin": 48, "end": 48}}, "fingerprint": "df33af10e0d0c3f251e1258348954dd2662d19f8", "severity": "minor"}
+]

@@ -41,13 +41,14 @@ jira = JIRA(server=JIRA_SERVER, basic_auth=(JIRA_USERNAME, JIRA_PASS))
     SPRINT,
     EPIC,
     TASK_TYPE,
+    STORY_POINTS,
     IMAGE,
-) = range(9)
+) = range(10)
 
 epics = list(
     epic
     for epic in jira.search_issues(
-        f'project={JIRA_PROJECT_KEY} AND issuetype=Epic AND statusCategory in ("To Do", "In Progress")'
+        f'project={JIRA_PROJECT_KEY} AND issuetype=Epic AND status in ("To Do", "In Progress")'
     )
 )
 for board in jira.boards():
@@ -58,6 +59,8 @@ for board in jira.boards():
 sprints = jira.sprints(board_id=board_id)  # Assuming board_id=1, adjust as necessary
 latest_sprint = next(sprint for sprint in sprints if sprint.state == "active")
 priorities = jira.priorities()
+task_types = [z.name for z in jira.issue_types_for_project(JIRA_PROJECT_KEY)]
+story_points_values = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4.0, 7]
 
 
 async def check_user_allowed(update: Update) -> bool:
@@ -298,7 +301,6 @@ async def button_epic(update: Update, context: CallbackContext) -> int:
     logger.info("Epic selected: %s", epic)
 
     # Present task types as inline buttons
-    task_types = ["Task", "Bug", "Story"]
     keyboard = [
         [
             InlineKeyboardButton(task_type, callback_data=task_type)
@@ -313,6 +315,7 @@ async def button_epic(update: Update, context: CallbackContext) -> int:
     return TASK_TYPE
 
 
+# Add the story points selection step after task type selection
 async def button_task_type(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
@@ -320,6 +323,30 @@ async def button_task_type(update: Update, context: CallbackContext) -> int:
 
     context.user_data["task_type"] = task_type
     logger.info("Task type selected: %s", task_type)
+
+    # Present story points as inline buttons
+    keyboard = [
+        [
+            InlineKeyboardButton(str(sp), callback_data=str(sp))
+            for sp in story_points_values[i: i + 3]
+        ]
+        for i in range(0, len(story_points_values), 3)
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        "Got it! Now choose the story points:", reply_markup=reply_markup
+    )
+    return STORY_POINTS
+
+
+async def button_story_points(update: Update, context: CallbackContext) -> int:
+    query = update.callback_query
+    await query.answer()
+    story_points = float(query.data)
+
+    context.user_data["story_points"] = story_points
+    logger.info("Story points selected: %s", story_points)
 
     await query.edit_message_text("Got it! Now send me one or more images.")
     return IMAGE
@@ -336,6 +363,7 @@ async def handle_image(update: Update, context: CallbackContext) -> int:
     sprint = context.user_data.get("sprint")
     epic = context.user_data.get("epic")
     task_type = context.user_data.get("task_type")
+    story_points = context.user_data.get("story_points")
 
     if not task_summary:
         await update.message.reply_text("Please send the task summary first.")
@@ -363,6 +391,7 @@ async def handle_image(update: Update, context: CallbackContext) -> int:
         "customfield_10104": int(sprint)
         if sprint is not None
         else sprint,  # Replace with your sprint field ID
+        "customfield_10106": story_points,  # Replace with your story points field ID
     }
 
     if component_name:
@@ -443,6 +472,7 @@ def main() -> None:
             SPRINT: [CallbackQueryHandler(button_sprint)],
             EPIC: [CallbackQueryHandler(button_epic)],
             TASK_TYPE: [CallbackQueryHandler(button_task_type)],
+            STORY_POINTS: [CallbackQueryHandler(button_story_points)],
             IMAGE: [MessageHandler(filters.PHOTO, handle_image)],
         },
         fallbacks=[
