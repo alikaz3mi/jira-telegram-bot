@@ -1,3 +1,4 @@
+import aiohttp
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -223,8 +224,9 @@ async def button_assignee(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [
             InlineKeyboardButton(priority.name, callback_data=priority.name)
-            for priority in priorities
+            for priority in priorities[i: i + 3]
         ]
+        for i in range(0, len(priorities), 3)
     ]
     keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
 
@@ -257,6 +259,7 @@ async def button_priority(update: Update, context: CallbackContext) -> int:
     await query.edit_message_text(
         "Got it! Now choose a sprint from the list below:", reply_markup=reply_markup
     )
+    logger.info("Sprints listed")
     return SPRINT
 
 
@@ -304,8 +307,9 @@ async def button_epic(update: Update, context: CallbackContext) -> int:
     keyboard = [
         [
             InlineKeyboardButton(task_type, callback_data=task_type)
-            for task_type in task_types
+            for task_type in task_types[i: i + 3]
         ]
+        for i in range(0, len(task_types), 3)
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -348,13 +352,53 @@ async def button_story_points(update: Update, context: CallbackContext) -> int:
     context.user_data["story_points"] = story_points
     logger.info("Story points selected: %s", story_points)
 
-    await query.edit_message_text("Got it! Now send me one or more images.")
+    await query.edit_message_text(
+        "Got it! Now send me one or more images, or type 'skip' if you don't want to attach any images."
+    )
     return IMAGE
 
 
 async def handle_image(update: Update, context: CallbackContext) -> int:
     if not await check_user_allowed(update):
         return ConversationHandler.END
+
+    if update.message.text and update.message.text.lower() == "skip":
+        logger.info("User chose to skip image upload.")
+        await finalize_task(update, context)
+        return ConversationHandler.END
+
+    # Process images if any are provided
+    if update.message.photo:
+        image_files = update.message.photo
+        image_streams = []
+        async with aiohttp.ClientSession() as session:
+            for photo in image_files:
+                photo_file = await photo.get_file()
+                async with session.get(photo_file.file_path) as response:
+                    if response.status == 200:
+                        image_data = await response.read()
+                        image_stream = BytesIO(image_data)
+                        image_streams.append(image_stream)
+                    else:
+                        logger.error(
+                            f"Failed to fetch image from {photo_file.file_path}"
+                        )
+
+        logger.info("Images received")
+
+        # Attach images and finalize the task
+        await finalize_task(update, context, image_streams)
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text(
+            "No images found. Please send one or more images or type 'skip' to skip."
+        )
+        return IMAGE
+
+
+async def finalize_task(
+    update: Update, context: CallbackContext, image_streams=None
+) -> int:
     task_summary = context.user_data.get("task_summary")
     task_description = context.user_data.get("task_description")
     component_name = context.user_data.get("component")
@@ -369,17 +413,6 @@ async def handle_image(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("Please send the task summary first.")
         logger.info("Summary not provided")
         return SUMMARY
-
-    # Fetch the image files
-    image_files = update.message.photo
-    image_streams = []
-
-    for photo in image_files:
-        photo_file = await photo.get_file()
-        image_data = requests.get(photo_file.file_path).content
-        image_stream = BytesIO(image_data)
-        image_streams.append(image_stream)
-    logger.info("Images received")
 
     # Create a new Jira issue
     issue_fields = {
@@ -417,16 +450,17 @@ async def handle_image(update: Update, context: CallbackContext) -> int:
     new_issue = jira.create_issue(fields=issue_fields)
     logger.info("Jira issue created: %s", new_issue.key)
 
-    # Attach the images to the issue
-    for image_stream in image_streams:
-        jira.add_attachment(
-            issue=new_issue, attachment=image_stream, filename="task_image.jpg"
-        )
+    # Attach the images to the issue if any
+    if image_streams:
+        for image_stream in image_streams:
+            jira.add_attachment(
+                issue=new_issue, attachment=image_stream, filename="task_image.jpg"
+            )
+        logger.info("Images attached to Jira issue")
 
     await update.message.reply_text(
         f"Task created successfully! Issue key: {new_issue.key}"
     )
-    logger.info("Images attached to Jira issue")
     return ConversationHandler.END
 
 
@@ -473,7 +507,7 @@ def main() -> None:
             EPIC: [CallbackQueryHandler(button_epic)],
             TASK_TYPE: [CallbackQueryHandler(button_task_type)],
             STORY_POINTS: [CallbackQueryHandler(button_story_points)],
-            IMAGE: [MessageHandler(filters.PHOTO, handle_image)],
+            IMAGE: [MessageHandler(filters.PHOTO | filters.TEXT, handle_image)],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
