@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -e .
 
 
 # Run bot.py when the container launches
-CMD ["python", "jirabot.py"]
+CMD ["/bin/bash"]
