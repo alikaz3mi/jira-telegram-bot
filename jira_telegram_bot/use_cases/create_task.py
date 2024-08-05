@@ -78,7 +78,7 @@ async def add_description(update: Update, context: CallbackContext) -> int:
     task_description = update.message.text
 
     if task_description.lower() == "skip":
-        task_description = None
+        task_description = ""
 
     context.user_data["task_description"] = task_description
     LOGGER.info("Description received: %s", task_description)
