@@ -33,12 +33,12 @@ This Telegram bot allows users to create Jira tasks directly from a Telegram cha
     ```bash
     python3 -m venv venv
     source venv/bin/activate
-    pip install -r requirements.txt
+    pip install -e .
     ```
 
 3. **Configure environment variables:**
 
-   Replace the placeholder values in the script with your actual credentials and configuration:
+   Add your credentials to .env:
    - `TELEGRAM_TOKEN`: Your Telegram bot token.
    - `JIRA_SERVER`: Your Jira instance URL.
    - `JIRA_USERNAME`: Your Jira username.
@@ -50,7 +50,7 @@ This Telegram bot allows users to create Jira tasks directly from a Telegram cha
 
    Start the bot by running the following command:
     ```bash
-    python bot.py
+    python jira_telegram_bot
     ```
 
 ### Docker Setup (Optional)
@@ -70,21 +70,6 @@ If you prefer to run the bot in a Docker container, you can use the provided Doc
     ```
 
 3. **Using Docker Compose:**
-
-    ```yaml
-    version: '3'
-    services:
-      jira-bot:
-        build: .
-        environment:
-          - TELEGRAM_TOKEN=your_telegram_token
-          - JIRA_SERVER=https://jira.yourdomain.com
-          - JIRA_USERNAME=your_username
-          - JIRA_PASS=your_password_or_token
-          - JIRA_PROJECT_KEY=PROJECTKEY
-        ports:
-          - "8080:8080"
-    ```
 
     Start the service:
     ```bash
