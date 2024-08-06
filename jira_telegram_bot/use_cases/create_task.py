@@ -315,8 +315,10 @@ async def handle_image(update: Update, context: CallbackContext) -> int:
     if update.message.photo:
         image_files = update.message.photo
         image_streams = []
+        image_files = sorted(image_files, key=lambda x: x.file_size)
         async with aiohttp.ClientSession() as session:
-            for photo in image_files:
+            size_of_interest = len(image_files) // 2
+            for photo in image_files[size_of_interest:]:
                 photo_file = await photo.get_file()
                 async with session.get(photo_file.file_path) as response:
                     if response.status == 200:
@@ -403,6 +405,6 @@ async def finalize_task(
         LOGGER.info("Images attached to Jira issue")
 
     await update.message.reply_text(
-        f"Task created successfully! Issue key: {new_issue.key}"
+        f"Task created successfully! link: {f'{JIRA_SETTINGS.domain}/browse/{new_issue.key}'}"
     )
     return ConversationHandler.END
