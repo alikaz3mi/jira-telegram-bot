@@ -126,7 +126,11 @@ def main() -> None:
             EPIC: [CallbackQueryHandler(button_epic)],
             TASK_TYPE: [CallbackQueryHandler(button_task_type)],
             STORY_POINTS: [CallbackQueryHandler(button_story_points)],
-            IMAGE: [MessageHandler(filters.PHOTO | filters.TEXT, handle_image)],
+            IMAGE: [
+                MessageHandler(
+                    filters.PHOTO | (filters.TEXT & ~filters.COMMAND), handle_image
+                )
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
