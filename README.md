@@ -117,7 +117,6 @@ If you'd like to contribute to this project, feel free to open a pull request or
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-```
 
 ### Notes:
 - Replace the placeholder values (`your_telegram_token`, `your_username`, etc.) with actual values as necessary.

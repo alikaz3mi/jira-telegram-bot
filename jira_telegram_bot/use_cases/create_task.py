@@ -106,8 +106,19 @@ class JiraTaskCreation:
 
         LOGGER.info("Description received: %s", task_description)
 
+        # Fetch components from Jira
         components = self.jira.project_components(self.JIRA_PROJECT_KEY)
-        reply_markup = self.build_inline_keyboard(components)
+
+        # Ensure that we handle components as objects with attributes like 'name'
+        keyboard = [
+            [
+                InlineKeyboardButton(component.name, callback_data=component.name)
+                for component in components[i : i + 2]
+            ]
+            for i in range(0, len(components), 2)
+        ]
+        keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
             "Got it! Now choose a component from the list below:",
@@ -122,7 +133,16 @@ class JiraTaskCreation:
 
         LOGGER.info("Component selected: %s", context.user_data["component"])
 
-        reply_markup = self.build_inline_keyboard(self.ASSIGNEES, row_size=4)
+        keyboard = []
+        for i in range(0, len(self.ASSIGNEES), 4):
+            row = [
+                InlineKeyboardButton(assignee, callback_data=assignee)
+                for assignee in self.ASSIGNEES[i : i + 4]
+            ]
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
             "Got it! Now choose an assignee from the list below:",
             reply_markup=reply_markup,
@@ -176,7 +196,16 @@ class JiraTaskCreation:
 
         LOGGER.info("Sprint selected: %s", context.user_data["sprint"])
 
-        reply_markup = self.build_inline_keyboard(self.EPICS, row_size=3)
+        keyboard = []
+        for i in range(0, len(self.EPICS), 3):
+            row = [
+                InlineKeyboardButton(epic.fields.summary, callback_data=epic.key)
+                for epic in self.EPICS[i : i + 3]
+            ]
+            keyboard.append(row)
+        keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
             "Got it! Now choose an epic from the list below:", reply_markup=reply_markup
         )
@@ -190,7 +219,14 @@ class JiraTaskCreation:
 
         LOGGER.info("Epic selected: %s", context.user_data["epic"])
 
-        reply_markup = self.build_inline_keyboard(self.TASK_TYPES, row_size=3)
+        keyboard = [
+            [
+                InlineKeyboardButton(task_type, callback_data=task_type)
+                for task_type in self.TASK_TYPES[i : i + 3]
+            ]
+            for i in range(0, len(self.TASK_TYPES), 3)
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
             "Got it! Now choose a task type from the list below:",
             reply_markup=reply_markup,
@@ -205,7 +241,15 @@ class JiraTaskCreation:
 
         LOGGER.info("Task type selected: %s", context.user_data["task_type"])
 
-        reply_markup = self.build_inline_keyboard(self.STORY_POINTS_VALUES, row_size=3)
+        keyboard = [
+            [
+                InlineKeyboardButton(str(sp), callback_data=str(sp))
+                for sp in self.STORY_POINTS_VALUES[i : i + 3]
+            ]
+            for i in range(0, len(self.STORY_POINTS_VALUES), 3)
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         await query.edit_message_text(
             "Got it! Now choose the story points:", reply_markup=reply_markup
         )
