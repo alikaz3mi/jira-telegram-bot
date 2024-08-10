@@ -2,13 +2,16 @@
 
 This Telegram bot allows users to create Jira tasks directly from a Telegram chat. The bot guides users through a series of prompts to collect task details, such as summary, description, component, assignee, priority, sprint, epic, and task type. Users can also attach images to the task, which are then added to the Jira issue.
 
+In addition, the bot now supports transitioning Jira tasks to different states within the Jira board, allowing users to manage their workflow directly from Telegram.
+
 ## Features
 
 - **Create Jira Issues**: Interactively create Jira issues from within Telegram.
+- **Task Transitioning**: Transition tasks to different states on the Jira board.
 - **Support for Components, Assignees, and Priorities**: Choose components, assignees, and priorities from selectable buttons.
 - **Sprint and Epic Selection**: Select sprints and epics for your task.
 - **Attach Images**: Upload images directly to the Jira issue.
-- **User Authorization**: Restrict task creation to specific Telegram users.
+- **User Authorization**: Restrict task creation and transitions to specific Telegram users.
 - **Custom Field Support**: Configure and set custom Jira fields such as Epic Link and Sprint.
 
 ## Setup
@@ -17,7 +20,7 @@ This Telegram bot allows users to create Jira tasks directly from a Telegram cha
 
 - Python 3.8+
 - A Telegram bot token. [Create a bot with BotFather](https://core.telegram.org/bots#botfather).
-- Jira account with appropriate permissions to create issues.
+- Jira account with appropriate permissions to create issues and manage task transitions.
 - Basic understanding of Jira's REST API.
 
 ### Installation
@@ -38,15 +41,17 @@ This Telegram bot allows users to create Jira tasks directly from a Telegram cha
 
 3. **Configure environment variables:**
 
-   Add your credentials to .env:
-   - `TELEGRAM_TOKEN`: Your Telegram bot token.
-   - `JIRA_SERVER`: Your Jira instance URL.
-   - `JIRA_USERNAME`: Your Jira username.
-   - `jira_board_project_name`: Name of the board in Jira
-   - `jira_board_assignees`: List of assignees of interest
-   - `JIRA_PASS`: Your Jira password or API token.
-   - `JIRA_PROJECT_KEY`: The key of the Jira project where issues will be created.
-   - `ALLOWED_USERS`: List of Telegram usernames allowed to create tasks.
+   Use the `sample.env` file provided as a template to create your `.env` file:
+   1. Rename `sample.env` to `.env`.
+   2. Fill in the following variables in your `.env` file:
+      - `TELEGRAM_TOKEN`: Your Telegram bot token.
+      - `JIRA_SERVER`: Your Jira instance URL.
+      - `JIRA_USERNAME`: Your Jira username.
+      - `JIRA_PASS`: Your Jira password or API token.
+      - `JIRA_PROJECT_KEY`: The key of the Jira project where issues will be created.
+      - `JIRA_BOARD_PROJECT_NAME`: Name of the board in Jira.
+      - `JIRA_BOARD_ASSIGNEES`: Comma-separated list of assignees of interest.
+      - `ALLOWED_USERS`: Comma-separated list of Telegram usernames allowed to create tasks and transition them.
 
 4. **Run the bot:**
 
@@ -103,6 +108,22 @@ To set custom fields like `Epic Link` and `Sprint`, you need to find their custo
 
 - **Authentication**: Ensure that your Jira credentials or API token are correct. If you're using an API token, you might need to replace your password with the token.
 
+## Task Transition
+
+### Overview
+
+The task transition feature allows users to select themselves as an assignee, view their tasks, and transition a selected task to another state on the Jira board.
+
+### Usage
+
+1. **Start the Transition Process**: Send the `/transition` command in the Telegram chat.
+2. **Select Assignee**: Choose your name from the list of assignees.
+3. **View Tasks**: After selecting yourself, you will see a list of your tasks along with their priorities.
+4. **View Task Details**: Select a task to view its details, including the description and current status.
+5. **Transition the Task**: You can either return to select another task or choose to continue and transition the task to another state (e.g., from "To Do" to "In Progress").
+
+This feature streamlines the task management process, enabling you to handle Jira tasks directly from your Telegram bot.
+
 ## Resources
 
 - [Telegram Bot API](https://core.telegram.org/bots/api)
@@ -120,6 +141,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ### Notes:
 - Replace the placeholder values (`your_telegram_token`, `your_username`, etc.) with actual values as necessary.
-
-
-This `README.md` provides a comprehensive guide for setting up and using your Jira Telegram bot project.
