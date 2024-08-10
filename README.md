@@ -42,6 +42,8 @@ This Telegram bot allows users to create Jira tasks directly from a Telegram cha
    - `TELEGRAM_TOKEN`: Your Telegram bot token.
    - `JIRA_SERVER`: Your Jira instance URL.
    - `JIRA_USERNAME`: Your Jira username.
+   - `jira_board_project_name`: Name of the board in Jira
+   - `jira_board_assignees`: List of assignees of interest
    - `JIRA_PASS`: Your Jira password or API token.
    - `JIRA_PROJECT_KEY`: The key of the Jira project where issues will be created.
    - `ALLOWED_USERS`: List of Telegram usernames allowed to create tasks.
@@ -49,6 +51,7 @@ This Telegram bot allows users to create Jira tasks directly from a Telegram cha
 4. **Run the bot:**
 
    Start the bot by running the following command:
+
     ```bash
     python jira_telegram_bot
     ```
@@ -84,6 +87,7 @@ To set custom fields like `Epic Link` and `Sprint`, you need to find their custo
 
 1. **Jira REST API:**
    Use the following endpoint to retrieve all custom fields:
+
    ```
    GET https://your-jira-instance.com/rest/api/2/field
    ```
@@ -117,7 +121,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ### Notes:
 - Replace the placeholder values (`your_telegram_token`, `your_username`, etc.) with actual values as necessary.
-- Add or adjust sections in the `README.md` based on the actual implementation and setup of your project.
-- You can also include additional sections for more advanced usage, such as customizing fields or deploying on different environments.
+
 
 This `README.md` provides a comprehensive guide for setting up and using your Jira Telegram bot project.
