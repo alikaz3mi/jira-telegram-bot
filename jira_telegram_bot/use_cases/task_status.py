@@ -48,13 +48,13 @@ class TaskStatus:
                     issue.fields.timespent / 3600
                 )
             else:
-                estimated_time = 0
+                estimated_time = "None"
 
             response = (
                 f"*Summary*: {summary}\n\n"
                 f"*Priority*: {priority}\n\n"
                 f"*Description*: {description}\n\n"
-                f"*Estimated Remaining Time (H)*: {estimated_time}\n\n"
+                f"*Estimated Remaining Time \\(H\\)*: {estimated_time}\n\n"
                 f"*Assignee*: {assignee}\n\n"
                 f"🔑 *Status*: {status}\n\n"
             )
