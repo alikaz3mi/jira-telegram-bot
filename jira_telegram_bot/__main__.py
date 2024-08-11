@@ -14,6 +14,7 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.use_cases.authentication import check_user_allowed
 from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
 from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
+from jira_telegram_bot.use_cases.task_status import TaskStatus
 from jira_telegram_bot.settings import JIRA_SETTINGS, TELEGRAM_SETTINGS
 
 jira = JIRA(
@@ -23,6 +24,7 @@ jira = JIRA(
 
 jira_task_creation = JiraTaskCreation(jira)
 jira_task_transition = JiraTaskTransition(jira)
+jira_task_status = TaskStatus(jira)
 
 
 async def start(update: Update, context: CallbackContext) -> int:
@@ -39,11 +41,18 @@ async def start(update: Update, context: CallbackContext) -> int:
     )  # Using the constant from the JiraTaskCreation class
 
 
+# Add this function to handle the /status command
+async def start_status(update: Update, context: CallbackContext) -> int:
+    """Start the task status retrieval process."""
+    return await jira_task_status.get_task_status(update, context)
+
+
 async def help_command(update: Update, context: CallbackContext) -> None:
     help_text = (
         "Here's how to use this bot to create a Jira task:\n\n"
         "1. **/start**: Start the process of creating a new task.\n"
         "2. **/transition**: Start the process of transitioning an existing task to another state.\n"
+        "3. **/status**: Get the status of a task by giving the task number \n"
         "3. **Summary**: Send the summary of the task when prompted.\n"
         "4. **Description**: Send the description of the task when prompted, or type 'skip' to skip this step.\n"
         "5. **Component**: Choose the component for the task from the list provided.\n"
@@ -166,8 +175,24 @@ def main() -> None:
         ],
     )
 
+    status_handler = ConversationHandler(
+        entry_points=[CommandHandler("status", start_status)],
+        states={
+            jira_task_status.TASK_ID: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, jira_task_status.fetch_task_details
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("terminate", terminate),
+        ],
+    )
+
     application.add_handler(conv_handler)
     application.add_handler(transition_handler)
+    application.add_handler(status_handler)  # Add the new handler
     application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
 
