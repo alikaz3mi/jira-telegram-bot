@@ -139,6 +139,9 @@ def main() -> None:
             jira_task_creation.TASK_TYPE: [
                 CallbackQueryHandler(jira_task_creation.button_task_type)
             ],
+            jira_task_creation.STORY_SELECTION: [
+                CallbackQueryHandler(jira_task_creation.button_story_selection)
+            ],
             jira_task_creation.STORY_POINTS: [
                 CallbackQueryHandler(jira_task_creation.button_story_points)
             ],
@@ -192,7 +195,7 @@ def main() -> None:
 
     application.add_handler(conv_handler)
     application.add_handler(transition_handler)
-    application.add_handler(status_handler)  # Add the new handler
+    application.add_handler(status_handler)
     application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
 

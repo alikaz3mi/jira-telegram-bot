@@ -33,7 +33,8 @@ class JiraTaskCreation:
             self.TASK_TYPE,
             self.STORY_POINTS,
             self.IMAGE,
-        ) = range(10)
+            self.STORY_SELECTION,
+        ) = range(11)
 
         self.EPICS = self._get_epics()
         self.BOARD_ID = self._get_board_id()
@@ -241,6 +242,56 @@ class JiraTaskCreation:
 
         LOGGER.info("Task type selected: %s", context.user_data["task_type"])
 
+        if query.data.lower() == "sub-task":
+            # Fetch the stories from the current sprint
+            stories = self.jira.search_issues(
+                f'sprint="{self.LATEST_SPRINT.name}" AND issuetype=Story'
+            )
+
+            if not stories:
+                await query.edit_message_text("No stories found in the current sprint.")
+                return ConversationHandler.END
+
+            keyboard = [
+                [
+                    InlineKeyboardButton(story.fields.summary, callback_data=story.key)
+                    for story in stories[i : i + 2]
+                ]
+                for i in range(0, len(stories), 2)
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                "Got it! Now choose a story to assign this sub-task:",
+                reply_markup=reply_markup,
+            )
+
+            return self.STORY_SELECTION  # New state for story selection
+        else:
+            keyboard = [
+                [
+                    InlineKeyboardButton(str(sp), callback_data=str(sp))
+                    for sp in self.STORY_POINTS_VALUES[i : i + 3]
+                ]
+                for i in range(0, len(self.STORY_POINTS_VALUES), 3)
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                "Got it! Now choose the story points:", reply_markup=reply_markup
+            )
+
+            return self.STORY_POINTS
+
+    async def button_story_selection(
+        self, update: Update, context: CallbackContext
+    ) -> int:
+        query = update.callback_query
+        await query.answer()
+        context.user_data["story"] = query.data
+
+        LOGGER.info("Story selected for sub-task: %s", context.user_data["story"])
+
         keyboard = [
             [
                 InlineKeyboardButton(str(sp), callback_data=str(sp))
@@ -316,6 +367,7 @@ class JiraTaskCreation:
             "epic": context.user_data.get("epic"),
             "task_type": context.user_data.get("task_type"),
             "story_points": context.user_data.get("story_points"),
+            "story": context.user_data.get("story"),
         }
 
         if not task_data["summary"]:
@@ -328,12 +380,20 @@ class JiraTaskCreation:
             "summary": task_data["summary"],
             "description": task_data["description"],
             "issuetype": {"name": task_data["task_type"]},
-            "customfield_10100": task_data["epic"],
-            "customfield_10104": int(task_data["sprint"])
-            if task_data["sprint"]
-            else None,
-            "customfield_10106": task_data["story_points"],
         }
+
+        if task_data["task_type"].lower() == "sub-task":
+            if task_data["story"]:
+                issue_fields["parent"] = {"key": task_data["story"]}
+        else:
+            if task_data["epic"]:
+                issue_fields["customfield_10100"] = task_data["epic"]
+
+            if task_data["sprint"]:
+                issue_fields["customfield_10104"] = int(task_data["sprint"])
+
+            if task_data["story_points"]:
+                issue_fields["customfield_10106"] = task_data["story_points"]
 
         if task_data["component"]:
             component = next(
@@ -356,6 +416,20 @@ class JiraTaskCreation:
         LOGGER.info("Creating Jira issue with fields: %s", issue_fields)
         new_issue = self.jira.create_issue(fields=issue_fields)
         LOGGER.info("Jira issue created: %s", new_issue.key)
+
+        # If it's a sub-task, update the parent story's components
+        if task_data["task_type"].lower() == "sub-task" and task_data["story"]:
+            parent_issue = self.jira.issue(task_data["story"])
+            existing_components = {c.name for c in parent_issue.fields.components}
+            existing_components.add(task_data["component"])
+            parent_issue.update(
+                fields={"components": [{"name": c} for c in existing_components]}
+            )
+            LOGGER.info(
+                "Updated components of the parent story %s: %s",
+                task_data["story"],
+                existing_components,
+            )
 
         if image_streams:
             for image_stream in image_streams:
