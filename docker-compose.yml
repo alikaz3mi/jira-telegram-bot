@@ -10,3 +10,4 @@ services:
       - .:/app
     command: >
       python3 jira_telegram_bot
+    restart: always
