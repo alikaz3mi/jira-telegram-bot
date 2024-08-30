@@ -129,7 +129,6 @@ This feature streamlines the task management process, enabling you to handle Jir
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [Jira REST API Documentation](https://developer.atlassian.com/cloud/jira/platform/rest/v2/)
 - [Python-Telegram-Bot Documentation](https://python-telegram-bot.readthedocs.io/en/stable/)
-- [Our Jira REST API Documentation](https://jira.parstechai.com/rest/api/2/field)
 
 ## Contributing
 
