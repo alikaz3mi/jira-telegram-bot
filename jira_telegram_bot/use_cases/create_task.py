@@ -33,10 +33,12 @@ class JiraTaskCreation:
             self.STORY_POINTS,
             self.IMAGE,
             self.STORY_SELECTION,
-        ) = range(12)
+            self.ASSIGNEE_SEARCH,
+            self.ASSIGNEE_RESULT,
+        ) = range(14)
 
         self.PRIORITIES = self.jira.priorities()
-        self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4.0, 7]
+        self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
 
         # Initialize variables that depend on the selected project
         self.JIRA_PROJECT_KEY = None
@@ -66,9 +68,8 @@ class JiraTaskCreation:
             sprints[-1] if sprints else None,
         )
 
-    def _get_assignees(self, project_key):
+    def _get_assignees(self, project_key: str) -> list[str] | None:
         try:
-            # Try to get users from project roles
             assignees = set()
             recent_issues = self.jira.search_issues(
                 f"project = {project_key} AND createdDate > startOfMonth(-1)",
@@ -86,14 +87,19 @@ class JiraTaskCreation:
             # Fallback to all users
             return self._get_all_users()
 
+    def _get_user(self, username: str) -> list[str]:
+        users = self.jira.search_users(username, maxResults=50)
+        users = [user.name for user in users]
+        return users
+
     def _get_all_users(self):
         try:
-            all_users = []
+            all_users = {}
             for char in string.ascii_lowercase:
-                users = self.jira.search_users(char, maxResults=1000)
-                all_users.extend(users)
-            all_users = list(set(all_users))
-            return sorted({user.displayName for user in all_users})
+                users = self.jira.search_users(char, maxResults=50)
+                for user in users:
+                    all_users[user.accountId] = user.displayName
+            return sorted(all_users.items(), key=lambda x: x[1])
         except Exception as e:
             LOGGER.error(f"Error fetching all users: {e}")
             return []
@@ -230,13 +236,14 @@ class JiraTaskCreation:
         assignees = self._get_assignees(self.JIRA_PROJECT_KEY)
 
         if assignees:
-            keyboard = [
-                [
+            keyboard = []
+            for i in range(0, len(assignees), 3):
+                row = [
                     InlineKeyboardButton(assignee, callback_data=assignee)
                     for assignee in assignees[i : i + 3]
                 ]
-                for i in range(0, len(assignees), 3)
-            ]
+                keyboard.append(row)
+            keyboard.append([InlineKeyboardButton("Others", callback_data="others")])
             keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(
@@ -254,19 +261,92 @@ class JiraTaskCreation:
     async def button_assignee(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
-        context.user_data["assignee"] = query.data if query.data != "skip" else None
+        if query.data == "others":
+            await query.edit_message_text("Please enter the username to search for:")
+            return self.ASSIGNEE_SEARCH
+        elif query.data == "skip":
+            context.user_data["assignee"] = None
+            LOGGER.info("Assignee skipped.")
+            return await self.button_priority(update, context)
+        else:
+            context.user_data["assignee"] = query.data
+            LOGGER.info("Assignee selected: %s", context.user_data["assignee"])
+            return await self.button_priority(update, context)
 
-        LOGGER.info("Assignee selected: %s", context.user_data["assignee"])
+    async def search_assignee(self, update: Update, context: CallbackContext) -> int:
+        if not await check_user_allowed(update):
+            return ConversationHandler.END
+
+        username_query = update.message.text.strip()
+        matching_users = self._get_user(username_query)
+
+        if matching_users:
+            keyboard = [
+                [
+                    InlineKeyboardButton(user, callback_data=user)
+                    for user in matching_users[i : i + 2]
+                ]
+                for i in range(0, len(matching_users), 2)
+            ]
+            keyboard.append([InlineKeyboardButton("Others", callback_data="others")])
+            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                "Select an assignee from the list below:",
+                reply_markup=reply_markup,
+            )
+            return self.ASSIGNEE_RESULT
+        else:
+            await update.message.reply_text(
+                "No users found. Please enter a different username:",
+            )
+            return self.ASSIGNEE_SEARCH
+
+    async def select_assignee_from_search(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        query = update.callback_query
+        await query.answer()
+        if query.data == "others":
+            await query.edit_message_text("Please enter the username to search for:")
+            return self.ASSIGNEE_SEARCH
+        elif query.data == "skip":
+            context.user_data["assignee"] = None
+            LOGGER.info("Assignee skipped.")
+            return await self.button_priority(update, context)
+        else:
+            context.user_data["assignee"] = query.data
+            LOGGER.info(
+                "Assignee selected from search: %s",
+                context.user_data["assignee"],
+            )
+            return await self.button_priority(update, context)
+
+    async def button_priority(self, update: Update, context: CallbackContext) -> int:
+        if isinstance(update, Update) and hasattr(update, "callback_query"):
+            query = update.callback_query
+            await query.answer()
+            context.user_data["priority"] = query.data if query.data != "skip" else None
+
+            LOGGER.info("Priority selected: %s", context.user_data["priority"])
+        else:
+            # If called directly, proceed without changing the priority
+            pass
 
         reply_markup = self.build_inline_keyboard(self.PRIORITIES, row_size=3)
-        await query.edit_message_text(
+        await update.callback_query.edit_message_text(
             "Got it! Now choose a priority from the list below:",
             reply_markup=reply_markup,
         )
-
         return self.PRIORITY
 
-    async def button_priority(self, update: Update, context: CallbackContext) -> int:
+    async def button_priority_callback(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
         query = update.callback_query
         await query.answer()
         context.user_data["priority"] = query.data if query.data != "skip" else None
@@ -291,7 +371,10 @@ class JiraTaskCreation:
             )
             return self.SPRINT
         else:
-            LOGGER.info("No active sprint found for project %s", self.JIRA_PROJECT_KEY)
+            LOGGER.info(
+                "No active sprint found for project %s",
+                self.JIRA_PROJECT_KEY,
+            )
             await query.edit_message_text(
                 "No active sprint found. Proceeding to the next step.",
             )
@@ -460,11 +543,11 @@ class JiraTaskCreation:
             return ConversationHandler.END
 
         if update.message.photo:
-            image_files = sorted(update.message.photo, key=lambda x: x.file_size)
+            image_files = sorted(update.message.photo, key=lambda x: x.file_size)[::-1]
             image_streams = []
 
             async with aiohttp.ClientSession() as session:
-                for photo in image_files[len(image_files) // 2 :]:
+                for photo in image_files[: len(image_files) // 2]:
                     photo_file = await photo.get_file()
                     async with session.get(photo_file.file_path) as response:
                         if response.status == 200:
@@ -588,7 +671,7 @@ class JiraTaskCreation:
     async def skip_assignee(self, update: Update, context: CallbackContext) -> int:
         context.user_data["assignee"] = None
         LOGGER.info("Assignee skipped.")
-        return await self.button_assignee(update, context)
+        return await self.button_priority(update, context)
 
     async def skip_sprint(self, update: Update, context: CallbackContext) -> int:
         context.user_data["sprint"] = None

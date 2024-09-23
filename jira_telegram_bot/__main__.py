@@ -130,8 +130,17 @@ def main() -> None:
             jira_task_creation.ASSIGNEE: [
                 CallbackQueryHandler(jira_task_creation.button_assignee),
             ],
+            jira_task_creation.ASSIGNEE_SEARCH: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    jira_task_creation.search_assignee,
+                ),
+            ],
+            jira_task_creation.ASSIGNEE_RESULT: [
+                CallbackQueryHandler(jira_task_creation.select_assignee_from_search),
+            ],
             jira_task_creation.PRIORITY: [
-                CallbackQueryHandler(jira_task_creation.button_priority),
+                CallbackQueryHandler(jira_task_creation.button_priority_callback),
             ],
             jira_task_creation.SPRINT: [
                 CallbackQueryHandler(jira_task_creation.button_sprint),
