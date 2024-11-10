@@ -1,10 +1,14 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, ConversationHandler
-from jira import JIRA
-from jira_telegram_bot.settings import JIRA_BOARD_SETTINGS
+from __future__ import annotations
 
+from jira import JIRA
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram import Update
+from telegram.ext import CallbackContext
+from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.settings import JIRA_BOARD_SETTINGS
 
 
 class JiraTaskTransition:
@@ -12,7 +16,6 @@ class JiraTaskTransition:
 
     def __init__(self, jira: JIRA):
         self.jira = jira
-        self.assignees = JIRA_BOARD_SETTINGS.assignees
 
     def build_inline_keyboard(self, items, row_size=2):
         """Helper function to build an inline keyboard."""
@@ -30,7 +33,8 @@ class JiraTaskTransition:
         """Start the task transition process by selecting the assignee."""
         keyboard = self.build_inline_keyboard(self.assignees, row_size=2)
         await update.message.reply_text(
-            "Please choose who you are:", reply_markup=keyboard
+            "Please choose who you are:",
+            reply_markup=keyboard,
         )
         LOGGER.info("User started the task transition process")
         return self.ASSIGNEE
@@ -50,7 +54,7 @@ class JiraTaskTransition:
 
         # Fetch tasks assigned to the user
         issues = self.jira.search_issues(
-            f'assignee="{assignee}" AND project="{self.jira.project(JIRA_BOARD_SETTINGS.board_name)}"'
+            f'assignee="{assignee}" AND project="{self.jira.project(JIRA_BOARD_SETTINGS.board_name)}"',
         )
         if not issues:
             await query.edit_message_text(f"No tasks found for assignee {assignee}.")
@@ -62,7 +66,7 @@ class JiraTaskTransition:
                 InlineKeyboardButton(
                     f"{issue.key} - {issue.fields.summary} (Priority: {issue.fields.priority.name})",
                     callback_data=issue.key,
-                )
+                ),
             ]
             for issue in issues
         ]
@@ -70,7 +74,8 @@ class JiraTaskTransition:
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await query.edit_message_text(
-            "Please select a task to view its details:", reply_markup=reply_markup
+            "Please select a task to view its details:",
+            reply_markup=reply_markup,
         )
         return self.TASK_SELECTION
 
@@ -116,7 +121,8 @@ class JiraTaskTransition:
 
         if query.data == "return":
             return await self.select_assignee(
-                update, context
+                update,
+                context,
             )  # Return to task selection
 
         if query.data == "continue":
@@ -130,11 +136,11 @@ class JiraTaskTransition:
             if transition_id:
                 self.jira.transition_issue(issue, transition_id)
                 await query.edit_message_text(
-                    f"Task {issue.key} transitioned to 'In Progress'."
+                    f"Task {issue.key} transitioned to 'In Progress'.",
                 )
             else:
                 await query.edit_message_text(
-                    f"No valid transitions found for task {issue.key}."
+                    f"No valid transitions found for task {issue.key}.",
                 )
 
             return ConversationHandler.END

@@ -1,12 +1,13 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from __future__ import annotations
+
 from typing import List
+
+from pydantic import Field
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 
 
 class JiraBoardSettings(BaseSettings):
-    board_name: str = Field("name of the jira board")
-    assignees: List[str] = Field("List of users of the Jira board")
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
