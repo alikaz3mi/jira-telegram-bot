@@ -40,12 +40,6 @@ class EasyTaskHandler(TaskHandlerInterface):
                 self.easy_task_use_case.COMPONENT: [
                     CallbackQueryHandler(self.easy_task_use_case.add_component),
                 ],
-                self.easy_task_use_case.BOARD_NAME: [
-                    MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
-                        self.easy_task_use_case.add_board_name,
-                    ),
-                ],
                 self.easy_task_use_case.TASK_TYPE: [
                     CallbackQueryHandler(self.easy_task_use_case.add_task_type),
                 ],

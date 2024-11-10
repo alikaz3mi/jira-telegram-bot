@@ -37,9 +37,9 @@ async def help_command(update, context):
 
 
 async def error(update, context):
-    LOGGER.warning('Update "%s" caused error "%s"', update, context.error)
+    LOGGER.warning(f'Update "{update}" caused error "{context.error}"')
     if context.error:
-        LOGGER.error("Context error details: %s", context.error)
+        LOGGER.error(f"Context error details: {context.error}")
     else:
         LOGGER.error("An unknown error occurred in the context.")
 
@@ -59,7 +59,7 @@ async def error(update, context):
         LOGGER.error("Context error details: %s", context.error)
 
     except Exception as e:
-        LOGGER.error("Failed to send error message to user or log detail")
+        LOGGER.error(f"Failed to send error message to user or log detail: {e}")
 
 
 def main():
