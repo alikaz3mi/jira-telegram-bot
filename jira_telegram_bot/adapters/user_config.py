@@ -1,8 +1,13 @@
+# adapter/user_config.py
 from __future__ import annotations
 
 import json
+from typing import Optional
+
+from pydantic import ValidationError
 
 from jira_telegram_bot import DEFAULT_PATH
+from jira_telegram_bot.entities.user_config import UserConfig as UserConfigEntity
 
 USER_CONFIG_PATH = f"{DEFAULT_PATH}/jira_telegram_bot/settings/user_config.json"
 
@@ -13,7 +18,20 @@ class UserConfig:
 
     def load_user_config(self, user_config_path: str):
         with open(USER_CONFIG_PATH, "r") as file:
-            return json.load(file)
+            raw_data = json.load(file)
 
-    def get_user_config(self, username: str):
-        return self.user_config.get(username, None)
+        user_configurations = {}
+        for username, config_data in raw_data.items():
+            try:
+                config = {}
+                config["telegram_username"] = username
+                config["jira_username"] = config_data["jira_username"]
+                for field_name, field in config_data["fields"].items():
+                    config[field_name] = field
+                user_configurations[username] = UserConfigEntity(**config)
+            except ValidationError as e:
+                print(f"Error loading config for {username}: {e}")
+        return user_configurations
+
+    def get_user_config(self, username: str) -> Optional[UserConfigEntity]:
+        return self.user_config.get(username)

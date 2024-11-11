@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from warnings import filterwarnings
+
 from telegram.ext import Application
 from telegram.ext import CommandHandler
+from telegram.warnings import PTBUserWarning
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
@@ -21,6 +24,12 @@ from jira_telegram_bot.use_cases.create_easy_task import JiraEasyTaskCreation
 from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
 from jira_telegram_bot.use_cases.task_status import TaskStatus
 from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
+
+filterwarnings(
+    action="ignore",
+    message=r".*CallbackQueryHandler",
+    category=PTBUserWarning,
+)
 
 
 async def help_command(update, context):

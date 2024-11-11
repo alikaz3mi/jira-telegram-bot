@@ -48,7 +48,7 @@ class JiraTaskCreation:
         self.LATEST_SPRINT = None
         self.TASK_TYPES = []
 
-    def _get_epics(self, project_key):
+    def _get_epics(self, project_key: str):
         return [
             epic
             for epic in self.jira.search_issues(
@@ -56,7 +56,7 @@ class JiraTaskCreation:
             )
         ]
 
-    def _get_board_id(self, project_key):
+    def _get_board_id(self, project_key: str):
         return next(
             (board.id for board in self.jira.boards() if project_key in board.name),
             None,
