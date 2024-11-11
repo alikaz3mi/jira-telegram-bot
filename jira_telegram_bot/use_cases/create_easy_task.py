@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from io import BytesIO
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import aiohttp
-from jira import JIRA
+from jira import Issue
 from PIL import Image
 from telegram import InlineKeyboardButton
 from telegram import InlineKeyboardMarkup
@@ -15,7 +18,11 @@ from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.use_cases.authentication import check_user_allowed
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+    TaskManagerRepositoryInterface,
+)
 
 
 class JiraEasyTaskCreation:
@@ -32,11 +39,16 @@ class JiraEasyTaskCreation:
         RELEASE,
     ) = range(10)
 
-    def __init__(self, jira: JIRA, user_config_instance: UserConfig):
-        self.jira = jira
+    def __init__(
+        self,
+        jira_client: TaskManagerRepositoryInterface,
+        user_config_instance: UserConfig,
+        logger=LOGGER,
+    ):
+        self.jira_client = jira_client
         self.user_config_instance = user_config_instance
+        self.logger = logger
         self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
-        self.EPICS = None
         self.media_group_timeout = 1.0
 
     async def start(self, update: Update, context: CallbackContext) -> int:
@@ -47,156 +59,142 @@ class JiraEasyTaskCreation:
         user = update.message.from_user.username
         user_config = self.user_config_instance.get_user_config(user)
 
+        task_data = TaskData()
+        context.user_data["task_data"] = task_data
+
         if user_config:
-            context.user_data["config"] = user_config.dict()
-            context.user_data["project_key"] = (
+            task_data.config = user_config.dict()
+            task_data.project_key = (
                 user_config.project.values[0] if user_config.project.values else None
             )
-        else:
-            context.user_data["config"] = {}
 
-        if not context.user_data.get("project_key"):
+        if not task_data.project_key:
             return await self.ask_for_project(update, context)
         else:
             return await self.ask_for_summary(update, context)
 
     async def ask_for_project(self, update: Update, context: CallbackContext) -> int:
-        projects = self.jira.projects()
-        keyboard = [
-            [
-                InlineKeyboardButton(project.name, callback_data=project.key)
-                for project in projects[i : i + 2]
-            ]
-            for i in range(0, len(projects), 2)
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
+        projects = self.jira_client.get_projects()
+        keyboard = self.build_keyboard(
+            [project.name for project in projects],
+            data=[project.key for project in projects],
+        )
+        await self.send_message(
+            update,
             "Please select a project:",
-            reply_markup=reply_markup,
+            reply_markup=keyboard,
         )
         return self.PROJECT
 
     async def add_project(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
-        context.user_data["project_key"] = query.data
-        self.JIRA_PROJECT_KEY = context.user_data["project_key"]
-        self._get_additional_info_of_the_board(context)
+        task_data = context.user_data["task_data"]
+        task_data.project_key = query.data
+        self._get_additional_info_of_the_board(task_data)
         return await self.ask_for_summary(query, context)
 
-    def _get_additional_info_of_the_board(self, context):
-        if context.user_data["config"].get("epic_link", {}).get("set_field", False):
-            self.EPICS = self._get_epics(self.JIRA_PROJECT_KEY)
-        self.BOARD_ID = self._get_board_id(self.JIRA_PROJECT_KEY)
-
-    def _get_epics(self, project_key: str):
-        return [
-            epic
-            for epic in self.jira.search_issues(
-                f'project={project_key} AND issuetype=Epic AND status in ("To Do", "In Progress")',
-            )
-        ]
+    def _get_additional_info_of_the_board(self, task_data: TaskData):
+        if task_data.config.get("epic_link", {}).get("set_field", False):
+            task_data.epics = self.jira_client.get_epics(task_data.project_key)
+        task_data.board_id = self._get_board_id(task_data.project_key)
 
     def _get_board_id(self, project_key: str):
+        boards = self.jira_client.get_boards()
         return next(
-            (board.id for board in self.jira.boards() if project_key in board.name),
+            (board.id for board in boards if project_key in board.name),
             None,
         )
 
     async def ask_for_summary(self, update: Update, context: CallbackContext) -> int:
-        if update.message:
-            await update.message.reply_text("Please enter the task summary:")
-        else:
-            await update.callback_query.message.edit_text(
-                "Please enter the task summary:",
-            )
+        await self.send_message(update, "Please enter the task summary:")
         return self.SUMMARY
 
     async def add_summary(self, update: Update, context: CallbackContext) -> int:
-        summary = update.message.text.strip()
-        context.user_data["summary"] = summary
+        task_data = context.user_data["task_data"]
+        task_data.summary = update.message.text.strip()
         await update.message.reply_text(
             "Please enter the task description (or type 'skip' to skip):",
         )
         return self.DESCRIPTION
 
     async def add_description(self, update: Update, context: CallbackContext) -> int:
+        task_data = context.user_data["task_data"]
         description = update.message.text.strip()
         if description.lower() != "skip":
-            context.user_data["description"] = description
+            task_data.description = description
+        return await self.handle_component_selection(update, context)
 
-        component_config = context.user_data["config"].get("component")
+    async def handle_component_selection(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        task_data = context.user_data["task_data"]
+        component_config = task_data.config.get("component")
         if component_config and component_config.get("set_field"):
             if component_config["values"]:
                 if len(component_config["values"]) > 1:
-                    keyboard = [
-                        [InlineKeyboardButton(comp, callback_data=comp)]
-                        for comp in component_config["values"]
-                    ]
-                    keyboard.append(
-                        [InlineKeyboardButton("Skip", callback_data="skip")],
+                    keyboard = self.build_keyboard(
+                        component_config["values"],
+                        include_skip=True,
                     )
                     await update.message.reply_text(
                         "Select a component:",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        reply_markup=keyboard,
                     )
                     return self.COMPONENT
-                context.user_data["component"] = component_config["values"][0]
+                task_data.component = component_config["values"][0]
             else:
-                components = self.jira.project_components(self.JIRA_PROJECT_KEY)
+                components = self.jira_client.get_project_components(
+                    task_data.project_key,
+                )
                 if components:
-                    keyboard = [
-                        [
-                            InlineKeyboardButton(
-                                component.name,
-                                callback_data=component.name,
-                            )
-                            for component in components[i : i + 2]
-                        ]
-                        for i in range(0, len(components), 2)
-                    ]
-                    keyboard.append(
-                        [InlineKeyboardButton("Skip", callback_data="skip")],
-                    )
+                    component_names = [component.name for component in components]
+                    keyboard = self.build_keyboard(component_names, include_skip=True)
                     await update.message.reply_text(
                         "Select a component:",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        reply_markup=keyboard,
                     )
                     return self.COMPONENT
-
         return await self.ask_for_task_type(update, context)
 
     async def add_component(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
+        task_data = context.user_data["task_data"]
         if query.data != "skip":
-            context.user_data["component"] = query.data
+            task_data.component = query.data
         return await self.ask_for_task_type(query, context)
 
     async def ask_for_task_type(self, update: Update, context: CallbackContext) -> int:
-        task_type = context.user_data["config"].get("task_type")
-        if task_type and task_type["set_field"]:
-            if task_type["values"]:
-                keyboard = [
-                    [InlineKeyboardButton(t, callback_data=t)]
-                    for t in task_type["values"]
-                ]
-                keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-                await update.message.reply_text(
+        task_data = context.user_data["task_data"]
+        task_type_config = task_data.config.get("task_type")
+        if task_type_config and task_type_config["set_field"]:
+            if task_type_config["values"]:
+                keyboard = self.build_keyboard(
+                    task_type_config["values"],
+                    include_skip=True,
+                )
+                await self.send_message(
+                    update,
                     "Select a task type:",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    reply_markup=keyboard,
                 )
                 return self.TASK_TYPE
-        context.user_data["task_type"] = (
-            task_type["values"][0] if task_type and task_type["values"] else "Task"
+        task_data.task_type = (
+            task_type_config["values"][0]
+            if task_type_config and task_type_config["values"]
+            else "Task"
         )
         return await self.ask_for_story_points(update, context)
 
     async def add_task_type(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
+        task_data = context.user_data["task_data"]
         if query.data != "skip":
-            context.user_data["task_type"] = query.data
+            task_data.task_type = query.data
         return await self.ask_for_story_points(query, context)
 
     async def ask_for_story_points(
@@ -204,65 +202,51 @@ class JiraEasyTaskCreation:
         update: Update,
         context: CallbackContext,
     ) -> int:
-        keyboard = [
-            [
-                InlineKeyboardButton(str(sp), callback_data=str(sp))
-                for sp in self.STORY_POINTS_VALUES[i : i + 3]
-            ]
-            for i in range(0, len(self.STORY_POINTS_VALUES), 3)
-        ]
-        keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        if update.message:
-            await update.message.reply_text(
-                "Select story points:",
-                reply_markup=reply_markup,
-            )
-        elif update.callback_query:
-            await update.callback_query.message.edit_text(
-                "Select story points:",
-                reply_markup=reply_markup,
-            )
-
+        keyboard = self.build_keyboard(
+            [str(sp) for sp in self.STORY_POINTS_VALUES],
+            include_skip=True,
+            row_width=3,
+        )
+        await self.send_message(update, "Select story points:", reply_markup=keyboard)
         return self.STORY_POINTS
 
     async def add_story_points(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
+        task_data = context.user_data["task_data"]
         if query.data != "skip":
-            context.user_data["story_points"] = float(query.data)
+            task_data.story_points = float(query.data)
 
-        sprint_config = context.user_data["config"].get("sprint")
+        sprint_config = task_data.config.get("sprint")
         if sprint_config and sprint_config["set_field"]:
             return await self.ask_for_sprint(update, context)
-
         return await self.ask_for_epic_link(update, context)
 
     async def ask_for_sprint(self, update: Update, context: CallbackContext) -> int:
-        query = update.callback_query
-
-        if self.BOARD_ID:
-            sprints = self.jira.sprints(board_id=self.BOARD_ID)
+        task_data = context.user_data["task_data"]
+        if task_data.board_id:
+            sprints = self.jira_client.get_sprints(task_data.board_id)
             unstarted_sprints = [
                 sprint
                 for sprint in sprints
                 if sprint.state in ("future", "backlog", "active")
             ]
-
-            keyboard = [
-                [InlineKeyboardButton(sprint.name, callback_data=sprint.id)]
-                for sprint in unstarted_sprints
-            ]
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(
-                "Got it! Now choose a sprint from the list below:",
-                reply_markup=reply_markup,
-            )
-            return self.SPRINT
-
-        await update.message.reply_text(
+            if unstarted_sprints:
+                sprint_names = [sprint.name for sprint in unstarted_sprints]
+                sprint_ids = [str(sprint.id) for sprint in unstarted_sprints]
+                keyboard = self.build_keyboard(
+                    sprint_names,
+                    data=sprint_ids,
+                    include_skip=True,
+                )
+                await self.send_message(
+                    update,
+                    "Choose a sprint from the list below:",
+                    reply_markup=keyboard,
+                )
+                return self.SPRINT
+        await self.send_message(
+            update,
             "No available sprints found. Proceeding without sprint selection.",
         )
         return await self.ask_for_epic_link(update, context)
@@ -270,56 +254,56 @@ class JiraEasyTaskCreation:
     async def add_sprint(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
+        task_data = context.user_data["task_data"]
         if query.data != "skip":
-            context.user_data["sprint_id"] = query.data
+            task_data.sprint_id = int(query.data)
         return await self.ask_for_epic_link(query, context)
 
     async def ask_for_epic_link(self, update: Update, context: CallbackContext) -> int:
-        epic_config = context.user_data["config"].get("epic_link")
-        if epic_config and epic_config["set_field"] and self.EPICS:
-            keyboard = [
-                [InlineKeyboardButton(epic.key, callback_data=epic.key)]
-                for epic in self.EPICS
-            ]
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(
+        task_data = context.user_data["task_data"]
+        epic_config = task_data.config.get("epic_link")
+        if epic_config and epic_config["set_field"] and task_data.epics:
+            epic_keys = [epic.key for epic in task_data.epics]
+            keyboard = self.build_keyboard(epic_keys, include_skip=True)
+            await self.send_message(
+                update,
                 "Select an Epic Link:",
-                reply_markup=reply_markup,
+                reply_markup=keyboard,
             )
             return self.EPIC_LINK
-        else:
-            return await self.ask_for_release(update, context)
+        return await self.ask_for_release(update, context)
 
     async def add_epic_link(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
+        task_data = context.user_data["task_data"]
         if query.data != "skip":
-            context.user_data["epic_link"] = query.data
+            task_data.epic_link = query.data
         return await self.ask_for_release(query, context)
 
     async def ask_for_release(self, update: Update, context: CallbackContext) -> int:
-        release_config = context.user_data["config"].get("release")
+        task_data = context.user_data["task_data"]
+        release_config = task_data.config.get("release")
         if release_config and release_config["set_field"]:
             releases = [
                 release
-                for release in self.jira.project_versions(self.JIRA_PROJECT_KEY)
+                for release in self.jira_client.get_project_versions(
+                    task_data.project_key,
+                )
                 if not release.released
             ]
             if releases:
-                keyboard = [
-                    [InlineKeyboardButton(release.name, callback_data=release.name)]
-                    for release in releases
-                ]
-                keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text(
+                release_names = [release.name for release in releases]
+                keyboard = self.build_keyboard(release_names, include_skip=True)
+                await self.send_message(
+                    update,
                     "Select a Release:",
-                    reply_markup=reply_markup,
+                    reply_markup=keyboard,
                 )
                 return self.RELEASE
             else:
-                await update.message.reply_text(
+                await self.send_message(
+                    update,
                     "No available Releases found. Proceeding without release selection.",
                 )
         return await self.ask_for_attachment(update, context)
@@ -327,8 +311,9 @@ class JiraEasyTaskCreation:
     async def add_release(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
+        task_data = context.user_data["task_data"]
         if query.data != "skip":
-            context.user_data["release"] = query.data
+            task_data.release = query.data
         return await self.ask_for_attachment(query, context)
 
     async def ask_for_attachment(self, update: Update, context: CallbackContext) -> int:
@@ -338,169 +323,186 @@ class JiraEasyTaskCreation:
         return self.ATTACHMENT
 
     async def add_attachment(self, update: Update, context: CallbackContext) -> int:
-        # Initialize or retrieve the user's attachment storage and media group
-        attachments = context.user_data.setdefault(
-            "attachments",
-            {"images": [], "videos": [], "audio": [], "documents": []},
-        )
-        media_group_messages = context.user_data.setdefault(
-            "media_group_messages",
-            defaultdict(list),
-        )
+        task_data = context.user_data["task_data"]
+        attachments = task_data.attachments
+        media_group_messages = task_data.media_group_messages
 
-        # Handle skip command
         if update.message.text and update.message.text.lower() == "skip":
-            LOGGER.info("User chose to skip image upload.")
+            self.logger.info("User chose to skip image upload.")
             await self.finalize_task(update, context)
             return ConversationHandler.END
 
-        # Handle media group
         if update.message.media_group_id:
-            # Add the message to the user's specific media group collection
             media_group_messages[update.message.media_group_id].append(update.message)
-
-            # Wait for more media in the group, with a timeout
             await asyncio.sleep(self.media_group_timeout)
-
-            # Check if we have finished receiving media for the group
             if len(set(media_group_messages[update.message.media_group_id])) == len(
                 media_group_messages[update.message.media_group_id],
             ):
-                async with aiohttp.ClientSession() as session:
-                    for idx, media_message in enumerate(
-                        media_group_messages[update.message.media_group_id],
-                    ):
-                        photo = media_message.photo[-1]  # Highest resolution
-                        media_file = await photo.get_file()
-                        async with session.get(media_file.file_path) as response:
-                            if response.status == 200:
-                                buffer = BytesIO(await response.read())
-                                attachments["images"].append(buffer)
-                                image = Image.open(buffer)
-                                image.save(f"image_{idx}.jpg", format="JPEG")
-                            else:
-                                LOGGER.error(
-                                    f"Failed to fetch media from {media_file.file_path}",
-                                )
-                # Update user data with attachments and clear media group
-                context.user_data["attachments"] = attachments
-                del media_group_messages[update.message.media_group_id]
-
+                await self.process_media_group(
+                    media_group_messages.pop(update.message.media_group_id),
+                    attachments,
+                )
                 await update.message.reply_text(
                     "All images in the album have been received.",
                 )
-                return await self.finalize_task(
-                    update,
-                    context,
-                )  # Finalize after collection
-
-            # Continue in the same stage to collect remaining items
+                return await self.finalize_task(update, context)
             return self.ATTACHMENT
 
-        # Handle single media files (non-media group)
         elif update.message.photo or update.message.video or update.message.audio:
-            async with aiohttp.ClientSession() as session:
-                if update.message.photo:
-                    photo = sorted(
-                        update.message.photo,
-                        key=lambda x: x.file_size,
-                        reverse=True,
-                    )[0]
-                    photo_file = await photo.get_file()
-                    async with session.get(photo_file.file_path) as response:
-                        if response.status == 200:
-                            buffer = BytesIO(await response.read())
-                            attachments["images"].append(buffer)
-                            image = Image.open(buffer)
-                            image.save("single_image.jpg", format="JPEG")
-                elif update.message.video:
-                    video_file = await update.message.video.get_file()
-                    async with session.get(video_file.file_path) as response:
-                        if response.status == 200:
-                            buffer = BytesIO(await response.read())
-                            attachments["videos"].append(buffer)
-                elif update.message.audio:
-                    audio_file = await update.message.audio.get_file()
-                    async with session.get(audio_file.file_path) as response:
-                        if response.status == 200:
-                            buffer = BytesIO(await response.read())
-                            attachments["audio"].append(buffer)
-
-            context.user_data["attachments"] = attachments
+            await self.process_single_media(update.message, attachments)
             await update.message.reply_text("Single media file has been received.")
-            return await self.finalize_task(
-                update,
-                context,
-            )  # Finalize for single media
+            return await self.finalize_task(update, context)
 
     async def finalize_task(self, update: Update, context: CallbackContext) -> int:
-        config = context.user_data.get("config", {})
-        project_key = context.user_data["project_key"]
-        summary = context.user_data["summary"]
-        description = context.user_data.get("description", "No Description Provided")
-        component = context.user_data.get("component", config.get("component"))
-        task_type = context.user_data.get("task_type", config.get("task_type"))
-        story_points = context.user_data.get("story_points")
-        sprint_id = context.user_data.get("sprint_id")
-        epic_link = context.user_data.get("epic_link")
-        release = context.user_data.get("release")
-        attachment = context.user_data.get("attachments")
-
-        issue_fields = {
-            "project": {"key": project_key},
-            "summary": summary,
-            "description": description,
-            "issuetype": {"name": task_type or "Task"},
-        }
-
-        if component:
-            issue_fields["components"] = [{"name": component}]
-        if story_points is not None:
-            issue_fields[
-                "customfield_10106"
-            ] = story_points  # Replace with actual field ID for story points
-        if sprint_id:
-            issue_fields["customfield_10104"] = int(
-                sprint_id,
-            )  # Replace with actual field ID for sprint
-        if epic_link:
-            issue_fields[
-                "customfield_10105"
-            ] = epic_link  # Replace with actual field ID for epic link
-        if release:
-            issue_fields["fixVersions"] = [{"name": release}]
+        task_data = context.user_data["task_data"]
+        issue_fields = self.build_issue_fields(task_data)
 
         try:
-            new_issue = self.jira.create_issue(fields=issue_fields)
-            if attachment:
-                for key, values in attachment.items():
-                    data_type = {
-                        "images": "jpg",
-                        "videos": "mp4",
-                        "audio": "mp3",
-                        "documents": "txt",
-                    }[key]
-                    for idx, value in enumerate(values):
-                        self.jira.add_attachment(
-                            issue=new_issue,
-                            attachment=value,
-                            filename=f"{idx}.{data_type}",
-                        )
-                LOGGER.info("Attachments attached to Jira issue")
-
-            if update.message:
-                await update.message.reply_text(
-                    f"Task created successfully! Link: {new_issue.permalink()}",
-                )
-            elif update.callback_query:
-                await update.callback_query.message.edit_text(
-                    f"Task created successfully! Link: {new_issue.permalink()}",
-                )
+            new_issue = self.jira_client.create_issue(fields=issue_fields)
+            await self.handle_attachments(new_issue, task_data.attachments)
+            await self.send_message(
+                update,
+                f"Task created successfully! Link: {new_issue.permalink()}",
+            )
         except Exception as e:
             error_message = f"Failed to create task: {e}"
-            if update.message:
-                await update.message.reply_text(error_message)
-            elif update.callback_query:
-                await update.callback_query.message.edit_text(error_message)
+            await self.send_message(update, error_message)
 
         return ConversationHandler.END
+
+    def build_issue_fields(self, task_data: TaskData) -> dict:
+        issue_fields = {
+            "project": {"key": task_data.project_key},
+            "summary": task_data.summary,
+            "description": task_data.description or "No Description Provided",
+            "issuetype": {"name": task_data.task_type or "Task"},
+        }
+
+        if task_data.component:
+            issue_fields["components"] = [{"name": task_data.component}]
+        if task_data.story_points is not None:
+            issue_fields[
+                "customfield_10106"
+            ] = task_data.story_points  # Replace with actual field ID
+        if task_data.sprint_id:
+            issue_fields[
+                "customfield_10104"
+            ] = task_data.sprint_id  # Replace with actual field ID
+        if task_data.epic_link:
+            issue_fields[
+                "customfield_10105"
+            ] = task_data.epic_link  # Replace with actual field ID
+        if task_data.release:
+            issue_fields["fixVersions"] = [{"name": task_data.release}]
+
+        return issue_fields
+
+    async def process_media_group(
+        self,
+        messages: List[Any],
+        attachments: Dict[str, List[BytesIO]],
+    ):
+        async with aiohttp.ClientSession() as session:
+            for idx, media_message in enumerate(messages):
+                if media_message.photo:
+                    await self.fetch_and_store_media(
+                        media_message.photo[-1],
+                        session,
+                        attachments["images"],
+                        f"image_{idx}.jpg",
+                    )
+
+    async def process_single_media(
+        self,
+        message: Any,
+        attachments: Dict[str, List[BytesIO]],
+    ):
+        async with aiohttp.ClientSession() as session:
+            if message.photo:
+                await self.fetch_and_store_media(
+                    message.photo[-1],
+                    session,
+                    attachments["images"],
+                    "single_image.jpg",
+                )
+            elif message.video:
+                await self.fetch_and_store_media(
+                    message.video,
+                    session,
+                    attachments["videos"],
+                    "video.mp4",
+                )
+            elif message.audio:
+                await self.fetch_and_store_media(
+                    message.audio,
+                    session,
+                    attachments["audio"],
+                    "audio.mp3",
+                )
+
+    async def fetch_and_store_media(self, media, session, storage_list, filename):
+        media_file = await media.get_file()
+        async with session.get(media_file.file_path) as response:
+            if response.status == 200:
+                buffer = BytesIO(await response.read())
+                storage_list.append(buffer)
+                if "image" in filename:
+                    image = Image.open(buffer)
+                    image.save(filename, format="JPEG")
+            else:
+                self.logger.error(f"Failed to fetch media from {media_file.file_path}")
+
+    async def handle_attachments(
+        self,
+        issue: Issue,
+        attachments: Dict[str, List[BytesIO]],
+    ):
+        for media_type, files in attachments.items():
+            for idx, file_buffer in enumerate(files):
+                filename = f"{media_type}_{idx}.{self.get_file_extension(media_type)}"
+                self.jira_client.add_attachment(
+                    issue=issue,
+                    attachment=file_buffer,
+                    filename=filename,
+                )
+        self.logger.info("Attachments attached to Jira issue")
+
+    def get_file_extension(self, media_type: str) -> str:
+        return {
+            "images": "jpg",
+            "videos": "mp4",
+            "audio": "mp3",
+            "documents": "txt",
+        }.get(media_type, "bin")
+
+    def build_keyboard(
+        self,
+        options: List[str],
+        data: Optional[List[str]] = None,
+        include_skip: bool = False,
+        row_width: int = 2,
+    ) -> InlineKeyboardMarkup:
+        if not data:
+            data = options
+        keyboard = [
+            [
+                InlineKeyboardButton(option, callback_data=data[i + j])
+                for j, option in enumerate(options[i : i + row_width])
+            ]
+            for i in range(0, len(options), row_width)
+        ]
+        if include_skip:
+            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+        return InlineKeyboardMarkup(keyboard)
+
+    async def send_message(self, update: Update, text: str, reply_markup=None):
+        if update.message:
+            await update.message.reply_text(text, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.message.edit_text(
+                text,
+                reply_markup=reply_markup,
+            )
+        else:
+            LOGGER.error("other type of message in send message is not handled")
+            raise Exception("other type of message in send message is not handled")
