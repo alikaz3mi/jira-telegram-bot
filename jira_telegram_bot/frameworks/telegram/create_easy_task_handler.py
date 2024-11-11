@@ -49,17 +49,20 @@ class EasyTaskHandler(TaskHandlerInterface):
                 self.easy_task_use_case.SPRINT: [
                     CallbackQueryHandler(self.easy_task_use_case.add_sprint),
                 ],
-                self.easy_task_use_case.ATTACHMENT: [
-                    MessageHandler(
-                        filters.PHOTO | filters.Document.ALL,
-                        self.easy_task_use_case.add_attachment,
-                    ),
-                ],
                 self.easy_task_use_case.EPIC_LINK: [
                     CallbackQueryHandler(self.easy_task_use_case.add_epic_link),
                 ],
                 self.easy_task_use_case.RELEASE: [
                     CallbackQueryHandler(self.easy_task_use_case.add_release),
+                ],
+                self.easy_task_use_case.ATTACHMENT: [
+                    MessageHandler(
+                        filters.PHOTO
+                        | filters.Document.ALL
+                        | filters.AUDIO
+                        | filters.VIDEO,
+                        self.easy_task_use_case.add_attachment,
+                    ),
                 ],
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+from collections import defaultdict
+from io import BytesIO
+
+import aiohttp
 from jira import JIRA
+from PIL import Image
 from telegram import InlineKeyboardButton
 from telegram import InlineKeyboardMarkup
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.ext import ConversationHandler
-from telegram.ext import filters
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.user_config import UserConfig
@@ -32,6 +37,7 @@ class JiraEasyTaskCreation:
         self.user_config_instance = user_config_instance
         self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
         self.EPICS = None
+        self.media_group_timeout = 1.0
 
     async def start(self, update: Update, context: CallbackContext) -> int:
         if not await check_user_allowed(update):
@@ -79,7 +85,7 @@ class JiraEasyTaskCreation:
         return await self.ask_for_summary(query, context)
 
     def _get_additional_info_of_the_board(self, context):
-        if context.user_data["config"].get("epic_link")["set_field"]:
+        if context.user_data["config"].get("epic_link", {}).get("set_field", False):
             self.EPICS = self._get_epics(self.JIRA_PROJECT_KEY)
         self.BOARD_ID = self._get_board_id(self.JIRA_PROJECT_KEY)
 
@@ -269,7 +275,8 @@ class JiraEasyTaskCreation:
         return await self.ask_for_epic_link(query, context)
 
     async def ask_for_epic_link(self, update: Update, context: CallbackContext) -> int:
-        if self.EPICS:
+        epic_config = context.user_data["config"].get("epic_link")
+        if epic_config and epic_config["set_field"] and self.EPICS:
             keyboard = [
                 [InlineKeyboardButton(epic.key, callback_data=epic.key)]
                 for epic in self.EPICS
@@ -282,9 +289,6 @@ class JiraEasyTaskCreation:
             )
             return self.EPIC_LINK
         else:
-            await update.message.reply_text(
-                "No available Epics found. Proceeding without epic link selection.",
-            )
             return await self.ask_for_release(update, context)
 
     async def add_epic_link(self, update: Update, context: CallbackContext) -> int:
@@ -295,16 +299,37 @@ class JiraEasyTaskCreation:
         return await self.ask_for_release(query, context)
 
     async def ask_for_release(self, update: Update, context: CallbackContext) -> int:
-        await update.message.reply_text(
-            "Please specify the release (or type 'skip' to skip):",
-        )
-        return self.RELEASE
+        release_config = context.user_data["config"].get("release")
+        if release_config and release_config["set_field"]:
+            releases = [
+                release
+                for release in self.jira.project_versions(self.JIRA_PROJECT_KEY)
+                if not release.released
+            ]
+            if releases:
+                keyboard = [
+                    [InlineKeyboardButton(release.name, callback_data=release.name)]
+                    for release in releases
+                ]
+                keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    "Select a Release:",
+                    reply_markup=reply_markup,
+                )
+                return self.RELEASE
+            else:
+                await update.message.reply_text(
+                    "No available Releases found. Proceeding without release selection.",
+                )
+        return await self.ask_for_attachment(update, context)
 
     async def add_release(self, update: Update, context: CallbackContext) -> int:
-        release = update.message.text.strip()
-        if release.lower() != "skip":
-            context.user_data["release"] = release
-        return await self.ask_for_attachment(update, context)
+        query = update.callback_query
+        await query.answer()
+        if query.data != "skip":
+            context.user_data["release"] = query.data
+        return await self.ask_for_attachment(query, context)
 
     async def ask_for_attachment(self, update: Update, context: CallbackContext) -> int:
         await update.message.reply_text(
@@ -313,12 +338,100 @@ class JiraEasyTaskCreation:
         return self.ATTACHMENT
 
     async def add_attachment(self, update: Update, context: CallbackContext) -> int:
-        if update.message and update.message.document:
-            document = update.message.document
-            context.user_data["attachment"] = document.file_id
-        elif update.message and update.message.photo:
-            context.user_data["attachment"] = update.message.photo[-1].file_id
-        return await self.finalize_task(update, context)
+        # Initialize or retrieve the user's attachment storage and media group
+        attachments = context.user_data.setdefault(
+            "attachments",
+            {"images": [], "videos": [], "audio": [], "documents": []},
+        )
+        media_group_messages = context.user_data.setdefault(
+            "media_group_messages",
+            defaultdict(list),
+        )
+
+        # Handle skip command
+        if update.message.text and update.message.text.lower() == "skip":
+            LOGGER.info("User chose to skip image upload.")
+            await self.finalize_task(update, context)
+            return ConversationHandler.END
+
+        # Handle media group
+        if update.message.media_group_id:
+            # Add the message to the user's specific media group collection
+            media_group_messages[update.message.media_group_id].append(update.message)
+
+            # Wait for more media in the group, with a timeout
+            await asyncio.sleep(self.media_group_timeout)
+
+            # Check if we have finished receiving media for the group
+            if len(set(media_group_messages[update.message.media_group_id])) == len(
+                media_group_messages[update.message.media_group_id],
+            ):
+                async with aiohttp.ClientSession() as session:
+                    for idx, media_message in enumerate(
+                        media_group_messages[update.message.media_group_id],
+                    ):
+                        photo = media_message.photo[-1]  # Highest resolution
+                        media_file = await photo.get_file()
+                        async with session.get(media_file.file_path) as response:
+                            if response.status == 200:
+                                buffer = BytesIO(await response.read())
+                                attachments["images"].append(buffer)
+                                image = Image.open(buffer)
+                                image.save(f"image_{idx}.jpg", format="JPEG")
+                            else:
+                                LOGGER.error(
+                                    f"Failed to fetch media from {media_file.file_path}",
+                                )
+                # Update user data with attachments and clear media group
+                context.user_data["attachments"] = attachments
+                del media_group_messages[update.message.media_group_id]
+
+                await update.message.reply_text(
+                    "All images in the album have been received.",
+                )
+                return await self.finalize_task(
+                    update,
+                    context,
+                )  # Finalize after collection
+
+            # Continue in the same stage to collect remaining items
+            return self.ATTACHMENT
+
+        # Handle single media files (non-media group)
+        elif update.message.photo or update.message.video or update.message.audio:
+            async with aiohttp.ClientSession() as session:
+                if update.message.photo:
+                    photo = sorted(
+                        update.message.photo,
+                        key=lambda x: x.file_size,
+                        reverse=True,
+                    )[0]
+                    photo_file = await photo.get_file()
+                    async with session.get(photo_file.file_path) as response:
+                        if response.status == 200:
+                            buffer = BytesIO(await response.read())
+                            attachments["images"].append(buffer)
+                            image = Image.open(buffer)
+                            image.save("single_image.jpg", format="JPEG")
+                elif update.message.video:
+                    video_file = await update.message.video.get_file()
+                    async with session.get(video_file.file_path) as response:
+                        if response.status == 200:
+                            buffer = BytesIO(await response.read())
+                            attachments["videos"].append(buffer)
+                elif update.message.audio:
+                    audio_file = await update.message.audio.get_file()
+                    async with session.get(audio_file.file_path) as response:
+                        if response.status == 200:
+                            buffer = BytesIO(await response.read())
+                            attachments["audio"].append(buffer)
+
+            context.user_data["attachments"] = attachments
+            await update.message.reply_text("Single media file has been received.")
+            return await self.finalize_task(
+                update,
+                context,
+            )  # Finalize for single media
 
     async def finalize_task(self, update: Update, context: CallbackContext) -> int:
         config = context.user_data.get("config", {})
@@ -331,7 +444,7 @@ class JiraEasyTaskCreation:
         sprint_id = context.user_data.get("sprint_id")
         epic_link = context.user_data.get("epic_link")
         release = context.user_data.get("release")
-        attachment = context.user_data.get("attachment")
+        attachment = context.user_data.get("attachments")
 
         issue_fields = {
             "project": {"key": project_key},
@@ -360,9 +473,20 @@ class JiraEasyTaskCreation:
         try:
             new_issue = self.jira.create_issue(fields=issue_fields)
             if attachment:
-                file = await update.message.bot.get_file(attachment)
-                file_path = await file.download_as_bytearray()
-                self.jira.add_attachment(issue=new_issue, attachment=file_path)
+                for key, values in attachment.items():
+                    data_type = {
+                        "images": "jpg",
+                        "videos": "mp4",
+                        "audio": "mp3",
+                        "documents": "txt",
+                    }[key]
+                    for idx, value in enumerate(values):
+                        self.jira.add_attachment(
+                            issue=new_issue,
+                            attachment=value,
+                            filename=f"{idx}.{data_type}",
+                        )
+                LOGGER.info("Attachments attached to Jira issue")
 
             if update.message:
                 await update.message.reply_text(
