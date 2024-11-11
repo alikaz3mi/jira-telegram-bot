@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from io import BytesIO
 from typing import Any
 from typing import Dict
@@ -170,18 +169,21 @@ class JiraEasyTaskCreation:
     async def ask_for_task_type(self, update: Update, context: CallbackContext) -> int:
         task_data = context.user_data["task_data"]
         task_type_config = task_data.config.get("task_type")
-        if task_type_config and task_type_config["set_field"]:
-            if task_type_config["values"]:
-                keyboard = self.build_keyboard(
-                    task_type_config["values"],
-                    include_skip=True,
-                )
-                await self.send_message(
-                    update,
-                    "Select a task type:",
-                    reply_markup=keyboard,
-                )
-                return self.TASK_TYPE
+        if (
+            task_type_config
+            and task_type_config["set_field"]
+            and task_type_config["values"]
+        ):
+            keyboard = self.build_keyboard(
+                task_type_config["values"],
+                include_skip=True,
+            )
+            await self.send_message(
+                update,
+                "Select a task type:",
+                reply_markup=keyboard,
+            )
+            return self.TASK_TYPE
         task_data.task_type = (
             task_type_config["values"][0]
             if task_type_config and task_type_config["values"]
@@ -318,40 +320,59 @@ class JiraEasyTaskCreation:
 
     async def ask_for_attachment(self, update: Update, context: CallbackContext) -> int:
         await update.message.reply_text(
-            "Please upload an attachment or type 'skip' to continue.",
+            """
+            Please upload any attachments. When you are done, type 'done'.
+            If you wish to skip attachments, type 'skip'.
+            """,
         )
         return self.ATTACHMENT
 
     async def add_attachment(self, update: Update, context: CallbackContext) -> int:
         task_data = context.user_data["task_data"]
         attachments = task_data.attachments
-        media_group_messages = task_data.media_group_messages
+        media_group_messages = context.user_data.setdefault("media_group_messages", {})
 
-        if update.message.text and update.message.text.lower() == "skip":
-            self.logger.info("User chose to skip image upload.")
-            await self.finalize_task(update, context)
-            return ConversationHandler.END
+        if update.message.text:
+            if update.message.text.lower() == "skip":
+                self.logger.info("User chose to skip attachment upload.")
+                for messages in media_group_messages.values():
+                    await self.process_media_group(messages, attachments)
+                media_group_messages.clear()
+                await self.finalize_task(update, context)
+                return ConversationHandler.END
+            elif update.message.text.lower() == "done":
+                self.logger.info("User finished uploading attachments.")
+                for messages in media_group_messages.values():
+                    await self.process_media_group(messages, attachments)
+                media_group_messages.clear()
+                await self.finalize_task(update, context)
+                return ConversationHandler.END
 
         if update.message.media_group_id:
-            media_group_messages[update.message.media_group_id].append(update.message)
-            await asyncio.sleep(self.media_group_timeout)
-            if len(set(media_group_messages[update.message.media_group_id])) == len(
-                media_group_messages[update.message.media_group_id],
-            ):
-                await self.process_media_group(
-                    media_group_messages.pop(update.message.media_group_id),
-                    attachments,
-                )
-                await update.message.reply_text(
-                    "All images in the album have been received.",
-                )
-                return await self.finalize_task(update, context)
+            LOGGER.info(f"media = {update.message.media_group_id}")
+            messages = media_group_messages.setdefault(
+                update.message.media_group_id,
+                [],
+            )
+            messages.append(update.message)
             return self.ATTACHMENT
 
-        elif update.message.photo or update.message.video or update.message.audio:
+        elif (
+            update.message.photo
+            or update.message.video
+            or update.message.audio
+            or update.message.document
+        ):
             await self.process_single_media(update.message, attachments)
-            await update.message.reply_text("Single media file has been received.")
-            return await self.finalize_task(update, context)
+            await update.message.reply_text(
+                "Attachment received. You can send more, or type 'done' to finish.",
+            )
+            return self.ATTACHMENT
+        else:
+            await update.message.reply_text(
+                "Please upload an attachment or type 'done' when finished.",
+            )
+            return self.ATTACHMENT
 
     async def finalize_task(self, update: Update, context: CallbackContext) -> int:
         task_data = context.user_data["task_data"]
@@ -381,17 +402,11 @@ class JiraEasyTaskCreation:
         if task_data.component:
             issue_fields["components"] = [{"name": task_data.component}]
         if task_data.story_points is not None:
-            issue_fields[
-                "customfield_10106"
-            ] = task_data.story_points  # Replace with actual field ID
+            issue_fields["customfield_10106"] = task_data.story_points
         if task_data.sprint_id:
-            issue_fields[
-                "customfield_10104"
-            ] = task_data.sprint_id  # Replace with actual field ID
+            issue_fields["customfield_10104"] = task_data.sprint_id
         if task_data.epic_link:
-            issue_fields[
-                "customfield_10105"
-            ] = task_data.epic_link  # Replace with actual field ID
+            issue_fields["customfield_10105"] = task_data.epic_link
         if task_data.release:
             issue_fields["fixVersions"] = [{"name": task_data.release}]
 
@@ -457,6 +472,7 @@ class JiraEasyTaskCreation:
         issue: Issue,
         attachments: Dict[str, List[BytesIO]],
     ):
+        LOGGER.info(f"Attachments = {attachments}")
         for media_type, files in attachments.items():
             for idx, file_buffer in enumerate(files):
                 filename = f"{media_type}_{idx}.{self.get_file_extension(media_type)}"

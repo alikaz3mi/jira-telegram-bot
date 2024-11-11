@@ -63,6 +63,10 @@ class EasyTaskHandler(TaskHandlerInterface):
                         | filters.VIDEO,
                         self.easy_task_use_case.add_attachment,
                     ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self.easy_task_use_case.add_attachment,
+                    ),
                 ],
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],
