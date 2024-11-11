@@ -19,13 +19,11 @@ class TaskCreationHandler(TaskHandlerInterface):
     def get_handler(self):
         return ConversationHandler(
             entry_points=[
-                CommandHandler("start", self.task_creation_use_case.select_project),
+                CommandHandler("create_task", self.task_creation_use_case.start),
             ],
             states={
                 self.task_creation_use_case.PROJECT: [
-                    CallbackQueryHandler(
-                        self.task_creation_use_case.select_project_callback,
-                    ),
+                    CallbackQueryHandler(self.task_creation_use_case.select_project),
                 ],
                 self.task_creation_use_case.SUMMARY: [
                     MessageHandler(
@@ -40,10 +38,10 @@ class TaskCreationHandler(TaskHandlerInterface):
                     ),
                 ],
                 self.task_creation_use_case.COMPONENT: [
-                    CallbackQueryHandler(self.task_creation_use_case.button_component),
+                    CallbackQueryHandler(self.task_creation_use_case.add_component),
                 ],
                 self.task_creation_use_case.ASSIGNEE: [
-                    CallbackQueryHandler(self.task_creation_use_case.button_assignee),
+                    CallbackQueryHandler(self.task_creation_use_case.add_assignee),
                 ],
                 self.task_creation_use_case.ASSIGNEE_SEARCH: [
                     MessageHandler(
@@ -57,33 +55,31 @@ class TaskCreationHandler(TaskHandlerInterface):
                     ),
                 ],
                 self.task_creation_use_case.PRIORITY: [
-                    CallbackQueryHandler(
-                        self.task_creation_use_case.button_priority_callback,
-                    ),
+                    CallbackQueryHandler(self.task_creation_use_case.add_priority),
                 ],
                 self.task_creation_use_case.SPRINT: [
-                    CallbackQueryHandler(self.task_creation_use_case.button_sprint),
+                    CallbackQueryHandler(self.task_creation_use_case.add_sprint),
                 ],
                 self.task_creation_use_case.EPIC: [
-                    CallbackQueryHandler(self.task_creation_use_case.button_epic),
+                    CallbackQueryHandler(self.task_creation_use_case.add_epic),
+                ],
+                self.task_creation_use_case.RELEASE: [
+                    CallbackQueryHandler(self.task_creation_use_case.add_release),
                 ],
                 self.task_creation_use_case.TASK_TYPE: [
-                    CallbackQueryHandler(self.task_creation_use_case.button_task_type),
-                ],
-                self.task_creation_use_case.STORY_SELECTION: [
-                    CallbackQueryHandler(
-                        self.task_creation_use_case.button_story_selection,
-                    ),
+                    CallbackQueryHandler(self.task_creation_use_case.add_task_type),
                 ],
                 self.task_creation_use_case.STORY_POINTS: [
-                    CallbackQueryHandler(
-                        self.task_creation_use_case.button_story_points,
-                    ),
+                    CallbackQueryHandler(self.task_creation_use_case.add_story_points),
                 ],
-                self.task_creation_use_case.IMAGE: [
+                self.task_creation_use_case.ATTACHMENT: [
                     MessageHandler(
-                        filters.PHOTO | (filters.TEXT & ~filters.COMMAND),
-                        self.task_creation_use_case.handle_image,
+                        filters.PHOTO
+                        | filters.Document.ALL
+                        | filters.AUDIO
+                        | filters.VIDEO
+                        | (filters.TEXT & ~filters.COMMAND),
+                        self.task_creation_use_case.add_attachment,
                     ),
                 ],
             },
@@ -91,6 +87,5 @@ class TaskCreationHandler(TaskHandlerInterface):
         )
 
     async def cancel(self, update, context):
-        """Handles the cancel command to exit the task creation process."""
         await update.message.reply_text("Task creation process cancelled.")
         return ConversationHandler.END
