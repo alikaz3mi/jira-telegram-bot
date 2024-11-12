@@ -477,7 +477,7 @@ class JiraTaskCreation:
         await query.edit_message_text(
             """Got it! Now you can send attachments (images, videos, documents).
             When you're done, type 'done' or 'skip' to skip attachments.
-            """
+            """,
         )
         return self.ATTACHMENT
 
