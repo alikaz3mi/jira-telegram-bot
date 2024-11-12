@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import unittest
 from io import BytesIO
-from typing import Dict
-from typing import List
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -15,7 +12,6 @@ from telegram import Message
 from telegram import Update
 from telegram import User
 from telegram.ext import CallbackContext
-from telegram.ext import ConversationHandler
 
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.entities.task import TaskData
@@ -57,6 +53,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
             permalink=lambda: "http://jira.example.com/browse/ISSUE-1",
         )
         self.jira_client.add_attachment = MagicMock()
+        self.user_allowed = AsyncMock(True)
 
         # Mock the user config
         self.user_config_instance = MagicMock(spec=UserConfig)
@@ -103,7 +100,9 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         self.context = MagicMock(spec=CallbackContext)
         self.context.user_data = {}
 
-    async def test_start_with_user_config_project(self):
+    @patch('jira_telegram_bot.use_cases.create_easy_task.check_user_allowed', new_callable=AsyncMock)
+    async def test_start_with_user_config_project(self, mock_check_user_allowed):
+        mock_check_user_allowed.return_value = True
         # Test the start method when user_config provides a project
         await self.task_creation.start(self.update, self.context)
         # Should proceed to ask for summary
@@ -112,9 +111,11 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
             task_data.project_key,
             "PA",
         )
-        self.message.reply_text.assert_called_with("Please enter the task summary:")
+        self.message.reply_text.assert_called_with("Please enter the task summary:", reply_markup=None)
 
-    async def test_start_without_user_config_project(self):
+    @patch('jira_telegram_bot.use_cases.create_easy_task.check_user_allowed', new_callable=AsyncMock)
+    async def test_start_without_user_config_project(self, mock_check_user_allowed):
+        mock_check_user_allowed.return_value = True
         # Modify user_config to not provide a project
         self.user_config_instance.get_user_config.return_value.project.values = []
         self.user_config_dict = (
@@ -126,8 +127,10 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
             "Please select a project:",
             reply_markup=InlineKeyboardMarkup(
                 [
-                    [InlineKeyboardButton("Project A", callback_data="PA")],
-                    [InlineKeyboardButton("Project B", callback_data="PB")],
+                    [
+                        InlineKeyboardButton(text="", callback_data="PA"),
+                        InlineKeyboardButton(text="", callback_data="PB"),
+                    ],
                 ],
             ),
         )

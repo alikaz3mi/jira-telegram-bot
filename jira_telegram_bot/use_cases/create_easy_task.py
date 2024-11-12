@@ -39,10 +39,10 @@ class JiraEasyTaskCreation:
     ) = range(10)
 
     def __init__(
-        self,
-        jira_client: TaskManagerRepositoryInterface,
-        user_config_instance: UserConfig,
-        logger=LOGGER,
+            self,
+            jira_client: TaskManagerRepositoryInterface,
+            user_config_instance: UserConfig,
+            logger=LOGGER,
     ):
         self.jira_client = jira_client
         self.user_config_instance = user_config_instance
@@ -125,9 +125,9 @@ class JiraEasyTaskCreation:
         return await self.handle_component_selection(update, context)
 
     async def handle_component_selection(
-        self,
-        update: Update,
-        context: CallbackContext,
+            self,
+            update: Update,
+            context: CallbackContext,
     ) -> int:
         task_data = context.user_data["task_data"]
         component_config = task_data.config.get("component")
@@ -170,9 +170,9 @@ class JiraEasyTaskCreation:
         task_data = context.user_data["task_data"]
         task_type_config = task_data.config.get("task_type")
         if (
-            task_type_config
-            and task_type_config["set_field"]
-            and task_type_config["values"]
+                task_type_config
+                and task_type_config["set_field"]
+                and task_type_config["values"]
         ):
             keyboard = self.build_keyboard(
                 task_type_config["values"],
@@ -200,9 +200,9 @@ class JiraEasyTaskCreation:
         return await self.ask_for_story_points(query, context)
 
     async def ask_for_story_points(
-        self,
-        update: Update,
-        context: CallbackContext,
+            self,
+            update: Update,
+            context: CallbackContext,
     ) -> int:
         keyboard = self.build_keyboard(
             [str(sp) for sp in self.STORY_POINTS_VALUES],
@@ -358,10 +358,10 @@ class JiraEasyTaskCreation:
             return self.ATTACHMENT
 
         elif (
-            update.message.photo
-            or update.message.video
-            or update.message.audio
-            or update.message.document
+                update.message.photo
+                or update.message.video
+                or update.message.audio
+                or update.message.document
         ):
             await self.process_single_media(update.message, attachments)
             await update.message.reply_text(
@@ -413,9 +413,9 @@ class JiraEasyTaskCreation:
         return issue_fields
 
     async def process_media_group(
-        self,
-        messages: List[Any],
-        attachments: Dict[str, List[BytesIO]],
+            self,
+            messages: List[Any],
+            attachments: Dict[str, List[BytesIO]],
     ):
         async with aiohttp.ClientSession() as session:
             for idx, media_message in enumerate(messages):
@@ -428,9 +428,9 @@ class JiraEasyTaskCreation:
                     )
 
     async def process_single_media(
-        self,
-        message: Any,
-        attachments: Dict[str, List[BytesIO]],
+            self,
+            message: Any,
+            attachments: Dict[str, List[BytesIO]],
     ):
         async with aiohttp.ClientSession() as session:
             if message.photo:
@@ -468,9 +468,9 @@ class JiraEasyTaskCreation:
                 self.logger.error(f"Failed to fetch media from {media_file.file_path}")
 
     async def handle_attachments(
-        self,
-        issue: Issue,
-        attachments: Dict[str, List[BytesIO]],
+            self,
+            issue: Issue,
+            attachments: Dict[str, List[BytesIO]],
     ):
         LOGGER.info(f"Attachments = {attachments}")
         for media_type, files in attachments.items():
@@ -492,18 +492,18 @@ class JiraEasyTaskCreation:
         }.get(media_type, "bin")
 
     def build_keyboard(
-        self,
-        options: List[str],
-        data: Optional[List[str]] = None,
-        include_skip: bool = False,
-        row_width: int = 2,
+            self,
+            options: List[str],
+            data: Optional[List[str]] = None,
+            include_skip: bool = False,
+            row_width: int = 2,
     ) -> InlineKeyboardMarkup:
         if not data:
             data = options
         keyboard = [
             [
-                InlineKeyboardButton(option, callback_data=data[i + j])
-                for j, option in enumerate(options[i : i + row_width])
+                InlineKeyboardButton(text=option, callback_data=data[i + j])
+                for j, option in enumerate(options[i: i + row_width])
             ]
             for i in range(0, len(options), row_width)
         ]

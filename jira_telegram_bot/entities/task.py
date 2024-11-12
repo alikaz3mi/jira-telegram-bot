@@ -32,6 +32,7 @@ class TaskData(BaseModel):
             "documents": [],
         },
     )
+    config: Dict[str, Any] | None = Field(default=None)
     epics: List[Issue] = Field(default_factory=list)
     board_id: Optional[int] = Field(default=None)
     sprints: List[Any] = Field(default_factory=list)
