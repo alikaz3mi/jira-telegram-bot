@@ -14,11 +14,13 @@ from telegram import User
 from telegram.ext import CallbackContext
 
 from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.entities.field_config import FieldConfig
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.use_cases.create_easy_task import JiraEasyTaskCreation
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
+from jira_telegram_bot import DEFAULT_PATH
 
 
 class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
@@ -130,9 +132,9 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
                     [
                         InlineKeyboardButton(text="", callback_data="PA"),
                         InlineKeyboardButton(text="", callback_data="PB"),
-                    ],
-                ],
-            ),
+                    ]
+                ]
+            )
         )
 
     async def test_add_project(self):
@@ -140,6 +142,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query = MagicMock()
         query.data = "PA"
         query.answer = AsyncMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.callback_query = query
         self.context.user_data["task_data"] = TaskData()
@@ -154,6 +157,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         # Simulate user entering a summary
         self.context.user_data["task_data"] = TaskData()
         self.context.user_data["task_data"].config = self.user_config_dict
+        self.context.user_data["task_data"].project_key = "PA"  # Ensure project_key is set
         self.update.message.text = "This is a test summary."
         await self.task_creation.add_summary(self.update, self.context)
 
@@ -169,6 +173,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         # Simulate user entering a description
         self.context.user_data["task_data"] = TaskData()
         self.context.user_data["task_data"].config = self.user_config_dict
+        self.context.user_data["task_data"].project_key = "PA"  # Ensure project_key is set
         self.update.message.text = "This is a test description."
         await self.task_creation.add_description(self.update, self.context)
 
@@ -201,9 +206,10 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query = MagicMock()
         query.data = "Component X"
         query.answer = AsyncMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.callback_query = query
-        self.context.user_data["task_data"] = TaskData()
+        self.context.user_data["task_data"] = TaskData(task_types)
         self.context.user_data["task_data"].config = self.user_config_dict
 
         await self.task_creation.add_component(self.update, self.context)
@@ -217,12 +223,12 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
             reply_markup=InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton("Bug", callback_data="Bug"),
-                        InlineKeyboardButton("Task", callback_data="Task"),
+                        InlineKeyboardButton("", callback_data="Bug"),
+                        InlineKeyboardButton("", callback_data="Task"),
                     ],
-                    [InlineKeyboardButton("Skip", callback_data="skip")],
+                    [InlineKeyboardButton("", callback_data="skip")],
                 ],
-            ),
+            )
         )
 
     async def test_add_task_type(self):
@@ -230,6 +236,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query = MagicMock()
         query.data = "Bug"
         query.answer = AsyncMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.callback_query = query
         self.context.user_data["task_data"] = TaskData()
@@ -270,6 +277,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query = MagicMock()
         query.data = "5"
         query.answer = AsyncMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.callback_query = query
         self.context.user_data["task_data"] = TaskData()
@@ -301,6 +309,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query = MagicMock()
         query.data = "101"
         query.answer = AsyncMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.callback_query = query
         self.context.user_data["task_data"] = TaskData()
@@ -335,6 +344,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query = MagicMock()
         query.data = "EPIC-1"
         query.answer = AsyncMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.callback_query = query
         self.context.user_data["task_data"] = TaskData()
@@ -374,6 +384,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query = MagicMock()
         query.data = "Version 1.0"
         query.answer = AsyncMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         query.message.reply_text = AsyncMock()
         self.update.callback_query = query
@@ -432,10 +443,14 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         with patch("aiohttp.ClientSession.get") as mock_get:
             mock_response = AsyncMock()
             mock_response.status = 200
-            mock_response.read = AsyncMock(return_value=b"fake image data")
+            # Provide valid image data
+            with open(f'{DEFAULT_PATH}/tests/samples/test_image.png', "rb") as f:
+                valid_image_data = f.read()
+            mock_response.read = AsyncMock(return_value=valid_image_data)
             mock_get.return_value.__aenter__.return_value = mock_response
 
-            await self.task_creation.add_attachment(self.update, self.context)
+            with patch('PIL.Image.open', return_value=MagicMock()):
+                await self.task_creation.add_attachment(self.update, self.context)
 
         self.assertEqual(
             len(self.context.user_data["task_data"].attachments["images"]),
@@ -496,6 +511,7 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
     async def test_send_message_with_callback_query(self):
         # Test send_message when update.callback_query exists
         query = MagicMock()
+        query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.message = None
         self.update.callback_query = query
