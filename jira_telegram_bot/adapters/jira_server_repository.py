@@ -23,7 +23,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
 
     def get_epics(self, project_key: str):
         return self.jira.search_issues(
-            f'project={project_key} AND issuetype=Epic AND status in ("To Do", "In Progress")',
+            f'project={project_key} AND issuetype=Epic AND status in ("Backlog", "To Do", "In Progress")',
         )
 
     def get_boards(self):
