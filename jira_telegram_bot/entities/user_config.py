@@ -16,3 +16,4 @@ class UserConfig(BaseModel):
     epic_link: FieldConfig
     release: FieldConfig
     sprint: FieldConfig
+    assignee: FieldConfig

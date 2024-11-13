@@ -76,10 +76,26 @@ class JiraEasyTaskCreation:
 
     async def ask_for_project(self, update: Update, context: CallbackContext) -> int:
         projects = self.jira_client.get_projects()
-        keyboard = self.build_keyboard(
-            [project.name for project in projects],
-            data=[project.key for project in projects],
-        )
+        if len(context.user_data["task_data"].config["project"]["values"]) > 1:
+            project_filter = context.user_data["task_data"].config["project"]["values"]
+            keyboard = self.build_keyboard(
+                [
+                    project.name
+                    for project in projects
+                    if project.name in project_filter
+                ],
+                data=[
+                    project.key
+                    for project in projects
+                    if project.name in project_filter
+                ],
+            )
+        else:
+            keyboard = self.build_keyboard(
+                [project.name for project in projects],
+                data=[project.key for project in projects],
+            )
+
         await self.send_message(
             update,
             "Please select a project:",
@@ -158,7 +174,7 @@ class JiraEasyTaskCreation:
                         reply_markup=keyboard,
                     )
                     return self.COMPONENT
-        return await self.ask_for_task_type(update, context)
+        return await self.ask_for_issue_type(update, context)
 
     async def add_component(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
@@ -166,9 +182,9 @@ class JiraEasyTaskCreation:
         task_data = context.user_data["task_data"]
         if query.data != "skip":
             task_data.component = query.data
-        return await self.ask_for_task_type(query, context)
+        return await self.ask_for_issue_type(query, context)
 
-    async def ask_for_task_type(self, update: Update, context: CallbackContext) -> int:
+    async def ask_for_issue_type(self, update: Update, context: CallbackContext) -> int:
         task_data = context.user_data["task_data"]
         task_type_config = task_data.config.get("task_type")
         if task_type_config and task_type_config["set_field"]:
@@ -176,9 +192,10 @@ class JiraEasyTaskCreation:
                 task_data.task_type = task_type_config["values"]
             elif task_type_config["values"] and len(task_type_config["values"]) == 1:
                 task_data.task_type = task_type_config["values"][0]
+                return await self.ask_for_story_points(update, context)
             else:
                 # TODO: replace jira with its function
-                task_data.task_types = [
+                task_data.task_type = [
                     z.name
                     for z in self.jira_client.jira.issue_types_for_project(
                         task_data.project_key,
@@ -187,6 +204,7 @@ class JiraEasyTaskCreation:
             keyboard = self.build_keyboard(
                 task_data.task_type,
                 include_skip=True,
+                row_width=4,
             )
             await self.send_message(
                 update,
@@ -270,8 +288,14 @@ class JiraEasyTaskCreation:
         task_data = context.user_data["task_data"]
         epic_config = task_data.config.get("epic_link")
         if epic_config and epic_config["set_field"] and task_data.epics:
-            epic_keys = [epic.fields.summary for epic in task_data.epics]
-            keyboard = self.build_keyboard(epic_keys, include_skip=True)
+            epic_summaries = [epic.fields.summary for epic in task_data.epics]
+            epic_keys = [epic.key for epic in task_data.epics]
+            keyboard = self.build_keyboard(
+                options=epic_summaries,
+                data=epic_keys,
+                include_skip=True,
+                row_width=3,
+            )
             await self.send_message(
                 update,
                 "Select an Epic Link:",
@@ -331,7 +355,7 @@ class JiraEasyTaskCreation:
                 update,
                 """
                 Please upload any attachments. When you are done, type 'done'.
-                If you wish to skip attachments, type 'skip'.
+            If you wish to skip attachments, type 'skip'.
                 """,
             )
             return self.ATTACHMENT
@@ -418,7 +442,7 @@ class JiraEasyTaskCreation:
         if task_data.sprint_id:
             issue_fields["customfield_10104"] = task_data.sprint_id
         if task_data.epic_link:
-            issue_fields["customfield_10105"] = task_data.epic_link
+            issue_fields["customfield_10100"] = task_data.epic_link
         if task_data.release:
             issue_fields["fixVersions"] = [{"name": task_data.release}]
 
