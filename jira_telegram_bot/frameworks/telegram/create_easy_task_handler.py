@@ -46,6 +46,20 @@ class EasyTaskHandler(TaskHandlerInterface):
                 self.easy_task_use_case.STORY_POINTS: [
                     CallbackQueryHandler(self.easy_task_use_case.add_story_points),
                 ],
+                self.easy_task_use_case.ASSIGNEE: [
+                    CallbackQueryHandler(self.easy_task_use_case.add_assignee),
+                ],
+                self.easy_task_use_case.ASSIGNEE_SEARCH: [
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self.easy_task_use_case.search_assignee,
+                    ),
+                ],
+                self.easy_task_use_case.ASSIGNEE_RESULT: [
+                    CallbackQueryHandler(
+                        self.easy_task_use_case.select_assignee_from_search,
+                    ),
+                ],
                 self.easy_task_use_case.SPRINT: [
                     CallbackQueryHandler(self.easy_task_use_case.add_sprint),
                 ],

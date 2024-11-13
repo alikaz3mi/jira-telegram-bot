@@ -4,11 +4,8 @@ from io import BytesIO
 from typing import Any
 from typing import Dict
 from typing import List
-from typing import Optional
 
 import aiohttp
-from jira import Issue
-from jira import JIRA
 from telegram import InlineKeyboardButton
 from telegram import InlineKeyboardMarkup
 from telegram import Update
@@ -19,6 +16,9 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.use_cases.authentication import check_user_allowed
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+    TaskManagerRepositoryInterface,
+)
 
 
 class JiraTaskCreation:
@@ -39,8 +39,8 @@ class JiraTaskCreation:
         ASSIGNEE_RESULT,
     ) = range(14)
 
-    def __init__(self, jira_client: JIRA):
-        self.jira_client = jira_client
+    def __init__(self, jira_repository: TaskManagerRepositoryInterface):
+        self.jira_repository = jira_repository
         self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
         self.media_group_timeout = 1.0
 
@@ -52,7 +52,7 @@ class JiraTaskCreation:
         task_data = TaskData()
         context.user_data["task_data"] = task_data
 
-        projects = self.jira_client.projects()
+        projects = self.jira_repository.get_projects()
         keyboard = [
             [
                 InlineKeyboardButton(project.name, callback_data=project.key)
@@ -78,34 +78,19 @@ class JiraTaskCreation:
 
         LOGGER.info("Project selected: %s", project_key)
 
-        task_data.epics = self._get_epics(project_key)
-        task_data.board_id = self._get_board_id(project_key)
+        task_data.epics = self.jira_repository.get_epics(project_key)
+        task_data.board_id = self.jira_repository.get_board_id(project_key)
         task_data.sprints = (
-            self.jira_client.sprints(board_id=task_data.board_id)
+            self.jira_repository.get_sprints(task_data.board_id)
             if task_data.board_id
             else []
         )
-        task_data.task_types = [
-            z.name for z in self.jira_client.issue_types_for_project(project_key)
-        ]
+        task_data.task_types = self.jira_repository.get_issue_types_for_project(
+            project_key,
+        )
 
         await query.edit_message_text("Please enter the task summary:")
         return self.SUMMARY
-
-    def _get_epics(self, project_key: str) -> List[Issue]:
-        return self.jira_client.search_issues(
-            f'project="{project_key}" AND issuetype=Epic AND status in ("To Do", "In Progress")',
-        )
-
-    def _get_board_id(self, project_key: str) -> Optional[int]:
-        return next(
-            (
-                board.id
-                for board in self.jira_client.boards()
-                if project_key in board.name
-            ),
-            None,
-        )
 
     async def add_summary(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
@@ -123,7 +108,7 @@ class JiraTaskCreation:
         if description.lower() != "skip":
             task_data.description = description
 
-        components = self.jira_client.project_components(task_data.project_key)
+        components = self.jira_repository.get_project_components(task_data.project_key)
         if components:
             keyboard = [
                 [
@@ -160,7 +145,7 @@ class JiraTaskCreation:
 
     async def ask_assignee(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
-        assignees = self._get_assignees(task_data.project_key)
+        assignees = self.jira_repository.get_assignees(task_data.project_key)
 
         if assignees:
             keyboard = [
@@ -185,21 +170,6 @@ class JiraTaskCreation:
             )
             return await self.ask_priority(update, context)
 
-    def _get_assignees(self, project_key: str) -> List[str]:
-        try:
-            assignees = set()
-            recent_issues = self.jira_client.search_issues(
-                f"project = {project_key} AND createdDate > startOfMonth(-1)",
-            )
-            for issue in recent_issues:
-                if issue.fields.assignee:
-                    assignees.add(issue.fields.assignee.name)
-
-            return sorted(assignees) if assignees else []
-        except Exception as e:
-            LOGGER.error(f"Error fetching assignees for project {project_key}: {e}")
-            return []
-
     async def add_assignee(self, update: Update, context: CallbackContext) -> int:
         query = update.callback_query
         await query.answer()
@@ -219,7 +189,7 @@ class JiraTaskCreation:
 
     async def search_assignee(self, update: Update, context: CallbackContext) -> int:
         username_query = update.message.text.strip()
-        matching_users = self._get_user(username_query)
+        matching_users = self.jira_repository.search_users(username_query)
 
         if matching_users:
             keyboard = [
@@ -243,10 +213,6 @@ class JiraTaskCreation:
             )
             return self.ASSIGNEE_SEARCH
 
-    def _get_user(self, username: str) -> List[str]:
-        users = self.jira_client.search_users(username, maxResults=50)
-        return [user.name for user in users]
-
     async def select_assignee_from_search(
         self,
         update: Update,
@@ -269,7 +235,7 @@ class JiraTaskCreation:
             return await self.ask_priority(query, context)
 
     async def ask_priority(self, update: Update, context: CallbackContext) -> int:
-        priorities = self.jira_client.priorities()
+        priorities = self.jira_repository.get_priorities()
         keyboard = [
             [
                 InlineKeyboardButton(priority.name, callback_data=priority.name)
@@ -344,10 +310,7 @@ class JiraTaskCreation:
         if task_data.epics:
             keyboard = [
                 [
-                    InlineKeyboardButton(
-                        epic.fields.summary,
-                        callback_data=epic.key,
-                    )
+                    InlineKeyboardButton(epic.fields.summary, callback_data=epic.key)
                     for epic in task_data.epics[i : i + 2]
                 ]
                 for i in range(0, len(task_data.epics), 2)
@@ -383,7 +346,9 @@ class JiraTaskCreation:
         task_data: TaskData = context.user_data["task_data"]
         releases = [
             version
-            for version in self.jira_client.project_versions(task_data.project_key)
+            for version in self.jira_repository.get_project_versions(
+                task_data.project_key,
+            )
             if not version.released
         ]
 
@@ -476,8 +441,8 @@ class JiraTaskCreation:
 
         await query.edit_message_text(
             """Got it! Now you can send attachments (images, videos, documents).
-            When you're done, type 'done' or 'skip' to skip attachments.
-            """,
+When you're done, type 'done' or 'skip' to skip attachments.
+""",
         )
         return self.ATTACHMENT
 
@@ -618,11 +583,8 @@ class JiraTaskCreation:
 
     async def finalize_task(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
-        issue_fields = self.build_issue_fields(task_data)
-
         try:
-            new_issue = self.jira_client.create_issue(fields=issue_fields)
-            await self.handle_attachments(new_issue, task_data.attachments)
+            new_issue = self.jira_repository.create_task(task_data)
             await update.message.reply_text(
                 f"Task created successfully! Link: {JIRA_SETTINGS.domain}/browse/{new_issue.key}",
             )
@@ -631,48 +593,3 @@ class JiraTaskCreation:
             await update.message.reply_text(error_message)
 
         return ConversationHandler.END
-
-    def build_issue_fields(self, task_data: TaskData) -> dict:
-        issue_fields = {
-            "project": {"key": task_data.project_key},
-            "summary": task_data.summary,
-            "description": task_data.description or "No Description Provided",
-            "issuetype": {"name": task_data.task_type or "Task"},
-        }
-
-        if task_data.component:
-            issue_fields["components"] = [{"name": task_data.component}]
-        if task_data.story_points is not None:
-            issue_fields[
-                "customfield_10106"
-            ] = task_data.story_points  # Adjust custom field ID
-        if task_data.sprint_id:
-            issue_fields[
-                "customfield_10104"
-            ] = task_data.sprint_id  # Adjust custom field ID
-        if task_data.epic_link:
-            issue_fields[
-                "customfield_10100"
-            ] = task_data.epic_link  # Adjust custom field ID
-        if task_data.release:
-            issue_fields["fixVersions"] = [{"name": task_data.release}]
-        if task_data.assignee:
-            issue_fields["assignee"] = {"name": task_data.assignee}
-        if task_data.priority:
-            issue_fields["priority"] = {"name": task_data.priority}
-
-        return issue_fields
-
-    async def handle_attachments(
-        self,
-        issue: Issue,
-        attachments: Dict[str, List],
-    ):
-        for media_type, files in attachments.items():
-            for filename, file_buffer in files:
-                self.jira_client.add_attachment(
-                    issue=issue,
-                    attachment=file_buffer,
-                    filename=filename,
-                )
-        LOGGER.info("Attachments attached to Jira issue")

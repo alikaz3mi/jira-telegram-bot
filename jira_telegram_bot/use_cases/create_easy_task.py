@@ -7,8 +7,6 @@ from typing import List
 from typing import Optional
 
 import aiohttp
-from jira import Issue
-from PIL import Image
 from telegram import InlineKeyboardButton
 from telegram import InlineKeyboardMarkup
 from telegram import Update
@@ -32,11 +30,14 @@ class JiraEasyTaskCreation:
         COMPONENT,
         TASK_TYPE,
         STORY_POINTS,
+        ASSIGNEE,
+        ASSIGNEE_SEARCH,
+        ASSIGNEE_RESULT,
         SPRINT,
         ATTACHMENT,
         EPIC_LINK,
         RELEASE,
-    ) = range(10)
+    ) = range(13)
 
     def __init__(
         self,
@@ -48,7 +49,6 @@ class JiraEasyTaskCreation:
         self.user_config_instance = user_config_instance
         self.logger = logger
         self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
-        self.media_group_timeout = 1.0
 
     async def start(self, update: Update, context: CallbackContext) -> int:
         if not await check_user_allowed(update):
@@ -72,12 +72,15 @@ class JiraEasyTaskCreation:
         if not task_data.project_key:
             return await self.ask_for_project(update, context)
         else:
+            self._get_additional_info_of_the_board(task_data)
             return await self.ask_for_summary(update, context)
 
     async def ask_for_project(self, update: Update, context: CallbackContext) -> int:
         projects = self.jira_client.get_projects()
-        if len(context.user_data["task_data"].config["project"]["values"]) > 1:
-            project_filter = context.user_data["task_data"].config["project"]["values"]
+        user_data = context.user_data["task_data"].config
+
+        if user_data["project"]["values"] and len(user_data["project"]["values"]) > 1:
+            project_filter = user_data["project"]["values"]
             keyboard = self.build_keyboard(
                 [
                     project.name
@@ -114,14 +117,7 @@ class JiraEasyTaskCreation:
     def _get_additional_info_of_the_board(self, task_data: TaskData):
         if task_data.config.get("epic_link", {}).get("set_field", False):
             task_data.epics = self.jira_client.get_epics(task_data.project_key)
-        task_data.board_id = self._get_board_id(task_data.project_key)
-
-    def _get_board_id(self, project_key: str):
-        boards = self.jira_client.get_boards()
-        return next(
-            (board.id for board in boards if project_key in board.name),
-            None,
-        )
+        task_data.board_id = self.jira_client.get_board_id(task_data.project_key)
 
     async def ask_for_summary(self, update: Update, context: CallbackContext) -> int:
         await self.send_message(update, "Please enter the task summary:")
@@ -194,13 +190,9 @@ class JiraEasyTaskCreation:
                 task_data.task_type = task_type_config["values"][0]
                 return await self.ask_for_story_points(update, context)
             else:
-                # TODO: replace jira with its function
-                task_data.task_type = [
-                    z.name
-                    for z in self.jira_client.jira.issue_types_for_project(
-                        task_data.project_key,
-                    )
-                ]
+                task_data.task_type = self.jira_client.get_issue_types_for_project(
+                    task_data.project_key,
+                )
             keyboard = self.build_keyboard(
                 task_data.task_type,
                 include_skip=True,
@@ -242,10 +234,137 @@ class JiraEasyTaskCreation:
         if query.data != "skip":
             task_data.story_points = float(query.data)
 
+        assignee_config = task_data.config.get("assignee")
+        if assignee_config and assignee_config["set_field"]:
+            return await self.ask_for_assignee(update, context)
+        else:
+            task_data.assignee = None
+            sprint_config = task_data.config.get("sprint")
+            if sprint_config and sprint_config["set_field"]:
+                return await self.ask_for_sprint(update, context)
+            return await self.ask_for_epic_link(update, context)
+
+    async def ask_for_assignee(self, update: Update, context: CallbackContext) -> int:
+        task_data = context.user_data["task_data"]
+        assignee_config = task_data.config.get("assignee")
+
+        if assignee_config["values"]:
+            if len(assignee_config["values"]) > 1:
+                keyboard = self.build_keyboard(
+                    assignee_config["values"],
+                    include_skip=True,
+                )
+                await self.send_message(
+                    update,
+                    "Select an assignee:",
+                    reply_markup=keyboard,
+                )
+                return self.ASSIGNEE
+            else:
+                task_data.assignee = assignee_config["values"][0]
+                sprint_config = task_data.config.get("sprint")
+                if sprint_config and sprint_config["set_field"]:
+                    return await self.ask_for_sprint(update, context)
+                return await self.ask_for_epic_link(update, context)
+        else:
+            assignees = self.jira_client.get_assignees(task_data.project_key)
+            if assignees:
+                keyboard = [
+                    [
+                        InlineKeyboardButton(assignee, callback_data=assignee)
+                        for assignee in assignees[i : i + 2]
+                    ]
+                    for i in range(0, len(assignees), 2)
+                ]
+                keyboard.append(
+                    [InlineKeyboardButton("Others", callback_data="others")],
+                )
+                keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await self.send_message(
+                    update,
+                    "Choose an assignee from the list below:",
+                    reply_markup=reply_markup,
+                )
+                return self.ASSIGNEE
+            else:
+                await self.send_message(
+                    update,
+                    "No assignees found. Proceeding to the next step.",
+                )
+                sprint_config = task_data.config.get("sprint")
+                if sprint_config and sprint_config["set_field"]:
+                    return await self.ask_for_sprint(update, context)
+                return await self.ask_for_epic_link(update, context)
+
+    async def add_assignee(self, update: Update, context: CallbackContext) -> int:
+        query = update.callback_query
+        await query.answer()
+        task_data = context.user_data["task_data"]
+
+        if query.data == "others":
+            await query.edit_message_text("Please enter the username to search for:")
+            return self.ASSIGNEE_SEARCH
+        elif query.data == "skip":
+            task_data.assignee = None
+            sprint_config = task_data.config.get("sprint")
+            if sprint_config and sprint_config["set_field"]:
+                return await self.ask_for_sprint(query, context)
+            return await self.ask_for_epic_link(query, context)
+        else:
+            task_data.assignee = query.data
+            sprint_config = task_data.config.get("sprint")
+            if sprint_config and sprint_config["set_field"]:
+                return await self.ask_for_sprint(query, context)
+            return await self.ask_for_epic_link(query, context)
+
+    async def search_assignee(self, update: Update, context: CallbackContext) -> int:
+        username_query = update.message.text.strip()
+        matching_users = self.jira_client.search_users(username_query)
+
+        if matching_users:
+            keyboard = [
+                [
+                    InlineKeyboardButton(user, callback_data=user)
+                    for user in matching_users[i : i + 2]
+                ]
+                for i in range(0, len(matching_users), 2)
+            ]
+            keyboard.append([InlineKeyboardButton("Others", callback_data="others")])
+            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                "Select an assignee from the list below:",
+                reply_markup=reply_markup,
+            )
+            return self.ASSIGNEE_RESULT
+        else:
+            await update.message.reply_text(
+                "No users found. Please enter a different username:",
+            )
+            return self.ASSIGNEE_SEARCH
+
+    async def select_assignee_from_search(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        query = update.callback_query
+        await query.answer()
+        task_data = context.user_data["task_data"]
+
+        if query.data == "others":
+            await query.edit_message_text("Please enter the username to search for:")
+            return self.ASSIGNEE_SEARCH
+        elif query.data == "skip":
+            task_data.assignee = None
+        else:
+            task_data.assignee = query.data
+
         sprint_config = task_data.config.get("sprint")
         if sprint_config and sprint_config["set_field"]:
-            return await self.ask_for_sprint(update, context)
-        return await self.ask_for_epic_link(update, context)
+            return await self.ask_for_sprint(query, context)
+        return await self.ask_for_epic_link(query, context)
 
     async def ask_for_sprint(self, update: Update, context: CallbackContext) -> int:
         task_data = context.user_data["task_data"]
@@ -354,9 +473,9 @@ class JiraEasyTaskCreation:
             await self.send_message(
                 update,
                 """
-                Please upload any attachments. When you are done, type 'done'.
-            If you wish to skip attachments, type 'skip'.
-                """,
+Please upload any attachments. When you are done, type 'done'.
+If you wish to skip attachments, type 'skip'.
+""",
             )
             return self.ATTACHMENT
         else:
@@ -412,11 +531,9 @@ class JiraEasyTaskCreation:
 
     async def finalize_task(self, update: Update, context: CallbackContext) -> int:
         task_data = context.user_data["task_data"]
-        issue_fields = self.build_issue_fields(task_data)
 
         try:
-            new_issue = self.jira_client.create_issue(fields=issue_fields)
-            await self.handle_attachments(new_issue, task_data.attachments)
+            new_issue = self.jira_client.create_task(task_data)
             await self.send_message(
                 update,
                 f"Task created successfully! Link: {new_issue.permalink()}",
@@ -445,13 +562,15 @@ class JiraEasyTaskCreation:
             issue_fields["customfield_10100"] = task_data.epic_link
         if task_data.release:
             issue_fields["fixVersions"] = [{"name": task_data.release}]
+        if task_data.assignee:
+            issue_fields["assignee"] = {"name": task_data.assignee}
 
         return issue_fields
 
     async def process_media_group(
         self,
         messages: List[Any],
-        attachments: Dict[str, List[BytesIO]],
+        attachments: Dict[str, List],
     ):
         async with aiohttp.ClientSession() as session:
             for idx, media_message in enumerate(messages):
@@ -466,7 +585,7 @@ class JiraEasyTaskCreation:
     async def process_single_media(
         self,
         message: Any,
-        attachments: Dict[str, List[BytesIO]],
+        attachments: Dict[str, List],
     ):
         async with aiohttp.ClientSession() as session:
             if message.photo:
@@ -490,42 +609,22 @@ class JiraEasyTaskCreation:
                     attachments["audio"],
                     "audio.mp3",
                 )
+            elif message.document:
+                await self.fetch_and_store_media(
+                    message.document,
+                    session,
+                    attachments["documents"],
+                    message.document.file_name,
+                )
 
     async def fetch_and_store_media(self, media, session, storage_list, filename):
         media_file = await media.get_file()
         async with session.get(media_file.file_path) as response:
             if response.status == 200:
                 buffer = BytesIO(await response.read())
-                storage_list.append(buffer)
-                if "image" in filename:
-                    image = Image.open(buffer)
-                    image.save(filename, format="JPEG")
+                storage_list.append((filename, buffer))
             else:
                 self.logger.error(f"Failed to fetch media from {media_file.file_path}")
-
-    async def handle_attachments(
-        self,
-        issue: Issue,
-        attachments: Dict[str, List[BytesIO]],
-    ):
-        LOGGER.info(f"Attachments = {attachments}")
-        for media_type, files in attachments.items():
-            for idx, file_buffer in enumerate(files):
-                filename = f"{media_type}_{idx}.{self.get_file_extension(media_type)}"
-                self.jira_client.add_attachment(
-                    issue=issue,
-                    attachment=file_buffer,
-                    filename=filename,
-                )
-        self.logger.info("Attachments attached to Jira issue")
-
-    def get_file_extension(self, media_type: str) -> str:
-        return {
-            "images": "jpg",
-            "videos": "mp4",
-            "audio": "mp3",
-            "documents": "txt",
-        }.get(media_type, "bin")
 
     def build_keyboard(
         self,
@@ -556,5 +655,5 @@ class JiraEasyTaskCreation:
                 reply_markup=reply_markup,
             )
         else:
-            LOGGER.error("other type of message in send message is not handled")
-            raise Exception("other type of message in send message is not handled")
+            LOGGER.error("Other type of message in send_message is not handled")
+            raise Exception("Other type of message in send_message is not handled")
