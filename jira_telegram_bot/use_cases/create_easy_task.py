@@ -65,7 +65,7 @@ class JiraEasyTaskCreation:
             task_data.config = user_config.dict()
             task_data.project_key = (
                 user_config.project.values[0]
-                if len(user_config.project.values) == 1
+                if user_config.project.values and len(user_config.project.values) == 1
                 else None
             )
 

@@ -209,10 +209,10 @@ class TestJiraEasyTaskCreation(unittest.IsolatedAsyncioTestCase):
         query.message = MagicMock(spec=Message)
         query.message.edit_text = AsyncMock()
         self.update.callback_query = query
-        self.context.user_data["task_data"] = TaskData(task_types)
+        self.context.user_data["task_data"] = TaskData()
         self.context.user_data["task_data"].config = self.user_config_dict
 
-        await self.task_creation.add_component(self.update, self.context)
+        await self.task_creation.handle_component_selection(self.update, self.context)
 
         self.assertEqual(
             self.context.user_data["task_data"].component,
