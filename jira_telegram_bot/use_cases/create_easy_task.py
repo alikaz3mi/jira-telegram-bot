@@ -172,30 +172,28 @@ class JiraEasyTaskCreation:
         task_data = context.user_data["task_data"]
         task_type_config = task_data.config.get("task_type")
         if task_type_config and task_type_config["set_field"]:
-            if task_type_config["values"]:
-                keyboard = self.build_keyboard(
-                    task_type_config["values"],
-                    include_skip=True,
-                )
-                await self.send_message(
-                    update,
-                    "Select a task type:",
-                    reply_markup=keyboard,
-                )
-                return self.TASK_TYPE
+            if task_type_config["values"] and len(task_type_config["values"]) > 1:
+                task_data.task_type = task_type_config["values"]
+            elif task_type_config["values"] and len(task_type_config["values"]) == 1:
+                task_data.task_type = task_type_config["values"][0]
             else:
+                # TODO: replace jira with its function
                 task_data.task_types = [
                     z.name
-                    for z in self.jira_client.issue_types_for_project(
+                    for z in self.jira_client.jira.issue_types_for_project(
                         task_data.project_key,
                     )
                 ]
-
-        task_data.task_type = (
-            task_type_config["values"][0]
-            if task_type_config and task_type_config["values"]
-            else "Task"
-        )
+            keyboard = self.build_keyboard(
+                task_data.task_type,
+                include_skip=True,
+            )
+            await self.send_message(
+                update,
+                "Select a task type:",
+                reply_markup=keyboard,
+            )
+            return self.TASK_TYPE
         return await self.ask_for_story_points(update, context)
 
     async def add_task_type(self, update: Update, context: CallbackContext) -> int:
@@ -272,7 +270,7 @@ class JiraEasyTaskCreation:
         task_data = context.user_data["task_data"]
         epic_config = task_data.config.get("epic_link")
         if epic_config and epic_config["set_field"] and task_data.epics:
-            epic_keys = [epic.key for epic in task_data.epics]
+            epic_keys = [epic.fields.summary for epic in task_data.epics]
             keyboard = self.build_keyboard(epic_keys, include_skip=True)
             await self.send_message(
                 update,
@@ -323,16 +321,23 @@ class JiraEasyTaskCreation:
         task_data = context.user_data["task_data"]
         if query.data != "skip":
             task_data.release = query.data
-        return await self.ask_for_attachment(query, context)
+        return await self.ask_for_attachment(update, context)
 
     async def ask_for_attachment(self, update: Update, context: CallbackContext) -> int:
-        await update.message.reply_text(
-            """
-            Please upload any attachments. When you are done, type 'done'.
-            If you wish to skip attachments, type 'skip'.
-            """,
-        )
-        return self.ATTACHMENT
+        task_data = context.user_data["task_data"]
+        attachment_config = task_data.config.get("attachment")
+        if attachment_config and attachment_config["set_field"]:
+            await self.send_message(
+                update,
+                """
+                Please upload any attachments. When you are done, type 'done'.
+                If you wish to skip attachments, type 'skip'.
+                """,
+            )
+            return self.ATTACHMENT
+        else:
+            await self.finalize_task(update, context)
+            return ConversationHandler.END
 
     async def add_attachment(self, update: Update, context: CallbackContext) -> int:
         task_data = context.user_data["task_data"]
