@@ -4,6 +4,7 @@ from io import BytesIO
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Optional
 
 import aiohttp
 from telegram import InlineKeyboardButton
@@ -44,6 +45,29 @@ class JiraTaskCreation:
         self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
         self.media_group_timeout = 1.0
 
+    def build_keyboard(
+        self,
+        options: List[str],
+        data: Optional[List[str]] = None,
+        include_skip: bool = False,
+        row_width: int = 2,
+        extra_buttons: Optional[List[List[InlineKeyboardButton]]] = None,
+    ) -> InlineKeyboardMarkup:
+        if not data:
+            data = options
+        keyboard = [
+            [
+                InlineKeyboardButton(text=option, callback_data=data[i + j])
+                for j, option in enumerate(options[i : i + row_width])
+            ]
+            for i in range(0, len(options), row_width)
+        ]
+        if extra_buttons:
+            keyboard.extend(extra_buttons)
+        if include_skip:
+            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
+        return InlineKeyboardMarkup(keyboard)
+
     async def start(self, update: Update, context: CallbackContext) -> int:
         if not await check_user_allowed(update):
             return ConversationHandler.END
@@ -53,14 +77,9 @@ class JiraTaskCreation:
         context.user_data["task_data"] = task_data
 
         projects = self.jira_repository.get_projects()
-        keyboard = [
-            [
-                InlineKeyboardButton(project.name, callback_data=project.key)
-                for project in projects[i : i + 2]
-            ]
-            for i in range(0, len(projects), 2)
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        options = [project.name for project in projects]
+        data = [project.key for project in projects]
+        reply_markup = self.build_keyboard(options, data, row_width=3)
 
         await update.message.reply_text(
             "Please select a project from the list below:",
@@ -110,16 +129,8 @@ class JiraTaskCreation:
 
         components = self.jira_repository.get_project_components(task_data.project_key)
         if components:
-            keyboard = [
-                [
-                    InlineKeyboardButton(component.name, callback_data=component.name)
-                    for component in components[i : i + 2]
-                ]
-                for i in range(0, len(components), 2)
-            ]
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
+            options = [component.name for component in components]
+            reply_markup = self.build_keyboard(options, include_skip=True)
             await update.message.reply_text(
                 "Got it! Now choose a component from the list below:",
                 reply_markup=reply_markup,
@@ -148,16 +159,16 @@ class JiraTaskCreation:
         assignees = self.jira_repository.get_assignees(task_data.project_key)
 
         if assignees:
-            keyboard = [
-                [
-                    InlineKeyboardButton(assignee, callback_data=assignee)
-                    for assignee in assignees[i : i + 2]
-                ]
-                for i in range(0, len(assignees), 2)
-            ]
-            keyboard.append([InlineKeyboardButton("Others", callback_data="others")])
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            options = assignees
+            data = assignees
+            extra_buttons = [[InlineKeyboardButton("Others", callback_data="others")]]
+            reply_markup = self.build_keyboard(
+                options,
+                data,
+                row_width=2,
+                include_skip=True,
+                extra_buttons=extra_buttons,
+            )
             await update.message.reply_text(
                 "Got it! Now choose an assignee from the list below:",
                 reply_markup=reply_markup,
@@ -192,16 +203,16 @@ class JiraTaskCreation:
         matching_users = self.jira_repository.search_users(username_query)
 
         if matching_users:
-            keyboard = [
-                [
-                    InlineKeyboardButton(user, callback_data=user)
-                    for user in matching_users[i : i + 2]
-                ]
-                for i in range(0, len(matching_users), 2)
-            ]
-            keyboard.append([InlineKeyboardButton("Others", callback_data="others")])
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            options = matching_users
+            data = matching_users
+            extra_buttons = [[InlineKeyboardButton("Others", callback_data="others")]]
+            reply_markup = self.build_keyboard(
+                options,
+                data,
+                row_width=2,
+                include_skip=True,
+                extra_buttons=extra_buttons,
+            )
             await update.message.reply_text(
                 "Select an assignee from the list below:",
                 reply_markup=reply_markup,
@@ -236,18 +247,12 @@ class JiraTaskCreation:
 
     async def ask_priority(self, update: Update, context: CallbackContext) -> int:
         priorities = self.jira_repository.get_priorities()
-        keyboard = [
-            [
-                InlineKeyboardButton(priority.name, callback_data=priority.name)
-                for priority in priorities[i : i + 2]
-            ]
-            for i in range(0, len(priorities), 2)
-        ]
-        keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        options = [priority.name for priority in priorities]
+        reply_markup = self.build_keyboard(options, include_skip=True)
         await update.message.reply_text(
             "Got it! Now choose a priority from the list below:",
             reply_markup=reply_markup,
+            row_width=4,
         )
         return self.PRIORITY
 
@@ -271,15 +276,13 @@ class JiraTaskCreation:
         ]
 
         if active_and_future_sprints:
-            keyboard = [
-                [
-                    InlineKeyboardButton(sprint.name, callback_data=str(sprint.id))
-                    for sprint in active_and_future_sprints[i : i + 2]
-                ]
-                for i in range(0, len(active_and_future_sprints), 2)
-            ]
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            options = [sprint.name for sprint in active_and_future_sprints]
+            data = [str(sprint.id) for sprint in active_and_future_sprints]
+            reply_markup = self.build_keyboard(
+                options,
+                data,
+                include_skip=True,
+            )
             await update.message.reply_text(
                 "Got it! Now choose a sprint from the list below:",
                 reply_markup=reply_markup,
@@ -308,15 +311,14 @@ class JiraTaskCreation:
     async def ask_epic(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
         if task_data.epics:
-            keyboard = [
-                [
-                    InlineKeyboardButton(epic.fields.summary, callback_data=epic.key)
-                    for epic in task_data.epics[i : i + 2]
-                ]
-                for i in range(0, len(task_data.epics), 2)
-            ]
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            options = [epic.fields.summary for epic in task_data.epics]
+            data = [epic.key for epic in task_data.epics]
+            reply_markup = self.build_keyboard(
+                options,
+                data,
+                include_skip=True,
+                row_width=3,
+            )
             await update.message.reply_text(
                 "Got it! Now choose an epic from the list below:",
                 reply_markup=reply_markup,
@@ -353,15 +355,12 @@ class JiraTaskCreation:
         ]
 
         if releases:
-            keyboard = [
-                [
-                    InlineKeyboardButton(version.name, callback_data=version.name)
-                    for version in releases[i : i + 2]
-                ]
-                for i in range(0, len(releases), 2)
-            ]
-            keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            options = [version.name for version in releases]
+            reply_markup = self.build_keyboard(
+                options,
+                include_skip=True,
+                row_width=3,
+            )
             await update.message.reply_text(
                 "Got it! Now choose a release from the list below:",
                 reply_markup=reply_markup,
@@ -389,17 +388,12 @@ class JiraTaskCreation:
 
     async def ask_task_type(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
-        keyboard = [
-            [
-                InlineKeyboardButton(task_type, callback_data=task_type)
-                for task_type in task_data.task_types[i : i + 2]
-            ]
-            for i in range(0, len(task_data.task_types), 2)
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        options = task_data.task_types
+        reply_markup = self.build_keyboard(options)
         await update.message.reply_text(
             "Got it! Now choose a task type from the list below:",
             reply_markup=reply_markup,
+            row_width=4,
         )
         return self.TASK_TYPE
 
@@ -412,15 +406,12 @@ class JiraTaskCreation:
 
         LOGGER.info("Task type selected: %s", task_data.task_type)
 
-        keyboard = [
-            [
-                InlineKeyboardButton(str(sp), callback_data=str(sp))
-                for sp in self.STORY_POINTS_VALUES[i : i + 2]
-            ]
-            for i in range(0, len(self.STORY_POINTS_VALUES), 2)
-        ]
-        keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        options = [str(sp) for sp in self.STORY_POINTS_VALUES]
+        reply_markup = self.build_keyboard(
+            options,
+            include_skip=True,
+            row_width=3,
+        )
 
         await query.edit_message_text(
             "Got it! Now choose the story points:",
