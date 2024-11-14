@@ -248,11 +248,10 @@ class JiraTaskCreation:
     async def ask_priority(self, update: Update, context: CallbackContext) -> int:
         priorities = self.jira_repository.get_priorities()
         options = [priority.name for priority in priorities]
-        reply_markup = self.build_keyboard(options, include_skip=True)
+        reply_markup = self.build_keyboard(options, include_skip=True, row_width=4)
         await update.message.reply_text(
             "Got it! Now choose a priority from the list below:",
             reply_markup=reply_markup,
-            row_width=4,
         )
         return self.PRIORITY
 
