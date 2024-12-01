@@ -37,7 +37,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
 
     def get_projects(self):
         cache_key = ("get_projects", None)
-        result = self._get_from_cache(cache_key, 4 * 3600)  # Cache for 4 hours
+        result = self._get_from_cache(cache_key, 48 * 3600)
         if result is not None:
             return result
 
@@ -50,7 +50,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
 
     def get_epics(self, project_key: str):
         cache_key = ("get_epics", project_key)
-        result = self._get_from_cache(cache_key, 1 * 3600)  # Cache for 1 hour
+        result = self._get_from_cache(cache_key, 72 * 3600)
         if result is not None:
             return result
 
@@ -62,7 +62,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
 
     def get_board_id(self, project_key: str) -> Optional[int]:
         cache_key = ("get_board_id", project_key)
-        result = self._get_from_cache(cache_key, 8 * 3600)  # Cache for 8 hours
+        result = self._get_from_cache(cache_key, 48 * 3600)
         if result is not None:
             return result
 
@@ -108,7 +108,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
 
     def get_priorities(self):
         cache_key = "priorities"
-        result = self._get_from_cache(cache_key, 8 * 3600)  # Cache for 8 hours
+        result = self._get_from_cache(cache_key, 1200 * 3600)
         if result is not None:
             return result
 
@@ -198,6 +198,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
 
     def create_task(self, task_data: TaskData) -> Issue:
         issue_fields = self.build_issue_fields(task_data)
+        LOGGER.debug(f"Issue fields = {issue_fields}")
         new_issue = self.create_issue(issue_fields)
         self.handle_attachments(new_issue, task_data.attachments)
         return new_issue

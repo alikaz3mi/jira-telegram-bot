@@ -38,7 +38,8 @@ class JiraTaskCreation:
         ATTACHMENT,
         ASSIGNEE_SEARCH,
         ASSIGNEE_RESULT,
-    ) = range(14)
+        CREATE_ANOTHER,
+    ) = range(15)
 
     def __init__(self, jira_repository: TaskManagerRepositoryInterface):
         self.jira_repository = jira_repository
@@ -113,20 +114,41 @@ class JiraTaskCreation:
 
     async def add_summary(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
-        task_data.summary = update.message.text.strip()
+        message = update.message
 
-        LOGGER.info("Summary received: %s", task_data.summary)
-        await update.message.reply_text(
-            'Got it! Now send me the description of the task (or type "skip" to skip).',
-        )
-        return self.DESCRIPTION
+        if message.forward and message.forward_origin:
+            text = message.text or message.caption or ""
+            lines = text.strip().split("\n")
+            task_data.summary = lines[0] if lines else ""
+            task_data.description = text
+
+            LOGGER.info("Summary from forwarded message: %s", task_data.summary)
+
+            attachments = task_data.attachments
+            if message.photo or message.video or message.document or message.audio:
+                await self.process_single_media(message, attachments)
+
+            await update.message.reply_text("Got it! Proceeding to the next step.")
+            return self.DESCRIPTION
+        else:
+            task_data.summary = message.text.strip()
+
+            LOGGER.info("Summary received: %s", task_data.summary)
+            await update.message.reply_text(
+                "Got it! Now send me the description of the task "
+                '(or type "skip" to skip).',
+            )
+            return self.DESCRIPTION
 
     async def add_description(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
-        description = update.message.text.strip()
-        if description.lower() != "skip":
-            task_data.description = description
+        if not task_data.description:
+            description = update.message.text.strip()
+            if description.lower() != "skip":
+                task_data.description = description
 
+        if context.user_data.get("create_another"):
+            return self.STORY_POINTS
         components = self.jira_repository.get_project_components(task_data.project_key)
         if components:
             options = [component.name for component in components]
@@ -388,11 +410,10 @@ class JiraTaskCreation:
     async def ask_task_type(self, update: Update, context: CallbackContext) -> int:
         task_data: TaskData = context.user_data["task_data"]
         options = task_data.task_types
-        reply_markup = self.build_keyboard(options)
+        reply_markup = self.build_keyboard(options, row_width=3)
         await update.message.reply_text(
             "Got it! Now choose a task type from the list below:",
             reply_markup=reply_markup,
-            row_width=4,
         )
         return self.TASK_TYPE
 
@@ -444,20 +465,18 @@ When you're done, type 'done' or 'skip' to skip attachments.
         if update.message.text:
             if update.message.text.lower() == "skip":
                 LOGGER.info("User chose to skip attachment upload.")
-                # Process any collected media groups
                 for messages in media_group_messages.values():
                     await self.process_media_group(messages, attachments)
                 media_group_messages.clear()
                 await self.finalize_task(update, context)
-                return ConversationHandler.END
+                return self.CREATE_ANOTHER
             elif update.message.text.lower() == "done":
                 LOGGER.info("User finished uploading attachments.")
-                # Process any collected media groups
                 for messages in media_group_messages.values():
                     await self.process_media_group(messages, attachments)
                 media_group_messages.clear()
                 await self.finalize_task(update, context)
-                return ConversationHandler.END
+                return self.CREATE_ANOTHER
             else:
                 await update.message.reply_text(
                     "Invalid input. Please type 'done' when finished or 'skip' to skip attachments.",
@@ -470,8 +489,7 @@ When you're done, type 'done' or 'skip' to skip attachments.
                 [],
             )
             messages.append(update.message)
-            return self.ATTACHMENT  # Stay in ATTACHMENT state to collect more messages
-
+            return self.ATTACHMENT
         elif (
             update.message.photo
             or update.message.video
@@ -482,9 +500,7 @@ When you're done, type 'done' or 'skip' to skip attachments.
             await update.message.reply_text(
                 "Attachment received. You can send more, or type 'done' to finish.",
             )
-            return (
-                self.ATTACHMENT
-            )  # Stay in ATTACHMENT state to collect more attachments
+            return self.ATTACHMENT
         else:
             await update.message.reply_text(
                 "Please upload an attachment or type 'done' when finished.",
@@ -581,5 +597,36 @@ When you're done, type 'done' or 'skip' to skip attachments.
         except Exception as e:
             error_message = f"Failed to create task: {e}"
             await update.message.reply_text(error_message)
+            return ConversationHandler.END
 
-        return ConversationHandler.END
+        reply_markup = self.build_keyboard(["Yes", "No"], ["yes", "no"], row_width=2)
+        await update.message.reply_text(
+            "Do you want to create another task with similar fields?",
+            reply_markup=reply_markup,
+        )
+        return self.CREATE_ANOTHER
+
+    async def handle_create_another(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        query = update.callback_query
+        await query.answer()
+        if query.data == "yes":
+            task_data: TaskData = context.user_data["task_data"]
+            task_data.summary = None
+            task_data.description = None
+            task_data.story_points = None
+            task_data.create_another = True
+            task_data.attachments = {
+                "images": [],
+                "documents": [],
+                "videos": [],
+                "audio": [],
+            }
+            await query.edit_message_text("Please enter the task summary:")
+            return self.SUMMARY
+        else:
+            await query.edit_message_text("Task Creation Completed!")
+            return ConversationHandler.END

@@ -27,7 +27,7 @@ class TaskCreationHandler(TaskHandlerInterface):
                 ],
                 self.task_creation_use_case.SUMMARY: [
                     MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
+                        (filters.TEXT & ~filters.COMMAND) | filters.FORWARDED,
                         self.task_creation_use_case.add_summary,
                     ),
                 ],
@@ -80,6 +80,11 @@ class TaskCreationHandler(TaskHandlerInterface):
                         | filters.VIDEO
                         | (filters.TEXT & ~filters.COMMAND),
                         self.task_creation_use_case.add_attachment,
+                    ),
+                ],
+                self.task_creation_use_case.CREATE_ANOTHER: [
+                    CallbackQueryHandler(
+                        self.task_creation_use_case.handle_create_another,
                     ),
                 ],
             },

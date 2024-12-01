@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from warnings import filterwarnings
 
 from telegram.ext import Application
@@ -9,6 +10,9 @@ from telegram.warnings import PTBUserWarning
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
 from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.frameworks.telegram.board_summary_generator_handler import (
+    BoardSummaryGeneratorHandler,
+)
 from jira_telegram_bot.frameworks.telegram.create_easy_task_handler import (
     EasyTaskHandler,
 )
@@ -20,6 +24,7 @@ from jira_telegram_bot.frameworks.telegram.task_transition_handler import (
     TaskTransitionHandler,
 )
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
 from jira_telegram_bot.use_cases.create_easy_task import JiraEasyTaskCreation
 from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
 from jira_telegram_bot.use_cases.task_status import TaskStatus
@@ -39,6 +44,7 @@ async def help_command(update, context):
         "2. **/transition** - Transition an existing task.\n"
         "3. **/status** - Get the status of a task.\n"
         "4. **/create-easy-task** - Quickly create a task with predefined settings."
+        "5. **/summary_tasks** - Get a summary of completed tasks and tasks that are ready for review"
         "5. **/cancel** - cancel current running operation"
     )
     await update.message.reply_text(help_text)
@@ -46,7 +52,7 @@ async def help_command(update, context):
 
 
 async def error(update, context):
-    LOGGER.warning(f'Update "{update}" caused error "{context.error}"')
+    LOGGER.warning(f'Update \n\n "{update}" caused error "\n {context.error}"')
     if context.error:
         LOGGER.error(f"Context error details: {context.error}")
     else:
@@ -65,10 +71,14 @@ async def error(update, context):
             )
 
         # Log detailed information about the context error
-        LOGGER.error("Context error details: %s", context.error)
+        LOGGER.error(f"Context error details: {context.error}")
 
     except Exception as e:
         LOGGER.error(f"Failed to send error message to user or log detail: {e}")
+        tb = traceback.extract_tb(e.__traceback__)
+        formatted_tb = traceback.format_list(tb)
+        for line in formatted_tb:
+            LOGGER.error(line)
 
 
 def main():
@@ -87,16 +97,21 @@ def main():
     task_creation_use_case = JiraTaskCreation(jira_repo)
     task_status_use_case = TaskStatus(jira_repo.jira)
     task_transition_use_case = JiraTaskTransition(jira_repo.jira)
+    board_summary_generator_use_case = BoardSummaryGenerator(jira_repo)
 
     easy_task_handler = EasyTaskHandler(easy_task_use_case)
     task_creation_handler = TaskCreationHandler(task_creation_use_case)
     task_status_handler = TaskStatusHandler(task_status_use_case)
     task_transition_handler = TaskTransitionHandler(task_transition_use_case)
+    board_summary_generator_handler = BoardSummaryGeneratorHandler(
+        board_summary_generator_use_case,
+    )
 
     application.add_handler(task_creation_handler.get_handler())
     application.add_handler(task_transition_handler.get_handler())
     application.add_handler(task_status_handler.get_handler())
     application.add_handler(easy_task_handler.get_handler())
+    application.add_handler(board_summary_generator_handler.get_handler())
     application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
 

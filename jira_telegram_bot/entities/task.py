@@ -24,6 +24,7 @@ class TaskData(BaseModel):
     release: Optional[str] = Field(default=None)
     assignee: Optional[str] = Field(default=None)
     priority: Optional[str] = Field(default=None)
+    create_another: bool = Field(default=False)
     attachments: Dict[str, List] = Field(
         default_factory=lambda: {
             "images": [],
