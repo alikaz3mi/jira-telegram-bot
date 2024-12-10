@@ -9,3 +9,4 @@ langdetect==1.0.9
 langchain-openai==0.1.22
 langchain-core==0.2.35
 langchain-community==0.2.12
+tiktoken==0.7.0

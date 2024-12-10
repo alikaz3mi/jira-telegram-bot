@@ -23,12 +23,18 @@ from jira_telegram_bot.frameworks.telegram.task_status_handler import TaskStatus
 from jira_telegram_bot.frameworks.telegram.task_transition_handler import (
     TaskTransitionHandler,
 )
+from jira_telegram_bot.settings import OPENAI_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.use_cases.board_summarizer import create_llm_chain
+from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
 from jira_telegram_bot.use_cases.create_easy_task import JiraEasyTaskCreation
 from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
 from jira_telegram_bot.use_cases.task_status import TaskStatus
 from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
+
+llm_chain = create_llm_chain(OPENAI_SETTINGS)
+summary_generator = TaskProcessor(llm_chain)
 
 filterwarnings(
     action="ignore",
@@ -97,7 +103,10 @@ def main():
     task_creation_use_case = JiraTaskCreation(jira_repo)
     task_status_use_case = TaskStatus(jira_repo.jira)
     task_transition_use_case = JiraTaskTransition(jira_repo.jira)
-    board_summary_generator_use_case = BoardSummaryGenerator(jira_repo)
+    board_summary_generator_use_case = BoardSummaryGenerator(
+        jira_repo,
+        summary_generator,
+    )
 
     easy_task_handler = EasyTaskHandler(easy_task_use_case)
     task_creation_handler = TaskCreationHandler(task_creation_use_case)

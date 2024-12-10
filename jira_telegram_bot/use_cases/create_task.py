@@ -15,7 +15,6 @@ from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.use_cases.authentication import check_user_allowed
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
@@ -147,7 +146,7 @@ class JiraTaskCreation:
             if description.lower() != "skip":
                 task_data.description = description
 
-        if context.user_data.get("create_another"):
+        if context.user_data.get("create_another_new_info"):
             return self.STORY_POINTS
         components = self.jira_repository.get_project_components(task_data.project_key)
         if components:
@@ -592,14 +591,18 @@ When you're done, type 'done' or 'skip' to skip attachments.
         try:
             new_issue = self.jira_repository.create_task(task_data)
             await update.message.reply_text(
-                f"Task created successfully! Link: {JIRA_SETTINGS.domain}/browse/{new_issue.key}",
+                f"Task created successfully! Link: {self.jira_repository.settings.domain}/browse/{new_issue.key}",
             )
         except Exception as e:
             error_message = f"Failed to create task: {e}"
             await update.message.reply_text(error_message)
             return ConversationHandler.END
 
-        reply_markup = self.build_keyboard(["Yes", "No"], ["yes", "no"], row_width=2)
+        reply_markup = self.build_keyboard(
+            ["Yes, keep user", "Yes, New Info", "No"],
+            ["keep_user", "new_info", "no"],
+            row_width=2,
+        )
         await update.message.reply_text(
             "Do you want to create another task with similar fields?",
             reply_markup=reply_markup,
@@ -613,12 +616,13 @@ When you're done, type 'done' or 'skip' to skip attachments.
     ) -> int:
         query = update.callback_query
         await query.answer()
-        if query.data == "yes":
+        if query.data == "new_info":
             task_data: TaskData = context.user_data["task_data"]
             task_data.summary = None
             task_data.description = None
             task_data.story_points = None
-            task_data.create_another = True
+            task_data.create_another_new_info = True
+            task_data.create_another_keep_info = False
             task_data.attachments = {
                 "images": [],
                 "documents": [],
@@ -627,6 +631,19 @@ When you're done, type 'done' or 'skip' to skip attachments.
             }
             await query.edit_message_text("Please enter the task summary:")
             return self.SUMMARY
+        elif query.data == "keep_user":
+            task_data.summary = None
+            task_data.description = None
+            task_data.story_points = None
+            task_data.create_another_new_info = False
+            task_data.create_another_keep_info = True
+            task_data.attachments = {
+                "images": [],
+                "documents": [],
+                "videos": [],
+                "audio": [],
+            }
+
         else:
             await query.edit_message_text("Task Creation Completed!")
             return ConversationHandler.END

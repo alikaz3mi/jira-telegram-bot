@@ -20,6 +20,7 @@ class TaskData(BaseModel):
     task_type: Optional[str] = Field(default=None)
     story_points: Optional[float] = Field(default=None)
     sprint_id: Optional[int] = Field(default=None)
+    sprint_name: Optional[str] = Field(default=None)
     epic_link: Optional[str] = Field(default=None)
     release: Optional[str] = Field(default=None)
     assignee: Optional[str] = Field(default=None)

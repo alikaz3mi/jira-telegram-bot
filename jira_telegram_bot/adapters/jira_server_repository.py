@@ -11,18 +11,23 @@ from jira import JIRA
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
 
 
 class JiraRepository(TaskManagerRepositoryInterface):
-    def __init__(self):
+    def __init__(self, settings: JiraBoardSettings = JIRA_SETTINGS):
+        self.settings = settings
         self.jira = JIRA(
-            server=JIRA_SETTINGS.domain,
-            basic_auth=(JIRA_SETTINGS.username, JIRA_SETTINGS.password),
+            server=self.settings.domain,
+            basic_auth=(self.settings.username, self.settings.password),
         )
         self.cache = {}
+        self.jira_story_point_id = "customfield_10106"
+        self.jira_sprint_id = "customfield_10104"
+        self.jira_epic_link_id = "customfield_10100"
 
     def _get_from_cache(self, cache_key, max_age_seconds):
         entry = self.cache.get(cache_key)
@@ -160,17 +165,11 @@ class JiraRepository(TaskManagerRepositoryInterface):
         if task_data.component:
             issue_fields["components"] = [{"name": task_data.component}]
         if task_data.story_points is not None:
-            issue_fields[
-                "customfield_10106"
-            ] = task_data.story_points  # Adjust custom field ID
+            issue_fields[self.jira_story_point_id] = task_data.story_points
         if task_data.sprint_id:
-            issue_fields[
-                "customfield_10104"
-            ] = task_data.sprint_id  # Adjust custom field ID
+            issue_fields[self.jira_sprint_id] = task_data.sprint_id
         if task_data.epic_link:
-            issue_fields[
-                "customfield_10100"
-            ] = task_data.epic_link  # Adjust custom field ID
+            issue_fields[self.jira_epic_link_id] = task_data.epic_link
         if task_data.release:
             issue_fields["fixVersions"] = [{"name": task_data.release}]
         if task_data.assignee:
@@ -202,3 +201,33 @@ class JiraRepository(TaskManagerRepositoryInterface):
         new_issue = self.create_issue(issue_fields)
         self.handle_attachments(new_issue, task_data.attachments)
         return new_issue
+
+    def create_task_data_from_jira_issue(self, issue) -> TaskData:
+        last_sprint_of_task = (
+            getattr(issue.fields, self.jira_sprint_id)[-1]
+            if getattr(issue.fields, self.jira_sprint_id)
+            else None
+        )
+        sprint_name = None
+        if not last_sprint_of_task:
+            name_position = last_sprint_of_task.find("name=")
+            sprint_name = (
+                last_sprint_of_task[name_position:].split(",")[0].strip("name=")
+            )
+        return TaskData(
+            project_key=getattr(issue.fields.project, "key", None),
+            summary=issue.fields.summary,
+            description=issue.fields.description,
+            component=(
+                issue.fields.components[0].name if issue.fields.components else None
+            ),
+            task_type=getattr(issue.fields.issuetype, "name", None),
+            story_points=getattr(issue.fields, self.jira_story_point_id, None),
+            sprint_name=sprint_name,
+            epic_link=getattr(issue.fields, self.jira_epic_link_id, None),
+            release=(
+                issue.fields.fixVersions[0].name if issue.fields.fixVersions else None
+            ),
+            assignee=getattr(issue.fields.assignee, "displayName", None),
+            priority=getattr(issue.fields.priority, "name", None),
+        )

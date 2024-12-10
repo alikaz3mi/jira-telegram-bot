@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import List
 from typing import Optional
 
@@ -12,9 +13,15 @@ from telegram.ext import ConversationHandler
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.use_cases.authentication import check_user_allowed
+from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
+
+
+def escape_markdown_v2(text):
+    """Escapes characters for MarkdownV2."""
+    return re.sub(r"([_*[\]()~`>#+\-=|{}.!])", r"\\\1", text)
 
 
 class BoardSummaryGenerator:
@@ -29,8 +36,13 @@ class BoardSummaryGenerator:
         ASSIGNEE_RESULT,
     ) = range(8)
 
-    def __init__(self, jira_repository: TaskManagerRepositoryInterface):
+    def __init__(
+        self,
+        jira_repository: TaskManagerRepositoryInterface,
+        summary_generator: TaskProcessor,
+    ):
         self.jira_repository = jira_repository
+        self.summary_generator = summary_generator
 
     def build_keyboard(
         self,
@@ -362,10 +374,20 @@ class BoardSummaryGenerator:
         try:
             issues = self.jira_repository.jira.search_issues(jql_query)
             if issues:
-                response_text = "Found the following tasks:\n"
+                response_text = f"Found the following tasks: for {jql_parts} \n\n"
+                tasks = []
                 for issue in issues:
-                    response_text += f"- {issue.key}: {issue.fields.summary}\n"
-                await update.message.reply_text(response_text)
+                    response_text += f"- [{issue.fields.summary}]({self.jira_repository.settings.domain}/browse/{issue.key}) \n\n"
+                    task = self.jira_repository.create_task_data_from_jira_issue(issue)
+                    tasks.append(task)
+                issue_summary = escape_markdown_v2(response_text)
+                await update.message.reply_text(issue_summary, parse_mode="MarkdownV2")
+                result = self.summary_generator.process_tasks(tasks)
+                await update.message.reply_text(
+                    escape_markdown_v2(result),
+                    parse_mode="MarkdownV2",
+                )
+
             else:
                 await update.message.reply_text("No tasks found matching the criteria.")
         except Exception as e:
