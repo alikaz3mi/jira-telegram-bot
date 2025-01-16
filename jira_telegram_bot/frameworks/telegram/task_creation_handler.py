@@ -19,7 +19,7 @@ class TaskCreationHandler(TaskHandlerInterface):
     def get_handler(self):
         return ConversationHandler(
             entry_points=[
-                CommandHandler("super_task", self.task_creation_use_case.start),
+                CommandHandler("create_task", self.task_creation_use_case.start),
             ],
             states={
                 self.task_creation_use_case.PROJECT: [

@@ -52,3 +52,18 @@ class UserConfigInterface(ABC):
             UserConfigEntity if found, None otherwise
         """
         pass
+
+    @abstractmethod
+    def save_user_config(
+        self,
+        telegram_username: str,
+        user_cfg: UserConfigEntity,
+    ) -> None:
+        """
+        Save a user configuration
+
+        Args:
+            telegram_username: The username of the user
+            user_cfg: The configuration to save
+        """
+        pass

@@ -43,3 +43,11 @@ class UserConfig(UserConfigInterface):
             if user_config.jira_username == jira_username:
                 return user_config
         return None
+
+    def save_user_config(self, telegram_username: str, user_cfg: UserConfig) -> None:
+        self.user_config[telegram_username] = user_cfg
+        configs = {
+            username: user_cfg.dict() for username, user_cfg in self.user_config.items()
+        }
+        with open(USER_CONFIG_PATH, "w") as file:
+            json.dump(configs, file)

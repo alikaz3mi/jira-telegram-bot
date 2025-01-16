@@ -13,9 +13,6 @@ from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.frameworks.telegram.board_summary_generator_handler import (
     BoardSummaryGeneratorHandler,
 )
-from jira_telegram_bot.frameworks.telegram.create_easy_task_handler import (
-    EasyTaskHandler,
-)
 from jira_telegram_bot.frameworks.telegram.task_creation_handler import (
     TaskCreationHandler,
 )
@@ -23,15 +20,18 @@ from jira_telegram_bot.frameworks.telegram.task_status_handler import TaskStatus
 from jira_telegram_bot.frameworks.telegram.task_transition_handler import (
     TaskTransitionHandler,
 )
+from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
+    UserSettingsHandler,
+)
 from jira_telegram_bot.settings import OPENAI_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
 from jira_telegram_bot.use_cases.board_summarizer import create_llm_chain
 from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
-from jira_telegram_bot.use_cases.create_easy_task import JiraEasyTaskCreation
 from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
 from jira_telegram_bot.use_cases.task_status import TaskStatus
 from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
+from jira_telegram_bot.use_cases.user_settings import UserSettingsConversation
 
 llm_chain = create_llm_chain(OPENAI_SETTINGS)
 summary_generator = TaskProcessor(llm_chain)
@@ -46,12 +46,12 @@ filterwarnings(
 async def help_command(update, context):
     help_text = (
         "Here's how to use this bot:\n\n"
-        "1. **/start** - Start creating a new task.\n"
+        "1. **/create_task** - Start creating a new task.\n"
         "2. **/transition** - Transition an existing task.\n"
         "3. **/status** - Get the status of a task.\n"
-        "4. **/create-easy-task** - Quickly create a task with predefined settings."
-        "5. **/summary_tasks** - Get a summary of completed tasks and tasks that are ready for review"
-        "5. **/cancel** - cancel current running operation"
+        "5. **/summary_tasks** - Get a summary of completed tasks and tasks that are ready for review\n"
+        "6. **/setting** - Update user settings\n"
+        "7. **/cancel** - cancel current running operation"
     )
     await update.message.reply_text(help_text)
     LOGGER.info("Displayed help information")
@@ -99,19 +99,22 @@ def main():
     jira_repo = JiraRepository()
     user_config_instance = UserConfig()
 
-    easy_task_use_case = JiraEasyTaskCreation(jira_repo)
     task_creation_use_case = JiraTaskCreation(jira_repo, user_config_instance)
     task_status_use_case = TaskStatus(jira_repo.jira)
     task_transition_use_case = JiraTaskTransition(jira_repo.jira)
+    user_settings_use_case = UserSettingsConversation(
+        user_config_instance,
+        ["alikaz3mi"],
+    )
     board_summary_generator_use_case = BoardSummaryGenerator(
         jira_repo,
         summary_generator,
     )
 
-    easy_task_handler = EasyTaskHandler(easy_task_use_case)
     task_creation_handler = TaskCreationHandler(task_creation_use_case)
     task_status_handler = TaskStatusHandler(task_status_use_case)
     task_transition_handler = TaskTransitionHandler(task_transition_use_case)
+    user_settings_handler = UserSettingsHandler(user_settings_use_case)
     board_summary_generator_handler = BoardSummaryGeneratorHandler(
         board_summary_generator_use_case,
     )
@@ -119,8 +122,8 @@ def main():
     application.add_handler(task_creation_handler.get_handler())
     application.add_handler(task_transition_handler.get_handler())
     application.add_handler(task_status_handler.get_handler())
-    application.add_handler(easy_task_handler.get_handler())
     application.add_handler(board_summary_generator_handler.get_handler())
+    application.add_handler(user_settings_handler.get_handler())
     application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
 
