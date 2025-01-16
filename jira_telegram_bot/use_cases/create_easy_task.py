@@ -14,7 +14,6 @@ from telegram.ext import CallbackContext
 from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.use_cases.authentication import check_user_allowed
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
@@ -42,11 +41,9 @@ class JiraEasyTaskCreation:
     def __init__(
         self,
         jira_client: TaskManagerRepositoryInterface,
-        user_config_instance: UserConfig,
         logger=LOGGER,
     ):
         self.jira_client = jira_client
-        self.user_config_instance = user_config_instance
         self.logger = logger
         self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
 

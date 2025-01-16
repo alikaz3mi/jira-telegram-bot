@@ -99,8 +99,8 @@ def main():
     jira_repo = JiraRepository()
     user_config_instance = UserConfig()
 
-    easy_task_use_case = JiraEasyTaskCreation(jira_repo, user_config_instance)
-    task_creation_use_case = JiraTaskCreation(jira_repo)
+    easy_task_use_case = JiraEasyTaskCreation(jira_repo)
+    task_creation_use_case = JiraTaskCreation(jira_repo, user_config_instance)
     task_status_use_case = TaskStatus(jira_repo.jira)
     task_transition_use_case = JiraTaskTransition(jira_repo.jira)
     board_summary_generator_use_case = BoardSummaryGenerator(

@@ -21,6 +21,9 @@ from jira_telegram_bot.use_cases.authentication import check_user_allowed
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
+from jira_telegram_bot.use_cases.interface.user_config_interface import (
+    UserConfigInterface,
+)
 
 
 class JiraTaskCreation:
@@ -42,10 +45,15 @@ class JiraTaskCreation:
         CREATE_ANOTHER,
     ) = range(15)
 
-    def __init__(self, jira_repository: TaskManagerRepositoryInterface):
+    def __init__(
+        self,
+        jira_repository: TaskManagerRepositoryInterface,
+        user_config: UserConfigInterface,
+    ):
         self.jira_repository = jira_repository
-        self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
+        self.user_config = user_config
         self.media_group_timeout = 1.0
+        self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
 
     def build_keyboard(
         self,
@@ -71,37 +79,31 @@ class JiraTaskCreation:
         return InlineKeyboardMarkup(keyboard)
 
     async def start(self, update: Update, context: CallbackContext) -> int:
-        """
-        User starts the conversation with /super_task.
-        We ask the user to choose a Jira project from an inline keyboard.
-        """
+        """User starts conversation with /super_task."""
         if not await check_user_allowed(update):
             return ConversationHandler.END
 
-        # Clear any stored conversation data
         context.user_data.clear()
+
         task_data = TaskData()
         context.user_data["task_data"] = task_data
+        config = self.user_config.get_user_config(update.message.from_user.username)
+        context.user_data["user_config"] = config
 
         projects = self.jira_repository.get_projects()
         options = [project.name for project in projects]
         data = [project.key for project in projects]
         reply_markup = self.build_keyboard(options, data, row_width=3)
 
-        message = await update.message.reply_text(
+        await update.message.reply_text(
             "Please select a project from the list below:",
             reply_markup=reply_markup,
         )
-        # We store the ID of the message that has the inline keyboard we want to keep editing.
-        context.user_data["last_inline_message_id"] = message.message_id
 
         return self.PROJECT
 
     async def select_project(self, update: Update, context: CallbackContext) -> int:
-        """
-        The user clicked on one of the project buttons.
-        We store the project and ask them to type the summary (this is text, not inline keyboard).
-        """
+        """User clicked on a project button."""
         query = update.callback_query
         await query.answer()
 
@@ -122,27 +124,22 @@ class JiraTaskCreation:
             project_key,
         )
 
-        # We don't need to update the inline keyboard message here. Instead,
-        # we delete the keyboard from the project selection message:
         await query.edit_message_text(text="Please enter the task summary:")
 
         return self.SUMMARY
 
     async def add_summary(self, update: Update, context: CallbackContext) -> int:
-        """
-        User sent a summary message. We store it and ask for a description by normal text message.
-        """
+        """User typed or forwarded a summary."""
         task_data: TaskData = context.user_data["task_data"]
         message = update.message
 
-        # For demonstration, let's keep your existing logic
         if message.forward and message.forward_origin:
             text = message.text or message.caption or ""
             lines = text.strip().split("\n")
             task_data.summary = lines[0] if lines else ""
             task_data.description = text
             LOGGER.info("Summary from forwarded message: %s", task_data.summary)
-            # handle attachments if present
+
             attachments = task_data.attachments
             if any([message.photo, message.video, message.document, message.audio]):
                 await self.process_single_media(message, attachments)
@@ -150,143 +147,146 @@ class JiraTaskCreation:
             await update.message.reply_text("Got it! Proceeding to the next step.")
             return self.DESCRIPTION
         else:
-            # Normal text (not forwarded)
             task_data.summary = message.text.strip()
             LOGGER.info("Summary received: %s", task_data.summary)
-            await update.message.reply_text(
+            message = await update.message.reply_text(
                 'Got it! Now send me the description of the task (or type "skip" to skip).',
             )
+            context.user_data["last_inline_message_id"] = message.message_id
             return self.DESCRIPTION
 
     async def add_description(self, update: Update, context: CallbackContext) -> int:
-        """
-        User typed the description or 'skip'.
-        Next step: show inline keyboard for 'components', but do it by editing
-        the same last-inline message.
-        """
+        """User typed a description or 'skip'. Next: maybe show component step."""
         task_data: TaskData = context.user_data["task_data"]
+        user_cfg = context.user_data["user_config"]
         if not task_data.description:
-            description = update.message.text.strip()
-            if description.lower() != "skip":
-                task_data.description = description
-
-        # Next: build the inline keyboard for Components
-        components = self.jira_repository.get_project_components(task_data.project_key)
-        if components:
-            options = [component.name for component in components]
-            reply_markup = self.build_keyboard(options, include_skip=True)
-
-            # We need to edit the *existing* inline-keyboard message. But the last
-            # inline keyboard message was from PROJECT selection. We can reuse that same
-            # message ID.
-            last_message_id = context.user_data["last_inline_message_id"]
-
-            await context.bot.edit_message_text(
-                chat_id=update.effective_chat.id,
-                message_id=last_message_id,
-                text="Got it! Now choose a component from the list below:",
-                reply_markup=reply_markup,
-            )
-            return self.COMPONENT
-        else:
-            LOGGER.info("No components found for project %s", task_data.project_key)
-            # Instead of sending a new message, let's also just update the last one.
-            # But we need to say that there's nothing to pick. Then move on to ask_assignee
-            last_message_id = context.user_data["last_inline_message_id"]
-            await context.bot.edit_message_text(
-                chat_id=update.effective_chat.id,
-                message_id=last_message_id,
-                text="No components found. Proceeding to the next step...",
-            )
-            return await self.ask_assignee_from_text(update, context)
-
-    async def ask_assignee_from_text(
-        self,
-        update: Update,
-        context: CallbackContext,
-    ) -> int:
-        """
-        Just a helper to keep code simpler: we want to jump to the assignee step,
-        which also edits the last inline keyboard message to show the new options.
-        """
-        task_data: TaskData = context.user_data["task_data"]
-        assignees = self.jira_repository.get_assignees(task_data.project_key)
+            desc = update.message.text.strip()
+            if desc.lower() != "skip":
+                task_data.description = desc
 
         last_message_id = context.user_data["last_inline_message_id"]
 
-        if assignees:
-            options = assignees
-            data = assignees
-            extra_buttons = [[InlineKeyboardButton("Others", callback_data="others")]]
-            reply_markup = self.build_keyboard(
-                options,
-                data,
-                row_width=2,
-                include_skip=True,
-                extra_buttons=extra_buttons,
-            )
+        if not user_cfg.component.set_field:
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
                 message_id=last_message_id,
-                text="Got it! Now choose an assignee from the list below:",
-                reply_markup=reply_markup,
+                text="Skipping components. Proceeding to the next step...",
             )
-            return self.ASSIGNEE
+            return await self.ask_assignee_from_text(update, context)
+
+        if user_cfg.component.values:
+            options = user_cfg.component.values
         else:
-            LOGGER.info("No assignees found for project %s", task_data.project_key)
-            await context.bot.edit_message_text(
-                chat_id=update.effective_chat.id,
-                message_id=last_message_id,
-                text="No assignees found. Proceeding to the next step...",
+            jira_components = self.jira_repository.get_project_components(
+                task_data.project_key,
             )
-            return await self.ask_priority_from_text(update, context)
+            if not jira_components:
+                LOGGER.info("No components found for %s", task_data.project_key)
+                await context.bot.edit_message_text(
+                    chat_id=update.effective_chat.id,
+                    message_id=last_message_id,
+                    text="No components found. Proceeding to the next step...",
+                )
+                return await self.ask_assignee_from_text(update, context)
+            options = [c.name for c in jira_components]
+
+        reply_markup = self.build_keyboard(options, include_skip=True)
+        await context.bot.edit_message_text(
+            chat_id=update.effective_chat.id,
+            message_id=last_message_id,
+            text="Got it! Now choose a component from the list below:",
+            reply_markup=reply_markup,
+        )
+        return self.COMPONENT
 
     async def add_component(self, update: Update, context: CallbackContext) -> int:
-        """
-        The user clicked on a component (inline keyboard).
-        We store the chosen component, then ask for assignee by editing the same message.
-        """
+        """User clicked on a component or skipped it."""
         query = update.callback_query
         await query.answer()
 
         task_data: TaskData = context.user_data["task_data"]
         if query.data != "skip":
             task_data.component = query.data
-
         LOGGER.info("Component selected: %s", task_data.component)
         return await self.ask_assignee(query, context)
 
+    async def ask_assignee_from_text(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Called if we skip component from a text-based flow."""
+        last_message_id = context.user_data["last_inline_message_id"]
+        return await self._ask_assignee_common(
+            context,
+            update.effective_chat.id,
+            last_message_id,
+        )
+
     async def ask_assignee(self, query: CallbackQuery, context: CallbackContext) -> int:
-        """
-        Ask user to pick an assignee from the inline keyboard.
-        """
+        """Called if we come from an inline button to show assignee next."""
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        return await self._ask_assignee_common(context, chat_id, message_id)
+
+    async def _ask_assignee_common(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Helper to ask user to pick an assignee, or skip if turned off."""
         task_data: TaskData = context.user_data["task_data"]
-        assignees = self.jira_repository.get_assignees(task_data.project_key)
-        if assignees:
-            options = assignees
-            data = assignees
-            extra_buttons = [[InlineKeyboardButton("Others", callback_data="others")]]
-            reply_markup = self.build_keyboard(
-                options,
-                data,
-                row_width=2,
-                include_skip=True,
-                extra_buttons=extra_buttons,
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.assignee.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping assignee. Proceeding to next step...",
             )
-            # Edit the same message:
-            await query.edit_message_text(
-                text="Got it! Now choose an assignee from the list below:",
-                reply_markup=reply_markup,
+            return await self.ask_priority_from_text_internal(
+                context,
+                chat_id,
+                message_id,
             )
-            return self.ASSIGNEE
+
+        if user_cfg.assignee.values:
+            assignees = user_cfg.assignee.values
         else:
-            LOGGER.info("No assignees found for project %s", task_data.project_key)
-            await query.edit_message_text(
-                text="No assignees found. Proceeding to the next step...",
+            assignees = self.jira_repository.get_assignees(task_data.project_key)
+
+        if not assignees:
+            LOGGER.info("No assignees found.")
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="No assignees found. Proceeding to next step...",
             )
-            return await self.ask_priority_from_query(query, context)
+            return await self.ask_priority_from_text_internal(
+                context,
+                chat_id,
+                message_id,
+            )
+
+        extra_buttons = [[InlineKeyboardButton("Others", callback_data="others")]]
+        reply_markup = self.build_keyboard(
+            options=assignees,
+            data=assignees,
+            row_width=2,
+            include_skip=True,
+            extra_buttons=extra_buttons,
+        )
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="Got it! Now choose an assignee from the list below:",
+            reply_markup=reply_markup,
+        )
+        return self.ASSIGNEE
 
     async def add_assignee(self, update: Update, context: CallbackContext) -> int:
+        """User picks assignee or 'others' or skip."""
         query = update.callback_query
         await query.answer()
 
@@ -304,23 +304,18 @@ class JiraTaskCreation:
             return await self.ask_priority_from_query(query, context)
 
     async def search_assignee(self, update: Update, context: CallbackContext) -> int:
-        """
-        User typed the 'username to search for' when they clicked 'Others'.
-        We'll look up possible matches, then show them in an inline keyboard by editing the same message.
-        """
+        """User typed 'others' search string."""
         username_query = update.message.text.strip()
         matching_users = self.jira_repository.search_users(username_query)
 
-        # Reuse the last inline keyboard message ID:
         last_message_id = context.user_data["last_inline_message_id"]
 
         if matching_users:
             options = matching_users
-            data = matching_users
             extra_buttons = [[InlineKeyboardButton("Others", callback_data="others")]]
             reply_markup = self.build_keyboard(
                 options=options,
-                data=data,
+                data=options,
                 row_width=2,
                 include_skip=True,
                 extra_buttons=extra_buttons,
@@ -338,7 +333,6 @@ class JiraTaskCreation:
                 message_id=last_message_id,
                 text="No users found. Please enter a different username:",
             )
-            # Next message from user is again a TEXT message for the same search
             return self.ASSIGNEE_SEARCH
 
     async def select_assignee_from_search(
@@ -346,15 +340,12 @@ class JiraTaskCreation:
         update: Update,
         context: CallbackContext,
     ) -> int:
-        """
-        User clicked on one of the matching assignees from search, or 'Others', or 'skip'.
-        """
+        """User picks from the search result or 'others' or skip."""
         query = update.callback_query
         await query.answer()
 
         task_data: TaskData = context.user_data["task_data"]
         if query.data == "others":
-            # Prompt user to enter a new username
             await query.edit_message_text("Please enter the username to search for:")
             return self.ASSIGNEE_SEARCH
         elif query.data == "skip":
@@ -362,7 +353,6 @@ class JiraTaskCreation:
             LOGGER.info("Assignee skipped.")
             return await self.ask_priority_from_query(query, context)
         else:
-            # User picked one from the search results
             task_data.assignee = query.data
             LOGGER.info("Assignee selected from search: %s", task_data.assignee)
             return await self.ask_priority_from_query(query, context)
@@ -372,81 +362,141 @@ class JiraTaskCreation:
         update: Update,
         context: CallbackContext,
     ) -> int:
-        """
-        Helper when we come from a text update. Must edit the last inline keyboard message.
-        """
+        """Helper if we come from a text-based function to set priority."""
         last_message_id = context.user_data["last_inline_message_id"]
-        priorities = self.jira_repository.get_priorities()
-        options = [priority.name for priority in priorities]
-        reply_markup = self.build_keyboard(options, include_skip=True, row_width=4)
-        await context.bot.edit_message_text(
-            chat_id=update.effective_chat.id,
-            message_id=last_message_id,
-            text="Got it! Now choose a priority from the list below:",
-            reply_markup=reply_markup,
+        return await self._ask_priority_common(
+            context,
+            update.effective_chat.id,
+            last_message_id,
         )
-        return self.PRIORITY
+
+    async def ask_priority_from_text_internal(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Internal helper used if skipping from text-based steps."""
+        return await self._ask_priority_common(context, chat_id, message_id)
 
     async def ask_priority_from_query(
         self,
         query: CallbackQuery,
         context: CallbackContext,
     ) -> int:
-        """
-        Helper to ask priority after an inline-button click.
-        """
-        priorities = self.jira_repository.get_priorities()
-        options = [priority.name for priority in priorities]
+        """Helper if we come from an inline button to set priority."""
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        return await self._ask_priority_common(context, chat_id, message_id)
+
+    async def _ask_priority_common(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Check user config for priority, skip or show the inline keyboard."""
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.priority.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping priority. Proceeding to next step...",
+            )
+            return await self._ask_sprint_common(context, chat_id, message_id)
+
+        if user_cfg.priority.values:
+            options = user_cfg.priority.values
+        else:
+            priorities = self.jira_repository.get_priorities()
+            options = [p.name for p in priorities]
+
         reply_markup = self.build_keyboard(options, include_skip=True, row_width=4)
-        await query.edit_message_text(
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
             text="Got it! Now choose a priority from the list below:",
             reply_markup=reply_markup,
         )
         return self.PRIORITY
 
     async def add_priority(self, update: Update, context: CallbackContext) -> int:
+        """User picks a priority or skip."""
         query = update.callback_query
         await query.answer()
 
         task_data: TaskData = context.user_data["task_data"]
         if query.data != "skip":
             task_data.priority = query.data
-
         LOGGER.info("Priority selected: %s", task_data.priority)
+
         return await self.ask_sprint(query, context)
 
     async def ask_sprint(self, query: CallbackQuery, context: CallbackContext) -> int:
-        task_data: TaskData = context.user_data["task_data"]
-        active_and_future_sprints = [
-            sprint
-            for sprint in task_data.sprints
-            if sprint.state in ("active", "future")
-        ]
+        """Display sprints or skip if user config says so."""
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        return await self._ask_sprint_common(context, chat_id, message_id)
 
-        if active_and_future_sprints:
-            options = [sprint.name for sprint in active_and_future_sprints]
-            data = [str(sprint.id) for sprint in active_and_future_sprints]
-            reply_markup = self.build_keyboard(options, data, include_skip=True)
-            await query.edit_message_text(
-                text="Got it! Now choose a sprint from the list below:",
-                reply_markup=reply_markup,
+    async def _ask_sprint_common(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Check user config for sprint, skip or show sprints."""
+        task_data: TaskData = context.user_data["task_data"]
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.sprint.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping sprint. Proceeding to next step...",
             )
-            return self.SPRINT
+            return await self._ask_epic_common(context, chat_id, message_id)
+
+        if user_cfg.sprint.values:
+            options = user_cfg.sprint.values
+            data = user_cfg.sprint.values
         else:
-            LOGGER.info("No active or future sprints found.")
-            await query.edit_message_text(
-                text="No active or future sprints found. Proceeding to the next step...",
-            )
-            return await self.ask_epic_from_query(query, context)
+            active_and_future_sprints = [
+                s for s in task_data.sprints if s.state in ("active", "future")
+            ]
+            if not active_and_future_sprints:
+                LOGGER.info("No active or future sprints found.")
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text="No active or future sprints found. Proceeding...",
+                )
+                return await self._ask_epic_common(context, chat_id, message_id)
+            options = [s.name for s in active_and_future_sprints]
+            data = [str(s.id) for s in active_and_future_sprints]
+
+        reply_markup = self.build_keyboard(options, data, include_skip=True)
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="Got it! Now choose a sprint from the list below:",
+            reply_markup=reply_markup,
+        )
+        return self.SPRINT
 
     async def add_sprint(self, update: Update, context: CallbackContext) -> int:
+        """User picks sprint or skip."""
         query = update.callback_query
         await query.answer()
 
         task_data: TaskData = context.user_data["task_data"]
         if query.data != "skip":
-            task_data.sprint_id = int(query.data)
-            LOGGER.info("Sprint selected: %s", task_data.sprint_id)
+            try:
+                task_data.sprint_id = int(query.data)
+                LOGGER.info("Sprint selected: %s", task_data.sprint_id)
+            except ValueError:
+                LOGGER.info("Sprint selected (custom string): %s", query.data)
+                task_data.sprint_id = None
         else:
             LOGGER.info("Sprint skipped.")
 
@@ -457,41 +507,69 @@ class JiraTaskCreation:
         query: CallbackQuery,
         context: CallbackContext,
     ) -> int:
-        """
-        Prompt the user to pick an epic. We do it by editing the same message with the epic keyboard.
-        """
+        """Ask epic or skip if not set_field."""
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        return await self._ask_epic_common(context, chat_id, message_id)
+
+    async def _ask_epic_common(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Show epic or skip if user config says so."""
         task_data: TaskData = context.user_data["task_data"]
-        if task_data.epics:
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.epic_link.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping epic link. Proceeding to the next step...",
+            )
+            return await self._ask_release_common(context, chat_id, message_id)
+
+        if user_cfg.epic_link.values:
+            options = user_cfg.epic_link.values
+            data = user_cfg.epic_link.values
+        else:
+            if not task_data.epics:
+                LOGGER.info("No epics found for %s", task_data.project_key)
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text="No epics found. Proceeding...",
+                )
+                return await self._ask_release_common(context, chat_id, message_id)
             options = [epic.fields.summary for epic in task_data.epics]
             data = [epic.key for epic in task_data.epics]
-            reply_markup = self.build_keyboard(
-                options,
-                data,
-                include_skip=True,
-                row_width=3,
-            )
-            await query.edit_message_text(
-                text="Got it! Now choose an epic from the list below:",
-                reply_markup=reply_markup,
-            )
-            return self.EPIC
-        else:
-            LOGGER.info("No epics found for project %s", task_data.project_key)
-            await query.edit_message_text(
-                text="No epics found. Proceeding to the next step...",
-            )
-            return await self.ask_release_from_query(query, context)
+
+        reply_markup = self.build_keyboard(
+            options,
+            data,
+            include_skip=True,
+            row_width=3,
+        )
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="Got it! Now choose an epic from the list below:",
+            reply_markup=reply_markup,
+        )
+        return self.EPIC
 
     async def add_epic(self, update: Update, context: CallbackContext) -> int:
+        """User picks epic or skip."""
         query = update.callback_query
         await query.answer()
 
         task_data: TaskData = context.user_data["task_data"]
         if query.data != "skip":
             task_data.epic_link = query.data
-            LOGGER.info("Epic selected: %s", task_data.epic_link)
         else:
             LOGGER.info("Epic skipped.")
+        LOGGER.info("Epic selected: %s", task_data.epic_link)
 
         return await self.ask_release_from_query(query, context)
 
@@ -500,31 +578,59 @@ class JiraTaskCreation:
         query: CallbackQuery,
         context: CallbackContext,
     ) -> int:
-        task_data: TaskData = context.user_data["task_data"]
-        releases = [
-            version
-            for version in self.jira_repository.get_project_versions(
-                task_data.project_key,
-            )
-            if not version.released
-        ]
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        return await self._ask_release_common(context, chat_id, message_id)
 
-        if releases:
-            options = [version.name for version in releases]
-            reply_markup = self.build_keyboard(options, include_skip=True, row_width=3)
-            await query.edit_message_text(
-                text="Got it! Now choose a release from the list below:",
-                reply_markup=reply_markup,
+    async def _ask_release_common(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Show release or skip."""
+        task_data: TaskData = context.user_data["task_data"]
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.release.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping release. Proceeding to next step...",
             )
-            return self.RELEASE
+            return await self._ask_task_type_common(context, chat_id, message_id)
+
+        if user_cfg.release.values:
+            options = user_cfg.release.values
         else:
-            LOGGER.info("No unreleased versions found.")
-            await query.edit_message_text(
-                text="No unreleased versions found. Proceeding to the next step...",
-            )
-            return await self.ask_task_type_from_query(query, context)
+            releases = [
+                v
+                for v in self.jira_repository.get_project_versions(
+                    task_data.project_key,
+                )
+                if not v.released
+            ]
+            if not releases:
+                LOGGER.info("No unreleased versions found.")
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text="No unreleased versions found. Proceeding...",
+                )
+                return await self._ask_task_type_common(context, chat_id, message_id)
+            options = [version.name for version in releases]
+
+        reply_markup = self.build_keyboard(options, include_skip=True, row_width=3)
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="Got it! Now choose a release from the list below:",
+            reply_markup=reply_markup,
+        )
+        return self.RELEASE
 
     async def add_release(self, update: Update, context: CallbackContext) -> int:
+        """User picks release or skip."""
         query = update.callback_query
         await query.answer()
 
@@ -542,19 +648,44 @@ class JiraTaskCreation:
         query: CallbackQuery,
         context: CallbackContext,
     ) -> int:
-        """
-        Show the user a list of task types.
-        """
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+        return await self._ask_task_type_common(context, chat_id, message_id)
+
+    async def _ask_task_type_common(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Show task type or skip if user config says so."""
         task_data: TaskData = context.user_data["task_data"]
-        options = task_data.task_types
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.task_type.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping task type. Proceeding to the next step...",
+            )
+            return await self._ask_story_points_common(context, chat_id, message_id)
+
+        if user_cfg.task_type.values:
+            options = user_cfg.task_type.values
+        else:
+            options = task_data.task_types
+
         reply_markup = self.build_keyboard(options, row_width=3)
-        await query.edit_message_text(
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
             text="Got it! Now choose a task type from the list below:",
             reply_markup=reply_markup,
         )
         return self.TASK_TYPE
 
     async def add_task_type(self, update: Update, context: CallbackContext) -> int:
+        """User picks or skip."""
         query = update.callback_query
         await query.answer()
 
@@ -562,27 +693,85 @@ class JiraTaskCreation:
         task_data.task_type = query.data
         LOGGER.info("Task type selected: %s", task_data.task_type)
 
-        options = [str(sp) for sp in self.STORY_POINTS_VALUES]
-        reply_markup = self.build_keyboard(options, include_skip=True, row_width=3)
+        return await self._ask_story_points_common(
+            context,
+            query.message.chat_id,
+            query.message.message_id,
+        )
 
-        await query.edit_message_text(
+    async def _ask_story_points_common(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Show or skip story points."""
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.story_point.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping story points. Proceeding to attachments...",
+            )
+            return await self._ask_attachment_prompt(context, chat_id, message_id)
+
+        if user_cfg.story_point.values:
+            options = user_cfg.story_point.values
+        else:
+            options = [str(sp) for sp in self.STORY_POINTS_VALUES]
+
+        reply_markup = self.build_keyboard(options, include_skip=True, row_width=3)
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
             text="Got it! Now choose the story points:",
             reply_markup=reply_markup,
         )
         return self.STORY_POINTS
 
     async def add_story_points(self, update: Update, context: CallbackContext) -> int:
+        """User picks story points or skip."""
         query = update.callback_query
         await query.answer()
 
         task_data: TaskData = context.user_data["task_data"]
         if query.data != "skip":
-            task_data.story_points = float(query.data)
-            LOGGER.info("Story points selected: %s", task_data.story_points)
-        else:
-            LOGGER.info("Story points skipped.")
+            try:
+                task_data.story_points = float(query.data)
+            except ValueError:
+                LOGGER.info("User picked a non-numeric story point: %s", query.data)
+                task_data.story_points = None
+        LOGGER.info("Story points selected: %s", task_data.story_points)
 
-        await query.edit_message_text(
+        return await self._ask_attachment_prompt(
+            context,
+            query.message.chat_id,
+            query.message.message_id,
+        )
+
+    async def _ask_attachment_prompt(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """Show or skip attachments based on user config."""
+        user_cfg = context.user_data["user_config"]
+
+        if not user_cfg.attachment.set_field:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Skipping attachments. Creating the task...",
+            )
+            chat_obj = await context.bot.send_message(chat_id, "Creating your task...")
+            await self.finalize_task(chat_obj, context)
+            return self.CREATE_ANOTHER
+
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
             text=(
                 "Got it! Now you can send attachments (images, videos, documents). "
                 "When you're done, type 'done' or 'skip' to skip attachments."
@@ -591,24 +780,21 @@ class JiraTaskCreation:
         return self.ATTACHMENT
 
     async def add_attachment(self, update: Update, context: CallbackContext) -> int:
-        """
-        This part you probably want as separate messages, so that's normal.
-        """
+        """Handles user sending attachments or typing 'done'/'skip'."""
         task_data: TaskData = context.user_data["task_data"]
         attachments = task_data.attachments
         media_group_messages = context.user_data.setdefault("media_group_messages", {})
 
-        # Same logic as you had before ...
         if update.message.text:
             if update.message.text.lower() == "skip":
-                LOGGER.info("User chose to skip attachment upload.")
+                LOGGER.info("User skipped attachments.")
                 for msgs in media_group_messages.values():
                     await self.process_media_group(msgs, attachments)
                 media_group_messages.clear()
                 await self.finalize_task(update, context)
                 return self.CREATE_ANOTHER
             elif update.message.text.lower() == "done":
-                LOGGER.info("User finished uploading attachments.")
+                LOGGER.info("User finished attachments.")
                 for msgs in media_group_messages.values():
                     await self.process_media_group(msgs, attachments)
                 media_group_messages.clear()
@@ -616,15 +802,12 @@ class JiraTaskCreation:
                 return self.CREATE_ANOTHER
             else:
                 await update.message.reply_text(
-                    "Invalid input. Please type 'done' when finished or 'skip' to skip attachments.",
+                    "Invalid input. Please type 'done' or 'skip'.",
                 )
                 return self.ATTACHMENT
 
         if update.message.media_group_id:
-            msgs = media_group_messages.setdefault(
-                update.message.media_group_id,
-                [],
-            )
+            msgs = media_group_messages.setdefault(update.message.media_group_id, [])
             msgs.append(update.message)
             return self.ATTACHMENT
         elif any(
@@ -637,12 +820,12 @@ class JiraTaskCreation:
         ):
             await self.process_single_media(update.message, attachments)
             await update.message.reply_text(
-                "Attachment received. You can send more, or type 'done' to finish.",
+                "Attachment received. You can send more, or 'done' to finish.",
             )
             return self.ATTACHMENT
         else:
             await update.message.reply_text(
-                "Please upload an attachment or type 'done' when finished.",
+                "Please upload an attachment or type 'done'/'skip'.",
             )
             return self.ATTACHMENT
 
@@ -651,6 +834,7 @@ class JiraTaskCreation:
         messages: List[Any],
         attachments: Dict[str, List],
     ):
+        """Downloads each item in a media group."""
         async with aiohttp.ClientSession() as session:
             for idx, media_message in enumerate(messages):
                 if media_message.photo:
@@ -683,6 +867,7 @@ class JiraTaskCreation:
                     )
 
     async def process_single_media(self, message: Any, attachments: Dict[str, List]):
+        """Download a single piece of media."""
         async with aiohttp.ClientSession() as session:
             if message.photo:
                 await self.fetch_and_store_media(
@@ -714,36 +899,55 @@ class JiraTaskCreation:
                 )
 
     async def fetch_and_store_media(self, media, session, storage_list, filename):
+        """GET the file contents from Telegram, store in memory."""
         media_file = await media.get_file()
         async with session.get(media_file.file_path) as response:
             if response.status == 200:
                 buffer = BytesIO(await response.read())
                 storage_list.append((filename, buffer))
             else:
-                LOGGER.error(f"Failed to fetch media from {media_file.file_path}")
+                LOGGER.error("Failed to fetch media from %s", media_file.file_path)
 
-    async def finalize_task(self, update: Update, context: CallbackContext) -> None:
+    async def finalize_task(
+        self,
+        update_or_message: Any,
+        context: CallbackContext,
+    ) -> None:
         """
-        Actually create the ticket in JIRA and ask if user wants to create another.
+        Actually create the ticket in JIRA and ask user if they want to create another.
+        We can handle `update_or_message` if we might be calling this from a pure message object.
         """
+        if hasattr(update_or_message, "message") and update_or_message.message:
+            message = update_or_message.message
+        else:
+            message = update_or_message
+
         task_data: TaskData = context.user_data["task_data"]
         try:
             new_issue = self.jira_repository.create_task(task_data)
-            await update.message.reply_text(
+            await message.reply_text(
                 f"Task created successfully! Link: {JIRA_SETTINGS.domain}/browse/{new_issue.key}",
             )
+            assignee_user_data = self.user_config.get_user_config_by_jira_username(
+                task_data.assignee,
+            )
+            if assignee_user_data:
+                try:
+                    await context.bot.send_message(
+                        chat_id=assignee_user_data.telegram_user_chat_id,
+                        text=f"Task  {JIRA_SETTINGS.domain}/browse/{new_issue.key} was created for you",
+                    )
+                except Exception as e:
+                    LOGGER.error("Failed to notify user about task creation: %s", e)
         except Exception as e:
-            error_message = f"Failed to create task: {e}"
-            await update.message.reply_text(error_message)
+            await message.reply_text(f"Failed to create task: {e}")
             return
 
-        # Offer to create another. We'll do this by a quick inline keyboard in a new message:
         reply_markup = self.build_keyboard(["Yes", "No"], ["yes", "no"], row_width=2)
-        msg = await update.message.reply_text(
+        msg = await message.reply_text(
             "Do you want to create another task with similar fields?",
             reply_markup=reply_markup,
         )
-        # Store this new inline keyboard's message ID if you want to keep editing it as well:
         context.user_data["last_inline_message_id"] = msg.message_id
 
     async def handle_create_another(
@@ -751,11 +955,11 @@ class JiraTaskCreation:
         update: Update,
         context: CallbackContext,
     ) -> int:
+        """User picks 'Yes' or 'No' after successful creation."""
         query = update.callback_query
         await query.answer()
         if query.data == "yes":
             task_data: TaskData = context.user_data["task_data"]
-            # Reset relevant fields:
             task_data.summary = None
             task_data.description = None
             task_data.story_points = None
@@ -765,7 +969,6 @@ class JiraTaskCreation:
                 "videos": [],
                 "audio": [],
             }
-            # Re-use the same conversation.
             await query.edit_message_text("Please enter the task summary:")
             return self.SUMMARY
         else:

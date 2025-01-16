@@ -18,3 +18,4 @@ class UserConfig(BaseModel):
     release: FieldConfig
     sprint: FieldConfig
     assignee: FieldConfig
+    priority: FieldConfig = FieldConfig(default=FieldConfig(set_field=True))
