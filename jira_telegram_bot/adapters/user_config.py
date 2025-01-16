@@ -23,12 +23,7 @@ class UserConfig:
         user_configurations = {}
         for username, config_data in raw_data.items():
             try:
-                config = {}
-                config["telegram_username"] = username
-                config["jira_username"] = config_data["jira_username"]
-                for field_name, field in config_data["fields"].items():
-                    config[field_name] = field
-                user_configurations[username] = UserConfigEntity(**config)
+                user_configurations[username] = UserConfigEntity(**config_data)
             except ValidationError as e:
                 print(f"Error loading config for {username}: {e}")
         return user_configurations

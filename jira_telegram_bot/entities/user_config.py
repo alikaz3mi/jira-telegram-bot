@@ -7,6 +7,7 @@ from jira_telegram_bot.entities.field_config import FieldConfig
 
 class UserConfig(BaseModel):
     telegram_username: str
+    telegram_user_chat_id: int
     jira_username: str
     project: FieldConfig
     component: FieldConfig
