@@ -11,3 +11,16 @@ services:
     command: >
       python3 jira_telegram_bot
     restart: always
+
+  ticketing-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticketing_bot
+    volumes:
+      - .:/app
+    command: >
+      python3 jira_telegram_bot/frameworks/fast_api/create_ticket.py
+    restart: always
+    ports:
+      - "2315:2315"

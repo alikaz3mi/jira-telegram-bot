@@ -177,6 +177,9 @@ class JiraRepository(TaskManagerRepositoryInterface):
         if task_data.priority:
             issue_fields["priority"] = {"name": task_data.priority}
 
+        if task_data.labels:
+            issue_fields["labels"] = task_data.labels
+
         return issue_fields
 
     def handle_attachments(self, issue: Issue, attachments: Dict[str, List]):
