@@ -35,6 +35,9 @@ class UserConfig(UserConfigInterface):
     def get_user_config(self, username: str) -> Optional[UserConfigEntity]:
         return self.user_config.get(username)
 
+    def list_all_users(self):
+        return self.user_config.keys()
+
     def get_user_config_by_jira_username(
         self,
         jira_username: str,

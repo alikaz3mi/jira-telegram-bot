@@ -80,7 +80,7 @@ class JiraTaskCreation:
 
     async def start(self, update: Update, context: CallbackContext) -> int:
         """User starts conversation with /super_task."""
-        if not await check_user_allowed(update):
+        if not self.user_config.get_user_config(update.message.from_user.username):
             return ConversationHandler.END
 
         context.user_data.clear()

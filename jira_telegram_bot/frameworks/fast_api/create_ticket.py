@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import time
 from collections import defaultdict
 from io import BytesIO
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Optional
 
 import aiohttp
 import requests
@@ -16,6 +19,7 @@ from fastapi import Request
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
+from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
 from jira_telegram_bot.entities.task import TaskData
@@ -37,12 +41,13 @@ class JiraSettings(BaseSettings):
 
 app = FastAPI()
 
-TELEGRAM_BOT_TOKEN = TELEGRAM_SETTINGS.TOKEN
+TELEGRAM_BOT_TOKEN = "7673971624:AAHKBV6IIrGTFTtR2_gA04AqeIyOIuvQY6M"
 TELEGRAM_WEBHOOK_URL = TELEGRAM_SETTINGS.WEBHOOK_URL
 JIRA_BASE_URL = JIRA_SETTINGS.domain
-JIRA_PROJECT_KEY = "CHATBUS"
+JIRA_PROJECT_KEY = "PCT"
 jira_repository = JiraRepository(JIRA_SETTINGS)
 
+# Mapping of Telegram usernames to Jira assignees
 users = {
     "alikaz3mi": "a_kazemi",
     "Mousavi_Shoushtari": "m_mousavi",
@@ -50,14 +55,25 @@ users = {
     "davood_fazeli": "d_fazeli",
 }
 
+# In-memory storage for media groups
 MEDIA_GROUP_STORE: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 MEDIA_GROUP_METADATA: Dict[str, float] = {}
 GROUP_TIMEOUT_SECONDS = 5.0
 
+# Path to the JSON data store
+DATA_STORE_PATH = f"{DEFAULT_PATH}/data_store.json"
 
-def send_telegram_message(chat_id: int, text: str):
+
+def send_telegram_message(
+    chat_id: int,
+    text: str,
+    reply_message_id: Optional[int] = None,
+):
+    """Send a message to a Telegram chat."""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text}
+    if reply_message_id:
+        payload["reply_parameters"] = {"message_id": reply_message_id}
     resp = requests.post(url, json=payload)
     if resp.status_code != 200:
         LOGGER.error(
@@ -108,6 +124,7 @@ async def fetch_and_store_media(
     storage_list: List,
     filename: str,
 ):
+    """Fetch media from Telegram and store it in the provided storage list."""
     media_file = await media.get_file()
     file_url = (
         f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{media_file.file_path}"
@@ -123,6 +140,7 @@ async def fetch_and_store_media(
 
 
 async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskData):
+    """Process a group of media messages and create a Jira issue."""
     attachments = task_data.attachments
     async with aiohttp.ClientSession() as session:
         for idx, msg in enumerate(messages):
@@ -174,8 +192,13 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
     first_chat_id = messages[0]["chat"]["id"]
     send_telegram_message(first_chat_id, issue_message)
 
+    # Save mapping between channel post and Jira issue
+    channel_post_id = messages[0]["message_id"]
+    save_mapping(channel_post_id, issue.key, messages[0]["chat"]["id"], first_chat_id)
+
 
 async def process_single_message(channel_post: Dict[str, Any], task_data: TaskData):
+    """Process a single message and create a Jira issue."""
     attachments = task_data.attachments
     async with aiohttp.ClientSession() as session:
         if "photo" in channel_post:
@@ -225,48 +248,166 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
     chat_id = channel_post["chat"]["id"]
     send_telegram_message(chat_id, issue_message)
 
+    # Save mapping between channel post and Jira issue
+    channel_post_id = channel_post["message_id"]
+    save_mapping(channel_post_id, issue.key, channel_post["chat"]["id"], chat_id)
+
+
+def load_data_store() -> Dict[str, Any]:
+    """Load the data store from the JSON file."""
+    if not os.path.exists(DATA_STORE_PATH):
+        return {}
+    with open(DATA_STORE_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_data_store(data: Dict[str, Any]):
+    """Save the data store to the JSON file."""
+    with open(DATA_STORE_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+
+def save_mapping(channel_post_id: int, issue_key: str, chat_id: int, group_id: int):
+    """Save the mapping between channel post and Jira issue."""
+    data = load_data_store()
+    data[str(channel_post_id)] = {
+        "issue_key": issue_key,
+        "channel_chat_id": chat_id,
+        "group_chat_id": group_id,
+    }
+    save_data_store(data)
+
+
+def get_issue_key_from_channel_post(channel_post_id: int) -> Optional[str]:
+    """Retrieve the Jira issue key associated with a channel post."""
+    data = load_data_store()
+    return data.get(str(channel_post_id), {}).get("issue_key")
+
+
+def get_group_chat_id_from_channel_post(channel_post_id: int) -> Optional[int]:
+    """Retrieve the group chat ID associated with a channel post."""
+    data = load_data_store()
+    return data.get(str(channel_post_id), {}).get("group_chat_id")
+
+
+async def add_comment_to_jira(issue_key: str, comment: str):
+    """Add a comment to a Jira issue."""
+    jira_repository.add_comment(issue_key, comment)
+
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
         data = await request.json()
         LOGGER.debug(f"Incoming Telegram data: {data}")
-        if "channel_post" not in data:
-            return {"status": "ignored", "reason": "Not a channel_post update"}
-        channel_post = data["channel_post"]
-        username = channel_post.get("from", {}).get("username", "UnknownUser")
-        text = channel_post.get("text") or channel_post.get("caption") or ""
-        lines = text.strip().split("\n")
-        task_data = TaskData()
-        task_data.project_key = JIRA_PROJECT_KEY
-        task_data.summary = lines[0] if lines else "No Summary"
-        task_data.description = text or "No description provided."
-        task_data.task_type = "Task" if "bug" not in text.lower() else "Bug"
-        task_data.assignee = users.get(username, None)
-        media_group_id = channel_post.get("media_group_id")
-        if media_group_id:
-            MEDIA_GROUP_STORE[media_group_id].append(channel_post)
-            MEDIA_GROUP_METADATA[media_group_id] = time.time()
-            LOGGER.info(
-                f"Stored media_group_id={media_group_id} update. Total so far: {len(MEDIA_GROUP_STORE[media_group_id])} messages.",
-            )
-            return {
-                "status": "success",
-                "message": "Media group update stored. Awaiting more.",
-            }
-        else:
-            if any(k in channel_post for k in ["photo", "video", "audio", "document"]):
-                await process_single_message(channel_post, task_data)
+
+        # Handle channel posts
+        if "channel_post" in data:
+            channel_post = data["channel_post"]
+            username = channel_post.get("from", {}).get("username", "UnknownUser")
+            text = channel_post.get("text") or channel_post.get("caption") or ""
+            lines = text.strip().split("\n")
+            task_data = TaskData()
+            task_data.project_key = JIRA_PROJECT_KEY
+            task_data.summary = lines[0] if lines else "No Summary"
+            task_data.description = text or "No description provided."
+            task_data.task_type = "Task" if "bug" not in text.lower() else "Bug"
+            task_data.assignee = users.get(username, None)
+            media_group_id = channel_post.get("media_group_id")
+            if media_group_id:
+                MEDIA_GROUP_STORE[media_group_id].append(channel_post)
+                MEDIA_GROUP_METADATA[media_group_id] = time.time()
+                LOGGER.info(
+                    f"Stored media_group_id={media_group_id} update. Total so far: {len(MEDIA_GROUP_STORE[media_group_id])} messages.",
+                )
+                return {
+                    "status": "success",
+                    "message": "Media group update stored. Awaiting more.",
+                }
             else:
-                issue = jira_repository.create_task(task_data)
-                issue_message = f"Task created (text-only) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
-                LOGGER.info(issue_message)
-                chat_id = channel_post["chat"]["id"]
-                send_telegram_message(chat_id, issue_message)
-            return {
-                "status": "success",
-                "message": "Single message processed, Jira created.",
-            }
+                if any(
+                    k in channel_post for k in ["photo", "video", "audio", "document"]
+                ):
+                    await process_single_message(channel_post, task_data)
+                else:
+                    issue = jira_repository.create_task(task_data)
+                    issue_message = f"Task created (text-only) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
+                    LOGGER.info(issue_message)
+                    chat_id = channel_post["chat"]["id"]
+
+                    # Save mapping between channel post and Jira issue
+                    channel_post_id = channel_post["message_id"]
+                    save_mapping(channel_post_id, issue.key, chat_id, chat_id)
+
+                return {
+                    "status": "success",
+                    "message": "Single message processed, Jira created.",
+                }
+
+        # Handle messages in groups (e.g., comments)
+        elif "message" in data:
+            message = data["message"]
+            if not message.get("is_automatic_forward", False):
+                # Regular message in group; add as comment to Jira issue
+                chat_id = message["chat"]["id"]
+                text = message.get("text") or message.get("caption") or ""
+                # Find the related Jira issue based on group chat ID
+                issue_key = None
+                data_store = load_data_store()
+                for mapping in data_store.values():
+                    if mapping.get("group_chat_id") == chat_id:
+                        issue_key = mapping.get("issue_key")
+                        break
+                if issue_key:
+                    await add_comment_to_jira(issue_key, text)
+                    LOGGER.info(f"Added comment to Jira issue {issue_key}: {text}")
+                    return {
+                        "status": "success",
+                        "message": "Comment added to Jira issue.",
+                    }
+                else:
+                    LOGGER.warning(
+                        f"No Jira issue mapping found for group chat_id={chat_id}.",
+                    )
+                    return {
+                        "status": "ignored",
+                        "reason": "No Jira issue mapping found for this group.",
+                    }
+
+            else:
+                # Handle automatic forward messages
+                message_id = message["message_id"]
+                forward_origin = message.get("forward_origin", {})
+                original_message_id = forward_origin.get("message_id")
+                issue_key = get_issue_key_from_channel_post(original_message_id)
+                group_chat_id = message["chat"]["id"]
+
+                if issue_key:
+                    # Send message to the group with chat and group IDs and Jira issue link
+                    issue_link = f"{JIRA_SETTINGS.domain}/browse/{issue_key}"
+                    issue_message = f"Jira Issue Created:\n" f"Link: {issue_link}"
+                    send_telegram_message(
+                        group_chat_id,
+                        issue_message,
+                        reply_message_id=message_id,
+                    )
+                    data = load_data_store()
+                    if str(original_message_id) in data:
+                        data[str(original_message_id)]["reply_message_id"] = message_id
+                        save_data_store(data)
+                    LOGGER.info(
+                        f"Sent Jira issue link to group chat_id={group_chat_id}: {issue_link}",
+                    )
+                else:
+                    LOGGER.warning(
+                        f"No Jira issue found for original message_id={original_message_id}.",
+                    )
+                return {"status": "success", "message": "Forwarded message processed."}
+
+        else:
+            LOGGER.debug("Update does not contain channel_post or message.")
+            return {"status": "ignored", "reason": "Unsupported update type."}
+
     except Exception as e:
         LOGGER.error(f"Error processing Telegram update: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
@@ -290,6 +431,7 @@ async def on_shutdown():
 
 
 def set_telegram_webhook():
+    """Set the Telegram webhook."""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
     payload = {
         "url": TELEGRAM_WEBHOOK_URL,
@@ -304,6 +446,7 @@ def set_telegram_webhook():
 
 
 async def finalize_media_groups():
+    """Finalize processing of media groups after a timeout."""
     while True:
         now = time.time()
         to_finalize = []

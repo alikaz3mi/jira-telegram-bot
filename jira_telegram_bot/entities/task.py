@@ -37,6 +37,10 @@ class TaskData(BaseModel):
     config: Dict[str, Any] | None = Field(default=None)
     epics: List[Issue] = Field(default_factory=list)
     board_id: Optional[int] = Field(default=None)
+    due_date: Optional[str] = Field(
+        default=None,
+        description="Number of days before due date",
+    )
     sprints: List[Any] = Field(default_factory=list)
     task_types: List[str] = Field(default_factory=list)
     media_group_messages: Dict[str, List[Any]] = Field(
