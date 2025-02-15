@@ -38,13 +38,23 @@ class TaskData(BaseModel):
     config: Dict[str, Any] | None = Field(default=None)
     epics: List[Issue] = Field(default_factory=list)
     board_id: Optional[int] = Field(default=None)
+
+    # The user picks a day offset; we convert it to a date string (YYYY-MM-DD)
     due_date: Optional[str] = Field(
         default=None,
-        description="Number of days before due date",
+        description="The actual date for the task due_date in YYYY-MM-DD.",
     )
+
+    # Same date stored in the target_end custom field
+    target_end: Optional[str] = Field(
+        default=None,
+        description="The date in customfield_10110 (Target End).",
+    )
+
     sprints: List[Any] = Field(default_factory=list)
     task_types: List[str] = Field(default_factory=list)
     media_group_messages: Dict[str, List[Any]] = Field(
         default_factory=lambda: defaultdict(list),
     )
+
     model_config = ConfigDict(arbitrary_types_allowed=True)

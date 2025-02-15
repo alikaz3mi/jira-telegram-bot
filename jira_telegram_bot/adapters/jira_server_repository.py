@@ -177,6 +177,11 @@ class JiraRepository(TaskManagerRepositoryInterface):
         if task_data.priority:
             issue_fields["priority"] = {"name": task_data.priority}
 
+        # if task_data.due_date:
+        #     issue_fields["duedate"] = task_data.due_date  # standard Jira due date
+        # if task_data.target_end:
+        #     issue_fields["customfield_10110"] = task_data.target_end  # "Target End" custom field
+
         if task_data.labels:
             issue_fields["labels"] = task_data.labels
 

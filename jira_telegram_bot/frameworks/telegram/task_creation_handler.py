@@ -72,6 +72,10 @@ class TaskCreationHandler(TaskHandlerInterface):
                 self.task_creation_use_case.STORY_POINTS: [
                     CallbackQueryHandler(self.task_creation_use_case.add_story_points),
                 ],
+                # New deadline step
+                self.task_creation_use_case.DEADLINE: [
+                    CallbackQueryHandler(self.task_creation_use_case.add_deadline),
+                ],
                 self.task_creation_use_case.ATTACHMENT: [
                     MessageHandler(
                         filters.PHOTO

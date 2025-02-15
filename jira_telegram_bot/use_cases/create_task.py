@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from io import BytesIO
 from typing import Any
 from typing import Dict
@@ -17,7 +18,6 @@ from telegram.ext import ConversationHandler
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.use_cases.authentication import check_user_allowed
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
@@ -39,11 +39,32 @@ class JiraTaskCreation:
         RELEASE,
         TASK_TYPE,
         STORY_POINTS,
+        DEADLINE,
         ATTACHMENT,
         ASSIGNEE_SEARCH,
         ASSIGNEE_RESULT,
         CREATE_ANOTHER,
-    ) = range(15)
+    ) = range(16)
+
+    DEADLINE_OPTIONS = [
+        ("0", "Current Day"),
+        ("1", "1"),
+        ("2", "2"),
+        ("3", "3"),
+        ("4", "4"),
+        ("5", "5"),
+        ("6", "6"),
+        ("7", "7"),
+        ("8", "8"),
+        ("9", "9"),
+        ("10", "10"),
+        ("11", "11"),
+        ("12", "12"),
+        ("13", "13"),
+        ("14", "14"),
+        ("21", "21"),
+        ("30", "30"),
+    ]
 
     def __init__(
         self,
@@ -731,7 +752,10 @@ class JiraTaskCreation:
         return self.STORY_POINTS
 
     async def add_story_points(self, update: Update, context: CallbackContext) -> int:
-        """User picks story points or skip."""
+        """
+        Called after user chooses story points or skip.
+        Then we move on to asking for a deadline.
+        """
         query = update.callback_query
         await query.answer()
 
@@ -744,6 +768,70 @@ class JiraTaskCreation:
                 task_data.story_points = None
         LOGGER.info("Story points selected: %s", task_data.story_points)
 
+        # After story points, ask for deadline
+        return await self.ask_deadline(query, context)
+
+    async def ask_deadline(self, query: CallbackQuery, context: CallbackContext) -> int:
+        """Prompt the user to pick how many days from now to set the deadlines."""
+        chat_id = query.message.chat_id
+        message_id = query.message.message_id
+
+        # Build keyboard from DEADLINE_OPTIONS
+        days_text = [item[1] for item in self.DEADLINE_OPTIONS]
+        days_data = [item[0] for item in self.DEADLINE_OPTIONS]
+        reply_markup = self.build_keyboard(
+            days_text,
+            days_data,
+            include_skip=True,
+            row_width=3,
+        )
+
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="Please pick the number of days until the deadline (or skip):",
+            reply_markup=reply_markup,
+        )
+        return self.DEADLINE
+
+    async def add_deadline(self, update: Update, context: CallbackContext) -> int:
+        """
+        User picks a day offset or skip. Calculate the actual date in YYYY-MM-DD.
+        Then store in both due_date and target_end in TaskData.
+        Finally, move on to attachments.
+        """
+        query = update.callback_query
+        await query.answer()
+
+        task_data: TaskData = context.user_data["task_data"]
+
+        if query.data.lower() == "skip":
+            LOGGER.info("Deadline skipped.")
+            task_data.due_date = None
+            task_data.target_end = None
+        else:
+            try:
+                day_offset = int(query.data)
+                target_date = datetime.date.today() + datetime.timedelta(
+                    days=day_offset,
+                )
+                date_str = target_date.strftime("%Y-%m-%d")
+
+                # Store in the TaskData
+                task_data.due_date = date_str  # for Jira's duedate
+                task_data.target_end = date_str  # for Jira's customfield_10110
+
+                LOGGER.info(
+                    "Deadline chosen: day offset %s => %s",
+                    day_offset,
+                    date_str,
+                )
+            except ValueError:
+                LOGGER.warning("Invalid day offset picked: %s", query.data)
+                task_data.due_date = None
+                task_data.target_end = None
+
+        # Move on to attachments next
         return await self._ask_attachment_prompt(
             context,
             query.message.chat_id,

@@ -3,6 +3,9 @@
 *.json
 *.jpg
 *.png
+*.csv
+*.xlsx
+
 __pycache__
 *//__pycache__
 
