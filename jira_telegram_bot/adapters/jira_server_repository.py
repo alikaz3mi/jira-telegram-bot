@@ -210,6 +210,12 @@ class JiraRepository(TaskManagerRepositoryInterface):
         self.handle_attachments(new_issue, task_data.attachments)
         return new_issue
 
+    def add_comment(self, issue_key: str, comment: str):
+        """
+        Add a comment to an existing Jira issue.
+        """
+        self.jira.add_comment(issue_key, comment)
+
     def create_task_data_from_jira_issue(self, issue) -> TaskData:
         last_sprint_of_task = (
             getattr(issue.fields, self.jira_sprint_id)[-1]
