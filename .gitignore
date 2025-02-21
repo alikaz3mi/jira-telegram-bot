@@ -5,6 +5,8 @@
 *.png
 *.csv
 *.xlsx
+*.log
+extract.py
 
 __pycache__
 *//__pycache__

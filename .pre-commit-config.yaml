@@ -35,7 +35,7 @@ repos:
           --tee,
           --format=gl-codeclimate,
           --output-file=flake8-code-quality-report.json,
-          --max-line-length=120,
+          --max-line-length=130,
           --extend-immutable-calls=self.deps.depends
         ]
         additional_dependencies: [

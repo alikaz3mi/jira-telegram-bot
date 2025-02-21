@@ -74,7 +74,7 @@ class JiraTaskCreation:
         self.jira_repository = jira_repository
         self.user_config = user_config
         self.media_group_timeout = 1.0
-        self.STORY_POINTS_VALUES = [0.5, 1, 1.5, 2, 3, 5, 8, 13, 21]
+        self.STORY_POINTS_VALUES = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 13, 21]
 
     def build_keyboard(
         self,

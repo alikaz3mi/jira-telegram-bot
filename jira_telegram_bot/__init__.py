@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__version__ = "2.18.5"
+__version__ = "2.19.7"
 __name__ = "jira_telegram_bot"
 
 import os

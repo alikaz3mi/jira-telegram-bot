@@ -9,7 +9,7 @@ spec:
   selector:
     matchLabels:
       app: physo-farsi-admin
-  template:
+  template: # this is for creating a container
     metadata:
       labels:
         app: physo-farsi-admin
@@ -20,7 +20,7 @@ spec:
       - name: physo-farsi-admin
         image: hub.hooshdev.ir/physo/physo_farsi_admin
         ports:
-        - containerPort: 8282
+        - containerPort:
         resources:
           requests:
             memory: "128M"
@@ -32,14 +32,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: physo-farsi-admin-service
+  name:
 spec:
-  #type: NodePort
-  type: ClusterIP
+  type: ClusterIP # other types: load-balancer, node-port, metal-lb. مشخص میکند که چه نوع آیپی خواهد گرفت.
+  # نود پورت برای دسترسی به سرویس از طریق آی پی نود ها می باشد.
+  # کلاستر آی پی برای دسترسی به سرویس از طریق آی پی های داخلی کلاستر می باشد.
   selector:
     app: physo-farsi-admin
   ports:
   - protocol: TCP
     port: 8282
     targetPort: 8282
-      #nodePort: 30082  # Change as needed (NodePorts range from 30000-32767)

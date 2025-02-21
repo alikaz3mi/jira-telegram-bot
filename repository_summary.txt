@@ -1,0 +1,2467 @@
+Repository Structure:
+├── .vscode
+├── bulk_task.py
+├── extract.py
+├── jira_telegram_bot
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── __pycache__
+│   ├── adapters
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   ├── deadline_notifier.py
+│   │   ├── jira_server_repository.py
+│   │   ├── openai_gateway.py
+│   │   ├── telegram_gateway.py
+│   │   └── user_config.py
+│   ├── app_container.py
+│   ├── entities
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   ├── field_config.py
+│   │   ├── task.py
+│   │   └── user_config.py
+│   ├── frameworks
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   ├── fast_api
+│   │   │   ├── __init__.py
+│   │   │   ├── __pycache__
+│   │   │   ├── create_ticket.py
+│   │   │   ├── create_ticket_controller.py
+│   │   │   ├── jira_webhook_controller.py
+│   │   │   ├── telegram_webhook_controller.py
+│   │   └── telegram
+│   │       ├── __init__.py
+│   │       ├── __pycache__
+│   │       ├── board_summary_generator_handler.py
+│   │       ├── task_creation_handler.py
+│   │       ├── task_status_handler.py
+│   │       ├── task_transition_handler.py
+│   │       ├── user_settings_handler.py
+│   │       └── voice.py
+│   ├── settings
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   ├── jira_board_config.py
+│   │   ├── jira_settings.py
+│   │   ├── openai_settings.py
+│   │   ├── telegram_settings.py
+│   ├── ticketing_bot.py
+│   ├── use_cases
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   ├── authentication.py
+│   │   ├── board_summarizer.py
+│   │   ├── board_summary_generator.py
+│   │   ├── create_task.py
+│   │   ├── create_task_usecase.py
+│   │   ├── get_statistics.py
+│   │   ├── handle_jira_webhook_usecase.py
+│   │   ├── interface
+│   │   │   ├── __init__.py
+│   │   │   ├── __pycache__
+│   │   │   ├── openai_gateway_interface.py
+│   │   │   ├── summary_generator_interface.py
+│   │   │   ├── task_grouper_interface.py
+│   │   │   ├── task_handler_interface.py
+│   │   │   ├── task_interface.py
+│   │   │   ├── task_manager_repository_interface.py
+│   │   │   ├── telegram_gateway_interface.py
+│   │   │   └── user_config_interface.py
+│   │   ├── parse_jira_prompt_usecase.py
+│   │   ├── prompts.py
+│   │   ├── report.py
+│   │   ├── reports_full.py
+│   │   ├── task_status.py
+│   │   ├── transition_task.py
+│   │   └── user_settings.py
+│   └── utils
+│       ├── ___init__.py
+│       ├── __pycache__
+│       ├── basic_logger.py
+│       ├── check_version.py
+│       ├── data_store.py
+│       └── pydantic_advanced_settings.py
+├── jira_telegram_bot.egg-info
+├── kubernetes
+├── setup.py
+└── tests
+    ├── samples
+    └── unit_tests
+        └── use_cases
+            ├── __pycache__
+            └── test_create_easy_task.py
+
+================================================================================
+File: ./bulk_task.py
+================================================================================
+
+Imports:
+from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+
+Global Initiations:
+jira = JiraRepository().jira
+issue_dict_common = {'project': {'key': 'DEVOPS'}, 'issuetype': {'name': 'Task'}, 'components': [{'name': 'devops'}], 'customfield_10106': 1.5, 'assignee': {'name': 'm_ebrahimi'}, 'priority': {'name': 'ONE'}}
+tasks = [{'summary': '1. Implement Elasticsearch Backup Solution', 'description': 'Set up a daily backup strategy for the Elasticsearch database to ensure data safety. Develop and implement an automated backup solution that performs daily backups. Choose appropriate tools like Elasticsearch Snapshot and Restore APIs. Store backups securely in an off-site or cloud-based location. Document the backup process, including verification steps to confirm backup integrity.'}, {'summary': '2. Define Backup Schedule and Retention Policies for PostgreSQL and Elasticsearch', 'description': 'Establish backup schedules and retention policies for PostgreSQL and Elasticsearch databases. Analyze data change frequency and business requirements to determine optimal backup frequencies. Define retention policies to balance storage costs with data availability needs. Implement the schedules using tools or cron jobs, and document policies and procedures for stakeholders.'}, {'summary': '3. Set Up Integrated Alerting System', 'description': 'Integrate alerting mechanisms for service issues, including connection to Hamravesh or other monitoring tools. Configure monitoring tools to track critical system metrics like CPU usage, memory consumption, disk space, and response times. Set alert thresholds and establish notification channels like email or Slack. Test the alerting system to ensure proper functionality.'}, {'summary': '1. Provide Developer Access to Elasticsearch', 'description': 'Create a controlled access mechanism for developers to monitor and validate Elasticsearch database behavior. Implement role-based access control (RBAC) for read-only access to necessary indices. Use security features to restrict and monitor access. Ensure access does not compromise database integrity or system security. Document procedures and provide guidelines to developers.'}, {'summary': '4. Improve Monitoring Dashboards', 'description': 'Enhance Grafana dashboards by adding detailed queries to monitor incidents and service usage effectively. Include panels to track critical metrics like database performance, API latency, and error rates. Customize visualizations to highlight anomalies and trends. Validate the dashboards to ensure they provide actionable insights.'}, {'summary': '5. Define and Implement Disaster Recovery Plan', 'description': 'Develop a disaster recovery plan that includes procedures for handling various disaster scenarios. Set Recovery Point Objectives (RPO) and Recovery Time Objectives (RTO). Implement regular backup recovery tests to ensure data can be restored successfully within defined RTO. Document the plan and train the team on their roles during disasters.'}, {'summary': '6. Create Incident Response Plan', 'description': 'Define incident response processes, including communication and reporting guidelines during incidents. Develop standardized procedures for managing and resolving incidents. Establish post-incident review procedures for root cause analysis. Create templates for incident reports and implement a review process to identify improvement opportunities.'}, {'summary': '7. Implement Load Testing Strategy', 'description': 'Develop and execute load testing strategies to identify performance bottlenecks. Design scenarios to simulate realistic user behavior and peak usage. Use tools like JMeter or k6 for comprehensive load and stress tests. Analyze test results to identify bottlenecks and recommend optimizations to improve system performance.'}, {'summary': '8. Regular Maintenance Scheduling', 'description': 'Define and schedule maintenance windows for routine updates and checks. Establish a maintenance calendar outlining intervals for updates, patches, and hardware checks. Coordinate schedules to minimize user impact. Develop impact assessment protocols and communicate schedules to stakeholders in advance.'}, {'summary': '9. Vulnerability Scanning and Patch Management', 'description': 'Set up vulnerability scanning for components and dependencies. Implement tools to regularly assess the security posture of systems. Define a patch management process for testing and deploying patches. Prioritize patching based on severity and potential system impact. Regularly update systems to mitigate vulnerabilities.'}]
+issue_dict = issue_dict_common.copy()
+new_issue = jira.create_issue(fields=issue_dict)
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./setup.py
+================================================================================
+
+Imports:
+import logging
+import re
+import subprocess
+from pathlib import Path
+from typing import List
+from setuptools import setup, find_packages
+
+Global Initiations:
+logger = logging.getLogger(__name__)
+console_handler = logging.StreamHandler()
+install_requires = check_requirements(install_requires)
+installed_pacakges_idx = []
+install_requires = [x for x in install_requires if x != '']
+file = Path('./jira_telegram_bot/__init__.py')
+install_requires = f.read().splitlines()
+result = subprocess.run(f'pip install {package}', shell=True, capture_output=True, text=True)
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/app_container.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from lagom import Container
+from lagom.integrations.fast_api import FastApiIntegration
+from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.openai_gateway import OpenAIGateway
+from jira_telegram_bot.adapters.telegram_gateway import TelegramGateway
+from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
+from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
+from jira_telegram_bot.use_cases.interface.openai_gateway_interface import OpenAIGatewayInterface
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+from jira_telegram_bot.use_cases.parse_jira_prompt_usecase import ParseJiraPromptUseCase
+
+Global Initiations:
+container = Container()
+container = create_container()
+deps = FastApiIntegration(container)
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/__main__.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import traceback
+from warnings import filterwarnings
+from telegram.ext import Application
+from telegram.ext import CommandHandler
+from telegram.warnings import PTBUserWarning
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.frameworks.telegram.board_summary_generator_handler import BoardSummaryGeneratorHandler
+from jira_telegram_bot.frameworks.telegram.task_creation_handler import TaskCreationHandler
+from jira_telegram_bot.frameworks.telegram.task_status_handler import TaskStatusHandler
+from jira_telegram_bot.frameworks.telegram.task_transition_handler import TaskTransitionHandler
+from jira_telegram_bot.frameworks.telegram.user_settings_handler import UserSettingsHandler
+from jira_telegram_bot.settings import OPENAI_SETTINGS
+from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.use_cases.board_summarizer import create_llm_chain
+from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
+from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
+from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
+from jira_telegram_bot.use_cases.task_status import TaskStatus
+from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
+from jira_telegram_bot.use_cases.user_settings import UserSettingsConversation
+
+Global Initiations:
+llm_chain = create_llm_chain(OPENAI_SETTINGS)
+summary_generator = TaskProcessor(llm_chain)
+help_text = "Here's how to use this bot:\n\n1. **/create_task** - Start creating a new task.\n2. **/transition** - Transition an existing task.\n3. **/status** - Get the status of a task.\n5. **/summary_tasks** - Get a summary of completed tasks and tasks that are ready for review\n6. **/setting** - Update user settings\n7. **/cancel** - cancel current running operation"
+application = Application.builder().token(TELEGRAM_SETTINGS.TOKEN).read_timeout(20).connect_timeout(20).build()
+jira_repo = JiraRepository()
+user_config_instance = UserConfig()
+task_creation_use_case = JiraTaskCreation(jira_repo, user_config_instance)
+task_status_use_case = TaskStatus(jira_repo.jira)
+task_transition_use_case = JiraTaskTransition(jira_repo.jira)
+user_settings_use_case = UserSettingsConversation(user_config_instance, ['alikaz3mi'])
+board_summary_generator_use_case = BoardSummaryGenerator(jira_repo, summary_generator)
+task_creation_handler = TaskCreationHandler(task_creation_use_case)
+task_status_handler = TaskStatusHandler(task_status_use_case)
+task_transition_handler = TaskTransitionHandler(task_transition_use_case)
+user_settings_handler = UserSettingsHandler(user_settings_use_case)
+board_summary_generator_handler = BoardSummaryGeneratorHandler(board_summary_generator_use_case)
+tb = traceback.extract_tb(e.__traceback__)
+formatted_tb = traceback.format_list(tb)
+
+__main__ Section:
+if __name__ == '__main__':
+    main()
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/__init__.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import os
+from pathlib import Path
+from jira_telegram_bot.utils.basic_logger import loguru_logger
+
+Global Initiations:
+__version__ = '2.18.5'
+__name__ = 'jira_telegram_bot'
+DEFAULT_PATH = Path(os.path.realpath(__file__)).parents[1]
+LOGGER = loguru_logger(__name__)
+__all__ = ['__version__', '__name__', 'loguru_logger', 'DEFAULT_PATH']
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/ticketing_bot.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import uvicorn
+from jira_telegram_bot.frameworks.fast_api.create_ticket_controller import app
+
+Global Initiations:
+
+
+__main__ Section:
+if __name__ == '__main__':
+    uvicorn.run(app, host='0.0.0.0', port=2315, reload=True)
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/entities/user_config.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from pydantic import BaseModel
+from jira_telegram_bot.entities.field_config import FieldConfig
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: UserConfig
+
+
+================================================================================
+File: ./jira_telegram_bot/entities/__init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/entities/task.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from collections import defaultdict
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from jira import Issue
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+
+Global Initiations:
+model_config = ConfigDict(arbitrary_types_allowed=True)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskData
+
+
+================================================================================
+File: ./jira_telegram_bot/entities/field_config.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import List
+from typing import Optional
+from pydantic import BaseModel
+from pydantic import Field
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: FieldConfig
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/authentication.py
+================================================================================
+
+Imports:
+from telegram import Update
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+
+Global Initiations:
+user_id = update.message.from_user.username
+chat_type = update.message.chat.type
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/prompts.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+
+Global Initiations:
+task_statistics = '\nYou are a JIRA query assistant. Your task is to translate complex natural language user requests into JIRA Query Language (JQL) format.\nThe user will provide a query in plain English, and you will convert it into a precise JQL statement that can be used in JIRA to retrieve or calculate the desired information.\n\nCapabilities:\n\nFilter by multiple criteria: Assignee, project, issue type, status, priority, components, etc.\nDate range filtering: Filter based on creation date, due date, or update date.\nSprint and Agile board queries: Filter issues by the current sprint or specific Agile boards.\nAggregation and calculation: Sum, average, or estimate fields like time tracking, story points, etc.\nExamples:\n\nUser Query: "Show all tasks assigned to John Doe that are due next week."\nJIRA Query: assignee = "John Doe" AND due >= startOfWeek(1) AND due <= endOfWeek(1)\n\nUser Query: "Find all open bugs in the \'Mobile App\' project."\nJIRA Query: project = "Mobile App" AND issuetype = Bug AND status = Open\n\nUser Query: "List all high-priority issues updated in the last 24 hours."\nJIRA Query: priority = High AND updated >= -1d\n\nUser Query: "Sum and estimate the time remaining for each component to be completed in the current sprint."\nJIRA Query: Sprint in openSprints() AND remainingEstimate is not EMPTY ORDER BY component ASC\n\n\nUser Query: "Calculate the total story points of all \'In Progress\' issues for the current sprint."\nJIRA Query: status = "In Progress" AND Sprint in openSprints() AND "Story Points" is not EMPTY\n\nNow, translate the following user query into a JIRA query:\n\nUser Query: {user_query}\n\nJIRA Query:\n\n\n'
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/handle_jira_webhook_usecase.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import Any
+from typing import Dict
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+from jira_telegram_bot.utils.data_store import get_mapping_by_issue_key
+
+Global Initiations:
+event_type = webhook_body.get('issue_event_type_name')
+issue_data = webhook_body.get('issue', {})
+issue_key = issue_data.get('key')
+mapping = get_mapping_by_issue_key(issue_key)
+channel_chat_id = mapping.get('channel_chat_id')
+group_chat_id = mapping.get('group_chat_id')
+reply_message_id = mapping.get('reply_message_id')
+summary = issue_data['fields'].get('summary', '')
+creator_name = webhook_body.get('user', {}).get('displayName', 'someone')
+msg = f'**Jira Event**\nIssue *created* by {creator_name}\nKey: {issue_data['key']}\nSummary: {summary}'
+summary = issue_data['fields'].get('summary', '')
+creator_name = webhook_body.get('user', {}).get('displayName', 'someone')
+msg = f'🔔 *Jira Event*\n\n🔑 Issue Key: {JIRA_SETTINGS.domain}/browse/{issue_data['key']}\n\n📝 Summary: {summary}\n\n👤 Created by {creator_name}'
+comment_info = webhook_body.get('comment')
+changelog = webhook_body.get('changelog', {})
+items = changelog.get('items', [])
+commenter = comment_info['updateAuthor']['displayName']
+comment_body = comment_info['body']
+msg = f'**Jira Event**\nNew comment on *{issue_data['key']}* by {commenter}:\n\n{comment_body}'
+from_str = change_item.get('fromString', '')
+to_str = change_item.get('toString', '')
+msg = f"**Jira Event**\nIssue *{issue_data['key']}* moved from '{from_str}' to '{to_str}'."
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: HandleJiraWebhookUseCase
+  __init__ (self: Any, telegram_gateway: TelegramGatewayInterface) -> None
+  run (self: Any, webhook_body: Dict[str, Any]) -> Dict[str, str]
+  _handle_issue_created (self: Any, issue_data: Any, webhook_body: Any, channel_chat_id: Any, group_chat_id: Any, reply_message_id: Any) -> None
+  _handle_issue_generic (self: Any, issue_data: Any, webhook_body: Any, channel_chat_id: Any, group_chat_id: Any, reply_message_id: Any) -> None
+  _handle_issue_updated (self: Any, issue_data: Any, webhook_body: Any, channel_chat_id: Any, group_chat_id: Any, reply_message_id: Any) -> None
+  _send_notifications (self: Any, channel_chat_id: Any, group_chat_id: Any, reply_message_id: Any, message_text: Any) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/__init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/user_settings.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import List
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram import Update
+from telegram.ext import CallbackContext
+from telegram.ext import ConversationHandler
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.use_cases.authentication import check_user_allowed
+from jira_telegram_bot.use_cases.interface.user_config_interface import UserConfigInterface
+
+Global Initiations:
+keyboard = []
+row = [InlineKeyboardButton('Modify My Settings', callback_data='self_settings')]
+is_admin = update.message.from_user.username in self.admin_usernames
+kb = self.build_main_menu(is_admin)
+query = update.callback_query
+data = query.data
+user_username = query.from_user.username
+is_admin = user_username in self.admin_usernames
+query = update.callback_query
+data = query.data
+chosen_user = data.split('|')[1]
+user_cfg = self.user_config_repo.get_user_config(chosen_user)
+field_names = ['project', 'component', 'task_type', 'story_point', 'attachment', 'epic_link', 'release', 'sprint', 'assignee', 'priority']
+rows = []
+temp_row = []
+query = update.callback_query
+data = query.data
+username = context.user_data.get('current_edit_username', None)
+user_cfg = self.user_config_repo.get_user_config(username)
+field_obj = getattr(user_cfg, field_name, None)
+kb = self.build_toggles_kb(user_cfg)
+query = update.callback_query
+username = context.user_data.get('current_edit_username', None)
+new_username = update.message.text.strip().lstrip('@')
+jira_username = update.message.text.strip()
+chat_id_text = update.message.text.strip()
+new_uname = context.user_data['new_user_username']
+new_jira = context.user_data['new_user_jira_username']
+user_cfg = self.user_config_repo.create_user_config(telegram_username=new_uname, telegram_user_chat_id=chat_id, jira_username=new_jira)
+query = update.callback_query
+new_uname = context.user_data.get('current_edit_username', '')
+user_cfg = self.user_config_repo.get_user_config(user_username)
+all_users = self.user_config_repo.list_all_users()
+buttons = []
+field_config = getattr(user_cfg, fname)
+check_mark = '✔' if field_config.set_field else ''
+button_text = f'{fname} {check_mark}'
+cb_data = f'toggle|{fname}'
+chat_id = int(chat_id_text)
+user_cfg = self.user_config_repo.create_user_config(telegram_username=user_username, telegram_user_chat_id=query.from_user.id, jira_username=user_username)
+temp_row = []
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: UserSettingsConversation
+  __init__ (self: Any, user_config_repo: UserConfigInterface, admin_usernames: List[str]) -> None
+  build_main_menu (self: Any, is_admin: bool) -> InlineKeyboardMarkup
+  start (self: Any, update: Update, context: CallbackContext) -> int
+  handle_main_menu (self: Any, update: Update, context: CallbackContext) -> int
+  choose_user_to_edit (self: Any, update: Update, context: CallbackContext) -> int
+  build_toggles_kb (self: Any, user_cfg: Any) -> InlineKeyboardMarkup
+  toggle_field (self: Any, update: Update, context: CallbackContext) -> int
+  done_editing (self: Any, update: Update, context: CallbackContext) -> int
+  wait_new_user_username (self: Any, update: Update, context: CallbackContext) -> int
+  wait_new_user_jira_username (self: Any, update: Update, context: CallbackContext) -> int
+  wait_new_user_chat_id (self: Any, update: Update, context: CallbackContext) -> int
+  done_editing_new_user (self: Any, update: Update, context: CallbackContext) -> int
+  cancel (self: Any, update: Update, context: CallbackContext) -> int
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/board_summary_generator.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import re
+from typing import List
+from typing import Optional
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram import Update
+from telegram.ext import CallbackContext
+from telegram.ext import ConversationHandler
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.use_cases.authentication import check_user_allowed
+from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+
+Global Initiations:
+keyboard = [[InlineKeyboardButton(text=option, callback_data=data[i + j]) for j, option in enumerate(options[i:i + row_width])] for i in range(0, len(options), row_width)]
+task_data = TaskData()
+projects = self.jira_repository.get_projects()
+options = [project.name for project in projects]
+data = [project.key for project in projects]
+reply_markup = self.build_keyboard(options, data, row_width=3)
+query = update.callback_query
+project_key = query.data
+components = self.jira_repository.get_project_components(task_data.project_key)
+query = update.callback_query
+assignees = self.jira_repository.get_assignees(task_data.project_key)
+query = update.callback_query
+username_query = update.message.text.strip()
+matching_users = self.jira_repository.search_users(username_query)
+query = update.callback_query
+active_and_future_sprints = [sprint for sprint in task_data.sprints if sprint.state in ('active', 'future')]
+query = update.callback_query
+query = update.callback_query
+releases = [version for version in self.jira_repository.get_project_versions(task_data.project_key) if not version.released]
+query = update.callback_query
+jql_parts = [f'project = "{task_data.project_key}"']
+jql_query = ' AND '.join(jql_parts)
+data = options
+options = [component.name for component in components]
+data = [component.name for component in components]
+reply_markup = self.build_keyboard(options, data, include_skip=True)
+options = assignees
+data = assignees
+extra_buttons = [[InlineKeyboardButton('Others', callback_data='others')]]
+reply_markup = self.build_keyboard(options, data, row_width=2, include_skip=True, extra_buttons=extra_buttons)
+options = matching_users
+data = matching_users
+extra_buttons = [[InlineKeyboardButton('Others', callback_data='others')]]
+reply_markup = self.build_keyboard(options, data, row_width=2, include_skip=True, extra_buttons=extra_buttons)
+options = [sprint.name for sprint in active_and_future_sprints]
+data = [str(sprint.id) for sprint in active_and_future_sprints]
+reply_markup = self.build_keyboard(options, data, include_skip=True)
+options = [epic.fields.summary for epic in task_data.epics]
+data = [epic.key for epic in task_data.epics]
+reply_markup = self.build_keyboard(options, data, include_skip=True, row_width=3)
+options = [version.name for version in releases]
+reply_markup = self.build_keyboard(options, include_skip=True, row_width=3)
+issues = self.jira_repository.jira.search_issues(jql_query)
+response_text = f'Found the following tasks: for {jql_parts} \n\n'
+tasks = []
+issue_summary = escape_markdown_v2(response_text)
+result = self.summary_generator.process_tasks(tasks)
+error_message = f'Failed to fetch tasks: {e}'
+task = self.jira_repository.create_task_data_from_jira_issue(issue)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: BoardSummaryGenerator
+  __init__ (self: Any, jira_repository: TaskManagerRepositoryInterface, summary_generator: TaskProcessor) -> None
+  build_keyboard (self: Any, options: List[str], data: Optional[List[str]], include_skip: bool, row_width: int, extra_buttons: Optional[List[List[InlineKeyboardButton]]]) -> InlineKeyboardMarkup
+  start (self: Any, update: Update, context: CallbackContext) -> int
+  select_project (self: Any, update: Update, context: CallbackContext) -> int
+  ask_component (self: Any, update: Update, context: CallbackContext) -> int
+  add_component (self: Any, update: Update, context: CallbackContext) -> int
+  ask_assignee (self: Any, update: Update, context: CallbackContext) -> int
+  add_assignee (self: Any, update: Update, context: CallbackContext) -> int
+  search_assignee (self: Any, update: Update, context: CallbackContext) -> int
+  select_assignee_from_search (self: Any, update: Update, context: CallbackContext) -> int
+  ask_sprint (self: Any, update: Update, context: CallbackContext) -> int
+  add_sprint (self: Any, update: Update, context: CallbackContext) -> int
+  ask_epic (self: Any, update: Update, context: CallbackContext) -> int
+  add_epic (self: Any, update: Update, context: CallbackContext) -> int
+  ask_release (self: Any, update: Update, context: CallbackContext) -> int
+  add_release (self: Any, update: Update, context: CallbackContext) -> int
+  fetch_tasks (self: Any, update: Update, context: CallbackContext) -> int
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/board_summarizer.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from collections import defaultdict
+from typing import Dict
+from typing import List
+from langchain import LLMChain
+from langchain import PromptTemplate
+from langchain_openai import ChatOpenAI
+from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.use_cases.interface.summary_generator_interface import ISummaryGenerator
+from jira_telegram_bot.use_cases.interface.task_grouper_interface import ITaskGrouper
+
+Global Initiations:
+llm = ChatOpenAI(model_name='gpt-4o-mini', openai_api_key=settings.token)
+prompt = PromptTemplate(input_variables=['grouped_tasks'], template='\n        You are provided with a list of tasks that have been reviewed or completed.\n\n        {grouped_tasks}\n\n        ---------\n        Each task contains the following information:\n\n        - **Assignee**\n        - **Summary**\n        - **Component** (if any)\n        - **Epic** (if any)\n        - **Release Version**\n\n        Please write a summary in **Persian** for these tasks by following these instructions:\n\n        1. **Group the tasks by component**:\n        - If a task has a component, include it in the respective component group.\n        - If a task does not have a component, place it under a group titled "بدون دپارتمان".\n\n        **Example**:\n        - Component: `UI`\n            - Tasks might include: "بهبود صفحه ورود", "به\u200cروزرسانی رنگ\u200cبندی فرم ثبت\u200cنام"\n        - Component: `Backend`\n            - Tasks might include: "افزایش سرعت جستجو در پایگاه داده", "رفع مشکل ذخیره\u200cسازی اطلاعات کاربر"\n        - "بدون دپارتمان"\n            - Tasks might include: "بررسی مستندات پروژه", "هماهنگی با تیم طراحی"\n\n        2. **Within each component**, **group the tasks by epic**:\n        - If a task has an epic, include it in the respective epic group.\n        - If a task does not have an epic, place it under a group titled "بدون اپیک".\n\n        **Example**:\n        - For Component `UI`, you might have:\n            - Epic: `بهبود تجربه کاربری (UX Improvements)`\n            - Tasks: "بهبود صفحه ورود" (Assignee: Ali, Release: 1.2.0), "به\u200cروزرسانی رنگ\u200cبندی فرم ثبت\u200cنام" (Assignee: Sara, Release: 1.2.0)\n            - Epic: `بدون اپیک`\n            - Tasks: "بررسی آیکون\u200cهای دکمه\u200cها" (Assignee: Reza, Release: 1.1.0)\n\n        3. **For each group**, provide a concise summary that includes:\n        - The names of the assignees.\n        - The release version.\n        - Key details or achievements of the tasks in that group.\n\n        **Example Summary**:\n        - For the `UI` Component under `بهبود تجربه کاربری` Epic:\n            - "در این گروه، علی و سارا در نسخه 1.2.0 روی بهینه\u200cسازی فرم\u200cهای ورود و ثبت\u200cنام کار کرده\u200cاند که منجر به سهولت بیشتر کاربر در ثبت اطلاعات شده است."\n\n        - For the `UI` Component under `بدون اپیک`:\n            - "رضا در نسخه 1.1.0 آیکون\u200cهای دکمه\u200cها را بررسی و اصلاح کرده است که منجر به ظاهری یکپارچه\u200cتر شده است."\n\n        - For the `بدون دپارتمان` Component under `بدون اپیک`:\n            - "در این بخش، علی در نسخه 1.0.0 مستندات را بررسی کرده و هماهنگی بین تیم\u200cها را بهبود داده است."\n\n        Ensure the final summary is well-organized and written in clear Persian. The summary must be informative and reflect all given tasks appropriately.\n\n\n        ')
+llm_chain = LLMChain(llm=llm, prompt=prompt)
+component_groups = defaultdict(lambda: defaultdict(list))
+summaries = []
+final_summary = '\n'.join(summaries)
+response = self.llm_chain.run(final_summary)
+grouped_tasks = self.grouper.group_tasks(tasks)
+summary = self.generator.generate_summary(grouped_tasks)
+component_key = task.component if task.component else 'no executive department'
+epic_key = task.epics if task.epics else 'no epic'
+component_summary = f'**executive department: {component}**\n'
+epic_summary = f'  - **epic: {epic}**\n'
+task_summary = f'task {task.summary}    - وظیفه توسط {task.assignee} برای نسخه {task.release} انجام شد. جزئیات: {task.description}\n'
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskGrouper
+  group_tasks (self: Any, tasks: List[TaskData]) -> Dict[str, Dict[str, List[TaskData]]]
+Class: SummaryGenerator
+  __init__ (self: Any, llm_chain: LLMChain) -> None
+  generate_summary (self: Any, grouped_tasks: Dict[str, Dict[str, List[TaskData]]]) -> str
+Class: TaskProcessor
+  __init__ (self: Any, llm_chain: LLMChain, grouper: ITaskGrouper, generator: ISummaryGenerator) -> None
+  process_tasks (self: Any, tasks: List[TaskData]) -> str
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/report.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from datetime import datetime
+import pandas as pd
+import urllib
+from tqdm import tqdm
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.settings import JIRA_SETTINGS
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Float
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+Global Initiations:
+DB_USER = 'alikaz3mi1374@gmail.com'
+DB_PASSWORD = 'lkjasdfioASD221fAAS23@_LSKFjoi'
+DB_HOST = 'localhost'
+DB_PORT = 65432
+DB_NAME = 'parschat_tasks'
+encoded_password = urllib.parse.quote_plus(DB_PASSWORD)
+DATABASE_URL = f'postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
+session = Session()
+Base = declarative_base()
+jira_repository = JiraRepository(settings=JIRA_SETTINGS)
+__tablename__ = 'jira_tasks'
+id = Column(Integer, primary_key=True, autoincrement=True)
+key = Column(String, nullable=False)
+summary = Column(Text, nullable=True)
+description = Column(Text, nullable=True)
+epic_name = Column(Text, nullable=True)
+comments = Column(Text, nullable=True)
+task_type = Column(String, nullable=True)
+assignee = Column(String, nullable=True)
+reporter = Column(String, nullable=True)
+priority = Column(String, nullable=True)
+status = Column(String, nullable=True)
+created_at = Column(DateTime, nullable=True)
+updated_at = Column(DateTime, nullable=True)
+resolved_at = Column(DateTime, nullable=True)
+target_start = Column(DateTime, nullable=True)
+target_end = Column(DateTime, nullable=True)
+story_points = Column(Float, nullable=True)
+components = Column(ARRAY(String), nullable=True)
+labels = Column(ARRAY(String), nullable=True)
+last_sprint = Column(String, nullable=True)
+sprint_repeats = Column(Integer, nullable=True)
+start_at = 0
+max_results = 100
+issues = []
+tasks_info = []
+epics = {}
+orm_objects = []
+parschat_tasks = get_tasks_info('PARSCHAT')
+pct_tasks = get_tasks_info('PCT')
+all_tasks = parschat_tasks + pct_tasks
+df = pd.DataFrame(all_tasks)
+datetime_columns = ['created_at', 'updated_at', 'resolved_at', 'target_start', 'target_end']
+batch = jira_repository.jira.search_issues(f'project = {project_key}', startAt=start_at, maxResults=max_results)
+comments_text = []
+sprint_field = getattr(issue.fields, 'customfield_10104', None)
+sprint_count = len(sprint_field) if sprint_field else 0
+story_points = getattr(issue.fields, 'customfield_10106', None)
+task_info = {'key': issue.key, 'summary': issue.fields.summary, 'description': issue.fields.description or '', 'epic_name': epics.get(issue.fields.customfield_10100), 'comments': '\n'.join(comments_text), 'task_type': issue.fields.issuetype.name, 'assignee': issue.fields.assignee.displayName if issue.fields.assignee else None, 'reporter': issue.fields.reporter.displayName, 'priority': issue.fields.priority.name if issue.fields.priority else None, 'status': issue.fields.status.name, 'created_at': issue.fields.created, 'updated_at': issue.fields.updated, 'resolved_at': issue.fields.resolutiondate, 'target_start': getattr(issue.fields, 'customfield_10109', None), 'target_end': getattr(issue.fields, 'customfield_10110', None), 'story_points': story_points, 'components': [c.name for c in issue.fields.components] if issue.fields.components else [], 'labels': issue.fields.labels if issue.fields.labels else [], 'last_sprint': last_sprint_name, 'sprint_repeats': sprint_count}
+commenter = comment.author.displayName
+sprint_str = str(sprint_field[-1])
+name_start = sprint_str.find('name=') + 5
+name_end = sprint_str.find(',startDate')
+last_sprint_name = sprint_str[name_start:name_end]
+last_sprint_name = None
+
+__main__ Section:
+if __name__ == '__main__':
+    parschat_tasks = get_tasks_info('PARSCHAT')
+    pct_tasks = get_tasks_info('PCT')
+    all_tasks = parschat_tasks + pct_tasks
+    df = pd.DataFrame(all_tasks)
+    datetime_columns = ['created_at', 'updated_at', 'resolved_at', 'target_start', 'target_end']
+    for col in datetime_columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+            df[col] = df[col].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S%z') if pd.notnull(x) else None)
+    store_tasks_in_db(all_tasks)
+    LOGGER.info('Tasks have been stored in the PostgreSQL database.')
+
+Classes and Methods:
+Class: Task
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/task_status.py
+================================================================================
+
+Imports:
+from telegram import Update
+from telegram.ext import CallbackContext, ConversationHandler
+from jira import JIRA
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.settings import JIRA_BOARD_SETTINGS
+
+Global Initiations:
+TASK_ID = 1
+task_id = update.message.text.strip()
+issues = self.jira.search_issues(f"project = '{self.board_settings.board_name}' AND key = '{self.board_settings.board_name}-{task_id}'")
+issue = issues[0]
+summary = issue.fields.summary
+priority = issue.fields.priority.name if issue.fields.priority else 'Not set'
+description = issue.fields.description or 'No description'
+assignee = issue.fields.assignee.displayName
+status = issue.fields.status.name
+response = f'*Summary*: {summary}\n\n*Priority*: {priority}\n\n*Description*: {description}\n\n*Estimated Remaining Time \\(H\\)*: {estimated_time}\n\n*Assignee*: {assignee}\n\n🔑 *Status*: {status}\n\n'
+estimated_time = issue.fields.customfield_10106 * 8 - int(issue.fields.timespent / 3600)
+estimated_time = 'None'
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskStatus
+  __init__ (self: Any, jira: JIRA) -> None
+  get_task_status (self: Any, update: Update, context: CallbackContext) -> int
+  fetch_task_details (self: Any, update: Update, context: CallbackContext) -> int
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/create_task.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import datetime
+from io import BytesIO
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+import aiohttp
+from telegram import CallbackQuery
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram import Update
+from telegram.ext import CallbackContext
+from telegram.ext import ConversationHandler
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+from jira_telegram_bot.use_cases.interface.user_config_interface import UserConfigInterface
+
+Global Initiations:
+DEADLINE_OPTIONS = [('0', 'Current Day'), ('1', '1'), ('2', '2'), ('3', '3'), ('4', '4'), ('5', '5'), ('6', '6'), ('7', '7'), ('8', '8'), ('9', '9'), ('10', '10'), ('11', '11'), ('12', '12'), ('13', '13'), ('14', '14'), ('21', '21'), ('30', '30')]
+keyboard = []
+task_data = TaskData()
+config = self.user_config.get_user_config(update.message.from_user.username)
+projects = self.jira_repository.get_projects()
+options = [project.name for project in projects]
+data = [project.key for project in projects]
+reply_markup = self.build_keyboard(options, data, row_width=3)
+query = update.callback_query
+project_key = query.data
+message = update.message
+user_cfg = context.user_data['user_config']
+last_message_id = context.user_data['last_inline_message_id']
+reply_markup = self.build_keyboard(options, include_skip=True)
+query = update.callback_query
+last_message_id = context.user_data['last_inline_message_id']
+chat_id = query.message.chat_id
+message_id = query.message.message_id
+user_cfg = context.user_data['user_config']
+extra_buttons = [[InlineKeyboardButton('Others', callback_data='others')]]
+reply_markup = self.build_keyboard(options=assignees, data=assignees, row_width=2, include_skip=True, extra_buttons=extra_buttons)
+query = update.callback_query
+username_query = update.message.text.strip()
+matching_users = self.jira_repository.search_users(username_query)
+last_message_id = context.user_data['last_inline_message_id']
+query = update.callback_query
+last_message_id = context.user_data['last_inline_message_id']
+chat_id = query.message.chat_id
+message_id = query.message.message_id
+user_cfg = context.user_data['user_config']
+reply_markup = self.build_keyboard(options, include_skip=True, row_width=4)
+query = update.callback_query
+chat_id = query.message.chat_id
+message_id = query.message.message_id
+user_cfg = context.user_data['user_config']
+reply_markup = self.build_keyboard(options, data, include_skip=True)
+query = update.callback_query
+chat_id = query.message.chat_id
+message_id = query.message.message_id
+user_cfg = context.user_data['user_config']
+reply_markup = self.build_keyboard(options, data, include_skip=True, row_width=3)
+query = update.callback_query
+chat_id = query.message.chat_id
+message_id = query.message.message_id
+user_cfg = context.user_data['user_config']
+reply_markup = self.build_keyboard(options, include_skip=True, row_width=3)
+query = update.callback_query
+chat_id = query.message.chat_id
+message_id = query.message.message_id
+user_cfg = context.user_data['user_config']
+reply_markup = self.build_keyboard(options, row_width=3)
+query = update.callback_query
+user_cfg = context.user_data['user_config']
+reply_markup = self.build_keyboard(options, include_skip=True, row_width=3)
+query = update.callback_query
+chat_id = query.message.chat_id
+message_id = query.message.message_id
+days_text = [item[1] for item in self.DEADLINE_OPTIONS]
+days_data = [item[0] for item in self.DEADLINE_OPTIONS]
+reply_markup = self.build_keyboard(days_text, days_data, include_skip=True, row_width=3)
+query = update.callback_query
+user_cfg = context.user_data['user_config']
+attachments = task_data.attachments
+media_group_messages = context.user_data.setdefault('media_group_messages', {})
+media_file = await media.get_file()
+reply_markup = self.build_keyboard(['Yes', 'No'], ['yes', 'no'], row_width=2)
+msg = await message.reply_text('Do you want to create another task with similar fields?', reply_markup=reply_markup)
+query = update.callback_query
+data = options
+row = []
+text = message.text or message.caption or ''
+lines = text.strip().split('\n')
+attachments = task_data.attachments
+message = await update.message.reply_text('Got it! Now send me the description of the task (or type "skip" to skip).')
+desc = update.message.text.strip()
+options = user_cfg.component.values
+jira_components = self.jira_repository.get_project_components(task_data.project_key)
+options = [c.name for c in jira_components]
+assignees = user_cfg.assignee.values
+assignees = self.jira_repository.get_assignees(task_data.project_key)
+options = matching_users
+extra_buttons = [[InlineKeyboardButton('Others', callback_data='others')]]
+reply_markup = self.build_keyboard(options=options, data=options, row_width=2, include_skip=True, extra_buttons=extra_buttons)
+options = user_cfg.priority.values
+priorities = self.jira_repository.get_priorities()
+options = [p.name for p in priorities]
+options = user_cfg.sprint.values
+data = user_cfg.sprint.values
+active_and_future_sprints = [s for s in task_data.sprints if s.state in ('active', 'future')]
+options = [s.name for s in active_and_future_sprints]
+data = [str(s.id) for s in active_and_future_sprints]
+options = user_cfg.epic_link.values
+data = user_cfg.epic_link.values
+options = [epic.fields.summary for epic in task_data.epics]
+data = [epic.key for epic in task_data.epics]
+options = user_cfg.release.values
+releases = [v for v in self.jira_repository.get_project_versions(task_data.project_key) if not v.released]
+options = [version.name for version in releases]
+options = user_cfg.task_type.values
+options = task_data.task_types
+options = user_cfg.story_point.values
+options = [str(sp) for sp in self.STORY_POINTS_VALUES]
+chat_obj = await context.bot.send_message(chat_id, 'Creating your task...')
+msgs = media_group_messages.setdefault(update.message.media_group_id, [])
+message = update_or_message.message
+message = update_or_message
+new_issue = self.jira_repository.create_task(task_data)
+assignee_user_data = self.user_config.get_user_config_by_jira_username(task_data.assignee)
+day_offset = int(query.data)
+target_date = datetime.date.today() + datetime.timedelta(days=day_offset)
+date_str = target_date.strftime('%Y-%m-%d')
+buffer = BytesIO(await response.read())
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: JiraTaskCreation
+  __init__ (self: Any, jira_repository: TaskManagerRepositoryInterface, user_config: UserConfigInterface) -> None
+  build_keyboard (self: Any, options: List[str], data: Optional[List[str]], include_skip: bool, row_width: int, extra_buttons: Optional[List[List[InlineKeyboardButton]]]) -> InlineKeyboardMarkup
+  start (self: Any, update: Update, context: CallbackContext) -> int
+  select_project (self: Any, update: Update, context: CallbackContext) -> int
+  add_summary (self: Any, update: Update, context: CallbackContext) -> int
+  add_description (self: Any, update: Update, context: CallbackContext) -> int
+  add_component (self: Any, update: Update, context: CallbackContext) -> int
+  ask_assignee_from_text (self: Any, update: Update, context: CallbackContext) -> int
+  ask_assignee (self: Any, query: CallbackQuery, context: CallbackContext) -> int
+  _ask_assignee_common (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_assignee (self: Any, update: Update, context: CallbackContext) -> int
+  search_assignee (self: Any, update: Update, context: CallbackContext) -> int
+  select_assignee_from_search (self: Any, update: Update, context: CallbackContext) -> int
+  ask_priority_from_text (self: Any, update: Update, context: CallbackContext) -> int
+  ask_priority_from_text_internal (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  ask_priority_from_query (self: Any, query: CallbackQuery, context: CallbackContext) -> int
+  _ask_priority_common (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_priority (self: Any, update: Update, context: CallbackContext) -> int
+  ask_sprint (self: Any, query: CallbackQuery, context: CallbackContext) -> int
+  _ask_sprint_common (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_sprint (self: Any, update: Update, context: CallbackContext) -> int
+  ask_epic_from_query (self: Any, query: CallbackQuery, context: CallbackContext) -> int
+  _ask_epic_common (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_epic (self: Any, update: Update, context: CallbackContext) -> int
+  ask_release_from_query (self: Any, query: CallbackQuery, context: CallbackContext) -> int
+  _ask_release_common (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_release (self: Any, update: Update, context: CallbackContext) -> int
+  ask_task_type_from_query (self: Any, query: CallbackQuery, context: CallbackContext) -> int
+  _ask_task_type_common (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_task_type (self: Any, update: Update, context: CallbackContext) -> int
+  _ask_story_points_common (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_story_points (self: Any, update: Update, context: CallbackContext) -> int
+  ask_deadline (self: Any, query: CallbackQuery, context: CallbackContext) -> int
+  add_deadline (self: Any, update: Update, context: CallbackContext) -> int
+  _ask_attachment_prompt (self: Any, context: CallbackContext, chat_id: int, message_id: int) -> int
+  add_attachment (self: Any, update: Update, context: CallbackContext) -> int
+  process_media_group (self: Any, messages: List[Any], attachments: Dict[str, List]) -> None
+  process_single_media (self: Any, message: Any, attachments: Dict[str, List]) -> None
+  fetch_and_store_media (self: Any, media: Any, session: Any, storage_list: Any, filename: Any) -> None
+  finalize_task (self: Any, update_or_message: Any, context: CallbackContext) -> None
+  handle_create_another (self: Any, update: Update, context: CallbackContext) -> int
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/transition_task.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from jira import JIRA
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram import Update
+from telegram.ext import CallbackContext
+from telegram.ext import ConversationHandler
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.settings import JIRA_BOARD_SETTINGS
+
+Global Initiations:
+keyboard = [[InlineKeyboardButton(item, callback_data=item) for item in items[i:i + row_size]] for i in range(0, len(items), row_size)]
+keyboard = self.build_inline_keyboard(self.assignees, row_size=2)
+query = update.callback_query
+assignee = query.data
+issues = self.jira.search_issues(f'assignee="{assignee}" AND project="{self.jira.project(JIRA_BOARD_SETTINGS.board_name)}"')
+keyboard = [[InlineKeyboardButton(f'{issue.key} - {issue.fields.summary} (Priority: {issue.fields.priority.name})', callback_data=issue.key)] for issue in issues]
+reply_markup = InlineKeyboardMarkup(keyboard)
+query = update.callback_query
+task_key = query.data
+issue = self.jira.issue(task_key)
+description = issue.fields.description or 'No description provided'
+message = f'Task: {task_key}\nSummary: {issue.fields.summary}\nDescription: {description}\nStatus: {issue.fields.status.name}'
+keyboard = [[InlineKeyboardButton('Continue', callback_data='continue')], [InlineKeyboardButton('Return', callback_data='return')], [InlineKeyboardButton('Cancel', callback_data='cancel')]]
+reply_markup = InlineKeyboardMarkup(keyboard)
+query = update.callback_query
+issue = context.user_data.get('selected_task')
+transitions = self.jira.transitions(issue)
+transition_id = next((t['id'] for t in transitions if t['name'] == 'In Progress'))
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: JiraTaskTransition
+  __init__ (self: Any, jira: JIRA) -> None
+  build_inline_keyboard (self: Any, items: Any, row_size: Any) -> None
+  start_transition (self: Any, update: Update, context: CallbackContext) -> int
+  select_assignee (self: Any, update: Update, context: CallbackContext) -> int
+  show_task_details (self: Any, update: Update, context: CallbackContext) -> int
+  handle_task_action (self: Any, update: Update, context: CallbackContext) -> int
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/reports_full.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import re
+from datetime import datetime
+import pandas as pd
+from tqdm import tqdm
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.settings import JIRA_SETTINGS
+
+Global Initiations:
+jira_repository = JiraRepository(settings=JIRA_SETTINGS)
+start_at = 0
+max_results = 100
+issues = []
+tasks_info = []
+epics = {}
+sprint_df = df[df['last_sprint'].notnull()].copy()
+planned_tasks = len(sprint_df)
+completed_tasks = len(sprint_df[sprint_df['status'].str.lower().str.contains('done', na=False)])
+sprint_completion_rate = completed_tasks / planned_tasks * 100 if planned_tasks > 0 else 0
+sprint_completion_data = {'Metric': ['Planned Tasks', 'Completed Tasks', 'Completion Rate (%)'], 'Value': [planned_tasks, completed_tasks, round(sprint_completion_rate, 2)]}
+sprint_completion_df = pd.DataFrame(sprint_completion_data)
+task_status_breakdown = df.groupby('status')['key'].count().reset_index()
+blockers_df = df[df['priority'].isin(['High', 'Highest', 'Critical']) & ~df['status'].str.lower().str.contains('done', na=False)].copy()
+burn_down_data = {'Day': ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5'], 'Remaining Tasks': [40, 30, 25, 10, 0]}
+burn_down_df = pd.DataFrame(burn_down_data)
+sprints = df['last_sprint'].dropna().unique()
+completion_rows = []
+completion_df = pd.DataFrame(completion_rows)
+status_rows = []
+status_df = pd.DataFrame(status_rows)
+burndown_rows = []
+burndown_df = pd.DataFrame(burndown_rows)
+done_df = df[df['status'].str.lower().str.contains('done', na=False) & df['resolved_at'].notnull()].copy()
+avg_completion_time = done_df['completion_days'].mean() if not done_df.empty else 0
+avg_completion_data = {'Metric': ['Average Task Completion Time (days)'], 'Value': [round(avg_completion_time, 2)]}
+avg_completion_df = pd.DataFrame(avg_completion_data)
+workload_df = df.groupby('assignee')['key'].count().reset_index()
+bug_count = len(df[df['task_type'].str.lower() == 'bug'])
+feature_count = len(df[df['task_type'].str.lower().isin(['story', 'task'])])
+bug_vs_feature = {'Type': ['Bug', 'Feature'], 'Count': [bug_count, feature_count]}
+bug_vs_feature_df = pd.DataFrame(bug_vs_feature)
+tasks = get_tasks_info()
+df = pd.DataFrame(tasks)
+datetime_columns = ['created_at', 'updated_at', 'resolved_at', 'target_start', 'target_end']
+sprint_progress_data = create_sprint_progress_dashboard(df)
+sprint_progress_per_sprint = create_sprint_progress_dashboard_by_sprint(df)
+team_productivity_data = create_team_productivity_workload_dashboard(df)
+df = sanitize_dataframe(df)
+current_date = datetime.now().strftime('%Y-%m-%d')
+filename = f'jira_tasks_{current_date}.xlsx'
+batch = jira_repository.jira.search_issues('project = PARSCHAT', startAt=start_at, maxResults=max_results)
+comments_text = []
+sprint_field = getattr(issue.fields, 'customfield_10104', None)
+story_points = getattr(issue.fields, 'customfield_10106', None)
+task_info = {'key': issue.key, 'summary': issue.fields.summary, 'description': issue.fields.description or '', 'epic_name': epics.get(issue.fields.customfield_10100), 'comments': '\n'.join(comments_text), 'task_type': issue.fields.issuetype.name, 'assignee': issue.fields.assignee.displayName if issue.fields.assignee else None, 'reporter': issue.fields.reporter.displayName if issue.fields.reporter else None, 'priority': issue.fields.priority.name if issue.fields.priority else None, 'status': issue.fields.status.name, 'created_at': issue.fields.created, 'updated_at': issue.fields.updated, 'resolved_at': issue.fields.resolutiondate, 'target_start': getattr(issue.fields, 'customfield_10109', None), 'target_end': getattr(issue.fields, 'customfield_10110', None), 'story_points': story_points, 'components': '{' + ','.join([c.name for c in issue.fields.components]) + '}' if issue.fields.components else '{}', 'labels': '{' + ','.join(issue.fields.labels) + '}' if issue.fields.labels else '{}', 'last_sprint': last_sprint_name, 'sprint_repeats': sprint_count}
+sprint_tasks = df[df['last_sprint'] == sprint]
+planned = len(sprint_tasks)
+completed = len(sprint_tasks[sprint_tasks['status'].str.lower().str.contains('done', na=False)])
+rate = completed / planned * 100 if planned else 0
+sprint_tasks = df[df['last_sprint'] == sprint]
+grouped = sprint_tasks.groupby('status')['key'].count()
+sprint_str = str(sprint_field[-1])
+name_start = sprint_str.find('name=') + 5
+name_end = sprint_str.find(',startDate')
+last_sprint_name = sprint_str[name_start:name_end]
+sprint_count = len(sprint_field)
+last_sprint_name = None
+sprint_count = 0
+commenter = comment.author.displayName
+
+__main__ Section:
+if __name__ == '__main__':
+    main()
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/create_task_usecase.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import List
+from typing import Optional
+from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+
+Global Initiations:
+data = TaskData(project_key=project_key, summary=summary, description=description, task_type=task_type, labels=labels or [], assignee=assignee)
+issue = self._jira_repo.create_task(data)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: CreateTaskUseCase
+  __init__ (self: Any, jira_repo: TaskManagerRepositoryInterface) -> None
+  run (self: Any, project_key: str, summary: str, description: str, task_type: str, labels: Optional[List[str]], assignee: Optional[str]) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/get_statistics.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from langchain_openai.chat_models import ChatOpenAI
+from jira_telegram_bot.settings import OPENAI_SETTINGS
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: Statistics
+  __init__ (self: Any) -> None
+  load_ai_model (self: Any) -> None
+  __call__ (self: Any, query: str) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/parse_jira_prompt_usecase.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import Dict
+from langchain.output_parsers import ResponseSchema
+from langchain.output_parsers import StructuredOutputParser
+from langchain.prompts import PromptTemplate
+from jira_telegram_bot.use_cases.interface.openai_gateway_interface import OpenAIGatewayInterface
+
+Global Initiations:
+schema = [ResponseSchema(name='task_info', description='A JSON object containing summary, task_type, label, and description fields.', type='json')]
+parser = StructuredOutputParser.from_response_schemas(schema)
+format_instructions = parser.get_format_instructions()
+template_text = '\n            You are given the following content from a user:\n\n            {content}\n\n            Your job is to analyze this content and provide structured output for creating a task for Jira.\n            Keep the same language as the content.\n\n            {format_instructions}\n\n            Instructions:\n            1. "task_type": must only be Task or Bug.\n            2. "summary": single line. If #ID is in content, keep it.\n            3. "description": single line.\n            4. "label": #ID if content has it.\n        '
+llm = self._openai_gateway.get_llm()
+prompt = PromptTemplate(template=template_text, input_variables=['content'], partial_variables={'format_instructions': format_instructions})
+chain = prompt | llm | parser
+result = chain.invoke(input={'content': content})
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: ParseJiraPromptUseCase
+  __init__ (self: Any, openai_gateway: OpenAIGatewayInterface) -> None
+  run (self: Any, content: str) -> Dict[str, str]
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/summary_generator_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import Dict
+from typing import List
+from jira_telegram_bot.entities.task import TaskData
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: ISummaryGenerator
+  generate_summary (self: Any, grouped_tasks: Dict[str, Dict[str, List[TaskData]]]) -> str
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/openai_gateway_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from abc import ABC
+from abc import abstractmethod
+from langchain_openai import ChatOpenAI
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: OpenAIGatewayInterface
+  get_llm (self: Any) -> ChatOpenAI
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/task_manager_repository_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from abc import ABC
+from abc import abstractmethod
+from typing import Dict
+from typing import List
+from typing import Optional
+from jira import Issue
+from jira_telegram_bot.entities.task import TaskData
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskManagerRepositoryInterface
+  get_projects (self: Any) -> None
+  get_project_components (self: Any, project_key: Any) -> None
+  get_epics (self: Any, project_key: str) -> None
+  get_board_id (self: Any, project_key: str) -> Optional[int]
+  get_sprints (self: Any, board_id: Any) -> None
+  get_project_versions (self: Any, project_key: Any) -> None
+  get_issue_types_for_project (self: Any, project_key: Any) -> None
+  get_priorities (self: Any) -> None
+  get_assignees (self: Any, project_key: str) -> List[str]
+  search_users (self: Any, username: str) -> List[str]
+  build_issue_fields (self: Any, task_data: TaskData) -> dict
+  handle_attachments (self: Any, issue: Issue, attachments: Dict[str, List]) -> None
+  create_issue (self: Any, fields: Any) -> None
+  add_attachment (self: Any, issue: Any, attachment: Any, filename: Any) -> None
+  create_task (self: Any, task_data: TaskData) -> Issue
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/__init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/user_config_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from abc import ABC
+from abc import abstractmethod
+from typing import Dict
+from typing import Optional
+from jira_telegram_bot.entities.user_config import UserConfig as UserConfigEntity
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: UserConfigInterface
+  load_user_config (self: Any, user_config_path: str) -> Dict[str, UserConfigEntity]
+  get_user_config (self: Any, username: str) -> Optional[UserConfigEntity]
+  get_user_config_by_jira_username (self: Any, username: str) -> Optional[UserConfigEntity]
+  save_user_config (self: Any, telegram_username: str, user_cfg: UserConfigEntity) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/task_handler_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from abc import ABC
+from abc import abstractmethod
+from jira_telegram_bot.use_cases.interface.task_interface import TaskInterface
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskHandlerInterface
+  __init__ (self: Any, task: TaskInterface) -> None
+  get_handler (self: Any) -> None
+  cancel (self: Any) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/task_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from abc import ABC
+from abc import abstractmethod
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskInterface
+  __init__ (self: Any) -> None
+  start (self: Any) -> None
+  finalize_task (self: Any) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/task_grouper_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import Dict
+from typing import List
+from jira_telegram_bot.entities.task import TaskData
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: ITaskGrouper
+  group_tasks (self: Any, tasks: List[TaskData]) -> Dict[str, Dict[str, List[TaskData]]]
+
+
+================================================================================
+File: ./jira_telegram_bot/use_cases/interface/telegram_gateway_interface.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from abc import ABC
+from abc import abstractmethod
+from typing import Optional
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TelegramGatewayInterface
+  send_message (self: Any, chat_id: int, text: str, reply_message_id: Optional[int], parse_mode: str) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/utils/___init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/utils/data_store.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import json
+import os
+from typing import Any
+from typing import Dict
+from typing import Optional
+from jira_telegram_bot import DEFAULT_PATH
+
+Global Initiations:
+DATA_STORE_PATH = f'{DEFAULT_PATH}/data_store.json'
+data = load_data_store()
+data = load_data_store()
+data = load_data_store()
+data_store = load_data_store()
+data = load_data_store()
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/utils/check_version.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import logging
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+Global Initiations:
+DEFAULT_PATH = Path(os.path.realpath(__file__)).parents[2]
+LOGGER = logging.getLogger(__name__)
+console_handler = logging.StreamHandler()
+version_file_path = os.path.join(f'{DEFAULT_PATH}/jira_telegram_bot', '__init__.py')
+current_version = get_current_version(version_file_path)
+previous_version = get_previous_version(version_file_path)
+result = subprocess.run(['git', 'log', '-p', '-n 1', file_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+diff_content = result.stdout
+match = re.search('\\+__version__\\s*=\\s*["\\\']([^"\\\']+)["\\\']', diff_content)
+match = re.search('__version__\\s*=\\s*["\\\']([^"\\\']+)["\\\']', content)
+result = subprocess.run(['git', 'diff', file_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+diff_output = result.stdout
+content = f.read()
+
+__main__ Section:
+if __name__ == '__main__':
+    if main() == 1:
+        sys.exit(0)
+    else:
+        sys.exit(1)
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/utils/pydantic_advanced_settings.py
+================================================================================
+
+Imports:
+import json
+import argparse
+from pathlib import Path
+from typing import Any, Dict, Tuple, Type
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+
+Global Initiations:
+parser = argparse.ArgumentParser(description='Command line arguments')
+field_value = getattr(self.args, field_name, None)
+encoding = self.config.get('env_file_encoding')
+file_content_json = json.loads(Path('config.json').read_text(encoding))
+field_value = file_content_json.get(field_name)
+json_file_path = Path('config.json')
+field_value = getattr(self.args, field_name, None)
+field_value = self.prepare_field_value(field_name, field, field_value, value_is_complex)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: ArgparseConfigSettingsSource
+  __init__ (self: Any, settings_cls: Type[BaseSettings]) -> None
+  _parse_args (self: Any) -> None
+  get_field_value (self: Any, field: FieldInfo, field_name: str) -> Tuple[Any, str, bool]
+  __call__ (self: Any) -> Dict[str, Any]
+Class: JsonConfigSettingsSource
+  get_field_value (self: Any, field: FieldInfo, field_name: str) -> Tuple[Any, str, bool]
+  prepare_field_value (self: Any, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool) -> Any
+  __call__ (self: Any) -> Dict[str, Any]
+Class: CustomizedSettings
+  settings_customise_sources (cls: Any, settings_cls: Type[BaseSettings], init_settings: PydanticBaseSettingsSource, env_settings: PydanticBaseSettingsSource, dotenv_settings: PydanticBaseSettingsSource, file_secret_settings: PydanticBaseSettingsSource) -> Tuple[PydanticBaseSettingsSource, ...]
+
+
+================================================================================
+File: ./jira_telegram_bot/utils/basic_logger.py
+================================================================================
+
+Imports:
+import os
+import sys
+import logging
+from loguru import logger
+
+Global Initiations:
+__all__ = ('simple_logger', 'loguru_logger')
+green = '\x1b[32m'
+grey = '\x1b[36m'
+blue = '\x1b[38;5;39m'
+yellow = '\x1b[38;5;226m'
+red = '\x1b[38;5;196m'
+bold_red = '\x1b[31;1m'
+reset = '\x1b[0m'
+splitter = get_splitter_format()
+logger = logging.getLogger(name)
+file_format = '%(levelname)s-%(asctime)s-FILENAME:%(filename)s-MODULE:%(module)s-%(lineno)d-FUNC:%(funcName)s-THREAD:%(threadName)s :: %(message)s'
+console_format = '%(levelname)s-%(asctime)s-FILENAME:%(filename)s-MODULE:%(module)s-%(lineno)d-FUNC:%(funcName)s-THREAD:%(threadName)s :: %(message)s'
+file_formatter = logging.Formatter(file_format, datefmt='%Y-%m-%d %H:%M:%S')
+console_formatter = ColoredFormatter(console_format, datefmt='%Y-%m-%d %H:%M:%S')
+console_handler = logging.StreamHandler()
+console_format = '<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | FILENAME: <cyan>{file}</cyan> - MODULE: <cyan>{module}</cyan> - FUNC: <cyan>{function}</cyan> - LINE: <cyan>{line}</cyan> - THREAD: <cyan>{thread.name}</cyan> :: <level>{message}</level>'
+idx = sys.argv.index('--stream_level')
+idx = eval(os.environ['stream_level'])
+file_handler = logging.FileHandler(filename=filename)
+idx = sys.argv.index('--stream_level')
+stream_level = os.environ['stream_level']
+file_format = '{time:YYYY-MM-DD HH:mm:ss} | {level} | FILENAME: {file} - MODULE: {module} - FUNC: {function} - LINE: {line} - THREAD: {thread.name} :: {message}\n' + '-' * 100
+stream_level = eval(sys.argv[idx + 1])
+stream_level = sys.argv[idx + 1]
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: ColoredFormatter
+  __init__ (self: Any) -> None
+  format (self: Any, record: logging.LogRecord) -> str
+
+
+================================================================================
+File: ./jira_telegram_bot/adapters/user_config.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import json
+from typing import Optional
+from pydantic import ValidationError
+from jira_telegram_bot import DEFAULT_PATH
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.user_config import UserConfig as UserConfigEntity
+from jira_telegram_bot.use_cases.interface.user_config_interface import UserConfigInterface
+
+Global Initiations:
+USER_CONFIG_PATH = f'{DEFAULT_PATH}/jira_telegram_bot/settings/user_config.json'
+user_configurations = {}
+configs = {username: user_cfg.dict() for username, user_cfg in self.user_config.items()}
+raw_data = json.load(file)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: UserConfig
+  __init__ (self: Any, user_config_path: str) -> None
+  load_user_config (self: Any, user_config_path: str) -> None
+  get_user_config (self: Any, username: str) -> Optional[UserConfigEntity]
+  list_all_users (self: Any) -> None
+  get_user_config_by_jira_username (self: Any, jira_username: str) -> Optional[UserConfigEntity]
+  save_user_config (self: Any, telegram_username: str, user_cfg: UserConfig) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/adapters/__init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/adapters/openai_gateway.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from langchain_openai import ChatOpenAI
+from jira_telegram_bot.settings import OPENAI_SETTINGS
+from jira_telegram_bot.use_cases.interface.openai_gateway_interface import OpenAIGatewayInterface
+
+Global Initiations:
+llm = ChatOpenAI(model_name='gpt-4o-mini', openai_api_key=self.api_key, temperature=self.temperature)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: OpenAIGateway
+  __init__ (self: Any) -> None
+  get_llm (self: Any) -> ChatOpenAI
+
+
+================================================================================
+File: ./jira_telegram_bot/adapters/telegram_gateway.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import Optional
+import requests
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.settings import TELEGRAM_WEBHOOK_SETTINGS
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+
+Global Initiations:
+url = f'{self.base_url}/sendMessage'
+payload = {'chat_id': chat_id, 'text': text, 'parse_mode': parse_mode}
+resp = requests.post(url, json=payload)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TelegramGateway
+  __init__ (self: Any) -> None
+  send_message (self: Any, chat_id: int, text: str, reply_message_id: Optional[int], parse_mode: str) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/adapters/jira_server_repository.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import time
+from typing import Dict
+from typing import List
+from typing import Optional
+from jira import Issue
+from jira import JIRA
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+
+Global Initiations:
+entry = self.cache.get(cache_key)
+cache_key = ('get_projects', None)
+result = self._get_from_cache(cache_key, 48 * 3600)
+result = self.jira.projects()
+cache_key = ('get_epics', project_key)
+result = self._get_from_cache(cache_key, 72 * 3600)
+result = self.jira.search_issues(f'project="{project_key}" AND issuetype=Epic AND status in ("To Do", "In Progress")')
+cache_key = ('get_board_id', project_key)
+result = self._get_from_cache(cache_key, 48 * 3600)
+boards = self.jira.boards()
+cache_key = ('get_sprints', board_id)
+result = self._get_from_cache(cache_key, 8 * 3600)
+result = self.jira.sprints(board_id=board_id)
+cache_key = ('get_project_versions', project_key)
+result = self._get_from_cache(cache_key, 2 * 86400)
+result = self.jira.project_versions(project_key)
+cache_key = ('issue_types_for_project', project_key)
+result = self._get_from_cache(cache_key, 4 * 3600)
+result = [issue_type.name for issue_type in self.jira.issue_types_for_project(project_key)]
+cache_key = 'priorities'
+result = self._get_from_cache(cache_key, 1200 * 3600)
+result = self.jira.priorities()
+cache_key = ('search_users', username)
+result = self._get_from_cache(cache_key, 1 * 3600)
+users = self.jira.search_users(username, maxResults=50)
+user_list = [user.name for user in users]
+issue_fields = {'project': {'key': task_data.project_key}, 'summary': task_data.summary, 'description': task_data.description or 'No Description Provided', 'issuetype': {'name': task_data.task_type or 'Task'}}
+issue_fields = self.build_issue_fields(task_data)
+new_issue = self.create_issue(issue_fields)
+last_sprint_of_task = getattr(issue.fields, self.jira_sprint_id)[-1] if getattr(issue.fields, self.jira_sprint_id) else None
+sprint_name = None
+cache_key = ('get_assignees', project_key)
+result = self._get_from_cache(cache_key, 2 * 3600)
+assignees = set()
+recent_issues = self.jira.search_issues(f'project = {project_key} AND createdDate > startOfMonth(-1)')
+assignee_list = sorted(assignees) if assignees else []
+name_position = last_sprint_of_task.find('name=')
+sprint_name = last_sprint_of_task[name_position:].split(',')[0].strip('name=')
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: JiraRepository
+  __init__ (self: Any, settings: JiraBoardSettings) -> None
+  _get_from_cache (self: Any, cache_key: Any, max_age_seconds: Any) -> None
+  _set_cache (self: Any, cache_key: Any, result: Any) -> None
+  get_projects (self: Any) -> None
+  get_project_components (self: Any, project_key: Any) -> None
+  get_epics (self: Any, project_key: str) -> None
+  get_board_id (self: Any, project_key: str) -> Optional[int]
+  get_sprints (self: Any, board_id: Any) -> None
+  get_project_versions (self: Any, project_key: Any) -> None
+  get_issue_types_for_project (self: Any, project_key: Any) -> None
+  get_priorities (self: Any) -> None
+  get_assignees (self: Any, project_key: str) -> List[str]
+  search_users (self: Any, username: str) -> List[str]
+  build_issue_fields (self: Any, task_data: TaskData) -> dict
+  handle_attachments (self: Any, issue: Issue, attachments: Dict[str, List]) -> None
+  create_issue (self: Any, fields: Any) -> None
+  add_attachment (self: Any, issue: Any, attachment: Any, filename: Any) -> None
+  create_task (self: Any, task_data: TaskData) -> Issue
+  add_comment (self: Any, issue_key: str, comment: str) -> None
+  create_task_data_from_jira_issue (self: Any, issue: Any) -> TaskData
+
+
+================================================================================
+File: ./jira_telegram_bot/adapters/deadline_notifier.py
+================================================================================
+
+Imports:
+from datetime import datetime, timedelta
+import requests
+from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.settings import JIRA_SETTINGS, TELEGRAM_SETTINGS
+from jira_telegram_bot import LOGGER
+
+Global Initiations:
+due_date_str = getattr(issue.fields, 'duedate', None)
+sprint_field = getattr(issue.fields, 'customfield_10104', None)
+tasks_by_date = {}
+lines = []
+sorted_dates = sorted((d for d in tasks_by_date.keys() if d != 'بدون مهلت'))
+url = f'https://api.telegram.org/bot{TELEGRAM_SETTINGS.TOKEN}/sendMessage'
+payload = {'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown', 'disable_web_page_preview': True}
+jira_repo = JiraRepository(settings=JIRA_SETTINGS)
+user_config = UserConfig()
+threshold_date = datetime.now() + timedelta(days=3)
+all_users = user_config.list_all_users()
+deadline = get_effective_deadline(issue)
+resp = requests.post(url, json=payload, timeout=10)
+cfg = user_config.get_user_config(username)
+jql = f'assignee="{cfg.jira_username}" AND statusCategory != Done order by duedate ASC'
+issues = jira_repo.jira.search_issues(jql, maxResults=200)
+due_soon = []
+tasks_by_date = categorize_tasks_by_deadline(due_soon)
+message_text = build_message(tasks_by_date)
+sprint_str = str(sprint_info)
+date_str = 'بدون مهلت'
+date_str = deadline.strftime('%Y-%m-%d')
+key = issue.key
+summary = issue.fields.summary
+link = f'{JIRA_SETTINGS.domain}/browse/{key}'
+eff_deadline = get_effective_deadline(issue)
+end_part = sprint_str.split('endDate=')[1].split(',')[0]
+
+__main__ Section:
+if __name__ == '__main__':
+    main()
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/settings/jira_board_config.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import List
+from pydantic import Field
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+
+Global Initiations:
+model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', env_prefix='jira_board_', extra='ignore')
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: JiraBoardSettings
+
+
+================================================================================
+File: ./jira_telegram_bot/settings/jira_settings.py
+================================================================================
+
+Imports:
+from pydantic_settings import SettingsConfigDict
+from pydantic import Field
+from jira_telegram_bot.utils.pydantic_advanced_settings import CustomizedSettings
+
+Global Initiations:
+model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', env_prefix='jira_', extra='ignore')
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: JiraConnectionSettings
+
+
+================================================================================
+File: ./jira_telegram_bot/settings/openai_settings.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
+from jira_telegram_bot.utils.pydantic_advanced_settings import CustomizedSettings
+
+Global Initiations:
+model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', env_prefix='openai_', extra='ignore')
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: OpenAISettings
+
+
+================================================================================
+File: ./jira_telegram_bot/settings/__init__.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from jira_telegram_bot import DEFAULT_PATH
+from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+from jira_telegram_bot.settings.openai_settings import OpenAISettings
+from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
+from jira_telegram_bot.settings.telegram_settings import TelegramWebhookConnectionSettings
+
+Global Initiations:
+JIRA_SETTINGS = JiraConnectionSettings(_env=f'{DEFAULT_PATH}/.env')
+JIRA_BOARD_SETTINGS = JiraBoardSettings(_env=f'{DEFAULT_PATH}/.env')
+TELEGRAM_SETTINGS = TelegramConnectionSettings(_env=f'{DEFAULT_PATH}/.env')
+OPENAI_SETTINGS = OpenAISettings(_env=f'{DEFAULT_PATH}/.env')
+TELEGRAM_WEBHOOK_SETTINGS = TelegramWebhookConnectionSettings(_env=f'{DEFAULT_PATH}/.env')
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/settings/telegram_settings.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from typing import List
+from pydantic import Field
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+
+Global Initiations:
+model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', env_prefix='TELEGRAM_', extra='ignore')
+model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', env_prefix='TELEGRAM_HOOK_', extra='ignore')
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TelegramConnectionSettings
+Class: TelegramWebhookConnectionSettings
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/__init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/fast_api/jira_webhook_controller.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import Request
+from lagom import Context
+from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
+
+Global Initiations:
+router = APIRouter()
+body = await request.json()
+result = handle_jira_uc.run(body)
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/fast_api/create_ticket_controller.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from fastapi import FastAPI
+from jira_telegram_bot.app_container import create_fastapi_integration
+from jira_telegram_bot.frameworks.fast_api.telegram_webhook_controller import get_telegram_router
+
+Global Initiations:
+app = FastAPI()
+deps = create_fastapi_integration()
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/fast_api/__init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/fast_api/telegram_webhook_controller.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import Request
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+from jira_telegram_bot.use_cases.parse_jira_prompt_usecase import ParseJiraPromptUseCase
+from jira_telegram_bot.utils.data_store import get_issue_key_from_channel_post
+from jira_telegram_bot.utils.data_store import save_comment
+from jira_telegram_bot.utils.data_store import save_mapping
+
+Global Initiations:
+router = APIRouter()
+data = await request.json()
+channel_post = data['channel_post']
+text = channel_post.get('text') or channel_post.get('caption') or ''
+parsed_data = parse_prompt_uc.run(text)
+issue = create_task_uc.run(project_key='PCT', summary=parsed_data['summary'], description=parsed_data['description'], task_type=parsed_data['task_type'], labels=[parsed_data.get('labels', '')], assignee=None)
+parent_msg_id = channel_post['reply_to_message']['message_id']
+issue_key = get_issue_key_from_channel_post(parent_msg_id)
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/fast_api/create_ticket.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import asyncio
+import json
+import os
+import time
+from collections import defaultdict
+from io import BytesIO
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+import aiohttp
+import requests
+import uvicorn
+from fastapi import FastAPI
+from fastapi import Request
+from langchain.chains import LLMChain
+from langchain.output_parsers import ResponseSchema
+from langchain.output_parsers import StructuredOutputParser
+from langchain.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+from jira_telegram_bot import DEFAULT_PATH
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.settings import OPENAI_SETTINGS
+from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+
+Global Initiations:
+app = FastAPI()
+TELEGRAM_BOT_TOKEN = '7673971624:AAHKBV6IIrGTFTtR2_gA04AqeIyOIuvQY6M'
+TELEGRAM_WEBHOOK_URL = TELEGRAM_SETTINGS.WEBHOOK_URL
+JIRA_BASE_URL = JIRA_SETTINGS.domain
+JIRA_PROJECT_KEY = 'PCT'
+jira_repository = JiraRepository(JIRA_SETTINGS)
+users = {'alikaz3mi': 'a_kazemi', 'Mousavi_Shoushtari': 'm_mousavi', 'Alirezanasim_1991': 'a_nasim', 'davood_fazeli': 'd_fazeli'}
+GROUP_TIMEOUT_SECONDS = 5.0
+DATA_STORE_PATH = f'{DEFAULT_PATH}/data_store.json'
+schema = [ResponseSchema(name='task_info', description="A JSON object containing summary, task_type, label, and description fields. Example: {'summary': 'Task summary', 'task_type': 'Bug', 'description': 'Task description', 'label': '#ID121'}", type='json')]
+parser = StructuredOutputParser.from_response_schemas(schema)
+format_instructions = parser.get_format_instructions()
+template_text = '\n                    You are given the following content from a user:\n\n                    {content}\n\n                    Your job is to analyze this content and provide structured output for creating a task for jira.\n                    keep the same language as the content.\n\n\n                    {format_instructions}\n\n                    Instructions:\n                    1. "task_type": The type of task must only be Task or Bug.\n                    2. "summary": the summary must be a single line. with the same language as content. If exists in content, keep #ID number in the summary.\n                    3. "description": the description must be a single line. with the same language as content.\n                    4. "label": label is the #ID if the content has it.\n                    '
+llm = ChatOpenAI(model_name='gpt-4o-mini', openai_api_key=OPENAI_SETTINGS.token, temperature=0.2)
+prompt = PromptTemplate(template=template_text, input_variables=['content'], partial_variables={'format_instructions': format_instructions})
+chain = prompt | llm | parser
+result = chain.invoke(input={'content': content})
+model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
+payload = {'chat_id': chat_id, 'text': text}
+resp = requests.post(url, json=payload)
+media_file = await media.get_file()
+file_url = f'https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{media_file.file_path}'
+attachments = task_data.attachments
+issue = jira_repository.create_task(task_data)
+issue_message = f'Task created (media group) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}'
+first_chat_id = messages[0]['chat']['id']
+channel_post_id = messages[0]['message_id']
+attachments = task_data.attachments
+issue = jira_repository.create_task(task_data)
+issue_message = f'Task created (single) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}'
+chat_id = channel_post['chat']['id']
+channel_post_id = channel_post['message_id']
+data = load_data_store()
+data = load_data_store()
+data = load_data_store()
+url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook'
+response = requests.get(url)
+url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook'
+payload = {'url': TELEGRAM_WEBHOOK_URL, 'max_connections': 100, 'drop_pending_updates': True}
+response = requests.post(url, json=payload)
+url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={self.file_id}'
+resp = requests.get(url)
+data = await request.json()
+now = time.time()
+to_finalize = []
+result = resp.json()['result']
+buffer = BytesIO(await response.read())
+photo_array = channel_post['photo']
+file_id = photo_array[-1]['file_id']
+mock_media = MockTelegramPhoto(file_id)
+channel_post = data['channel_post']
+username = channel_post.get('from', {}).get('username', 'UnknownUser')
+text = channel_post.get('text') or channel_post.get('caption') or ''
+parsed_fields = parse_jira_prompt(text)
+task_data = TaskData(project_key=JIRA_PROJECT_KEY, summary=parsed_fields['summary'], description=parsed_fields['description'], task_type=parsed_fields['task_type'], labels=[parsed_fields.get('labels', '')], assignee=users.get(username, None))
+media_group_id = channel_post.get('media_group_id')
+photo_array = msg['photo']
+file_info = photo_array[-1]
+file_id = file_info['file_id']
+mock_media = MockTelegramPhoto(file_id)
+doc = channel_post['document']
+file_id = doc['file_id']
+file_name = doc.get('file_name', 'single_document')
+mock_media = MockTelegramDocument(file_id)
+message = data['message']
+messages = MEDIA_GROUP_STORE.pop(group_id, [])
+first_message = messages[0]
+username = first_message.get('from', {}).get('username', 'UnknownUser')
+text = first_message.get('text') or first_message.get('caption') or ''
+parsed_fields = parse_jira_prompt(text)
+task_data = TaskData(project_key=JIRA_PROJECT_KEY, summary=parsed_fields['summary'], description=parsed_fields['description'], task_type=parsed_fields['task_type'], assignee=users.get(username, None))
+doc = msg['document']
+file_id = doc['file_id']
+file_name = doc.get('file_name', f'document_{idx}')
+mock_media = MockTelegramDocument(file_id)
+vid = channel_post['video']
+file_id = vid['file_id']
+mock_media = MockTelegramVideo(file_id)
+issue = jira_repository.create_task(task_data)
+issue_message = f'Task created (text-only) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}'
+chat_id = channel_post['chat']['id']
+channel_post_id = channel_post['message_id']
+chat_id = message['chat']['id']
+text = message.get('text') or message.get('caption') or ''
+issue_key = None
+data_store = load_data_store()
+message_id = message['message_id']
+forward_origin = message.get('forward_origin', {})
+original_message_id = forward_origin.get('message_id')
+issue_key = get_issue_key_from_channel_post(original_message_id)
+group_chat_id = message['chat']['id']
+vid = msg['video']
+file_id = vid['file_id']
+mock_media = MockTelegramVideo(file_id)
+aud = channel_post['audio']
+file_id = aud['file_id']
+mock_media = MockTelegramAudio(file_id)
+issue_link = f'{JIRA_SETTINGS.domain}/browse/{issue_key}'
+issue_message = f'Jira Issue Created:\nLink: {issue_link}'
+data_local = load_data_store()
+aud = msg['audio']
+file_id = aud['file_id']
+mock_media = MockTelegramAudio(file_id)
+issue_key = mapping.get('issue_key')
+
+__main__ Section:
+if __name__ == '__main__':
+    uvicorn.run(app, host='0.0.0.0', port=2315)
+
+Classes and Methods:
+Class: JiraSettings
+Class: MockTelegramPhoto
+  __init__ (self: Any, file_id: Any) -> None
+  get_file (self: Any) -> None
+Class: MockTelegramDocument
+Class: MockTelegramVideo
+Class: MockTelegramAudio
+Class: MockFilePath
+  __init__ (self: Any, file_id: Any) -> None
+  _get_file_path (self: Any) -> str
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/telegram/voice.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import logging
+from typing import List, Dict
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Voice
+from telegram.ext import CommandHandler, ConversationHandler, CallbackQueryHandler, MessageHandler, CallbackContext, filters
+from jira_telegram_bot.use_cases.interface.user_config_interface import UserConfigInterface
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+from jira_telegram_bot.use_cases.interface.task_handler_interface import TaskHandlerInterface
+from jira_telegram_bot.adapters.openai_gateway import OpenAIGateway
+from langchain import LLMChain
+from langchain.prompts import PromptTemplate
+
+Global Initiations:
+LOGGER = logging.getLogger(__name__)
+conv_handler = ConversationHandler(entry_points=[CommandHandler('voice_report', self.start)], states={SELECT_PROJECT: [CallbackQueryHandler(self.select_project_callback)], SELECT_TASKS: [CallbackQueryHandler(self.select_tasks_callback)], WAIT_FOR_VOICE: [MessageHandler(filters.VOICE, self.handle_voice_message)], CONFIRM_POST: [CallbackQueryHandler(self.handle_confirm_post)]}, fallbacks=[CommandHandler('cancel', self.cancel)], allow_reentry=True)
+user_telegram = update.effective_user.username
+user_cfg = self.user_config_repo.get_user_config(user_telegram)
+default_project_key = user_cfg.project or None
+projects = self.jira_repo.get_projects()
+query = update.callback_query
+project_key = query.data
+user_telegram = update.effective_user.username
+user_cfg = self.user_config_repo.get_user_config(user_telegram)
+jira_username = user_cfg.jira_username or user_telegram
+project_key = context.user_data['selected_project']
+jql = f'assignee="{jira_username}" AND project="{project_key}" AND statusCategory != Done order by created DESC'
+issues = self.jira_repo.jira.search_issues(jql, maxResults=20)
+keyboard = []
+query = update.callback_query
+file_id = voice_msg.file_id
+file_obj = update.message.bot.get_file(file_id)
+file_content = file_obj.download_as_bytearray()
+raw_transcript = self.openai.transcribe_audio(audio_content=file_content, model='o3-mini', language='fa')
+cleaned_text = self.openai.clean_text(raw_transcript, model='o3-mini')
+keyboard = [[InlineKeyboardButton('بله، ثبت شود', callback_data='confirm_post'), InlineKeyboardButton('خیر، انصراف', callback_data='cancel')]]
+query = update.callback_query
+keyboard = []
+button_text = f'{issue.key} - {issue.fields.summary}'
+selected_set = context.user_data['report_task_keys']
+transcribed_text = context.user_data.get('transcribed_text', '')
+selected_task_keys = list(context.user_data['report_task_keys'])
+tasks_formatted = []
+task_list_str = '\n'.join(tasks_formatted)
+final_persian_report = self.summary_chain.run(transcribed_text=transcribed_text, task_list=task_list_str)
+issue = self.jira_repo.jira.issue(k)
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: VoiceReportHandler
+  __init__ (self: Any, user_config_repo: UserConfigInterface, jira_repo: TaskManagerRepositoryInterface, openai_gateway: OpenAIGateway) -> None
+  get_handler (self: Any) -> None
+  start (self: Any, update: Update, context: CallbackContext) -> int
+  select_project_callback (self: Any, update: Update, context: CallbackContext) -> int
+  _ask_for_tasks (self: Any, update: Update, context: CallbackContext) -> int
+  select_tasks_callback (self: Any, update: Update, context: CallbackContext) -> int
+  handle_voice_message (self: Any, update: Update, context: CallbackContext) -> int
+  handle_confirm_post (self: Any, update: Update, context: CallbackContext) -> int
+  cancel (self: Any, update: Update, context: CallbackContext) -> int
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/telegram/__init__.py
+================================================================================
+
+Imports:
+
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/telegram/user_settings_handler.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from telegram.ext import CallbackQueryHandler
+from telegram.ext import CommandHandler
+from telegram.ext import ConversationHandler
+from telegram.ext import filters
+from telegram.ext import MessageHandler
+from jira_telegram_bot.use_cases.interface.task_handler_interface import TaskHandlerInterface
+from jira_telegram_bot.use_cases.user_settings import UserSettingsConversation
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: UserSettingsHandler
+  __init__ (self: Any, settings_use_case: UserSettingsConversation) -> None
+  get_handler (self: Any) -> None
+  cancel (self: Any, update: Any, context: Any) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/telegram/task_status_handler.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from telegram.ext import CommandHandler
+from telegram.ext import ConversationHandler
+from telegram.ext import filters
+from telegram.ext import MessageHandler
+from jira_telegram_bot.use_cases.interface.task_handler_interface import TaskHandlerInterface
+from jira_telegram_bot.use_cases.task_status import TaskStatus
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskStatusHandler
+  __init__ (self: Any, task_status_use_case: TaskStatus) -> None
+  get_handler (self: Any) -> None
+  cancel (self: Any, update: Any, context: Any) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/telegram/task_transition_handler.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from telegram.ext import CallbackQueryHandler
+from telegram.ext import CommandHandler
+from telegram.ext import ConversationHandler
+from jira_telegram_bot.use_cases.interface.task_handler_interface import TaskHandlerInterface
+from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskTransitionHandler
+  __init__ (self: Any, task_transition_use_case: JiraTaskTransition) -> None
+  get_handler (self: Any) -> None
+  cancel (self: Any, update: Any, context: Any) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/telegram/board_summary_generator_handler.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from telegram.ext import CallbackQueryHandler
+from telegram.ext import CommandHandler
+from telegram.ext import ConversationHandler
+from telegram.ext import filters
+from telegram.ext import MessageHandler
+from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
+from jira_telegram_bot.use_cases.interface.task_handler_interface import TaskHandlerInterface
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: BoardSummaryGeneratorHandler
+  __init__ (self: Any, board_summary_generator: BoardSummaryGenerator) -> None
+  get_handler (self: Any) -> None
+  cancel (self: Any, update: Any, context: Any) -> None
+
+
+================================================================================
+File: ./jira_telegram_bot/frameworks/telegram/task_creation_handler.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+from telegram.ext import CallbackQueryHandler
+from telegram.ext import CommandHandler
+from telegram.ext import ConversationHandler
+from telegram.ext import filters
+from telegram.ext import MessageHandler
+from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
+from jira_telegram_bot.use_cases.interface.task_handler_interface import TaskHandlerInterface
+
+Global Initiations:
+
+
+__main__ Section:
+
+
+Classes and Methods:
+Class: TaskCreationHandler
+  __init__ (self: Any, task_creation_use_case: JiraTaskCreation) -> None
+  get_handler (self: Any) -> None
+  cancel (self: Any, update: Any, context: Any) -> None
+
+
+================================================================================
+File: ./tests/unit_tests/use_cases/test_create_easy_task.py
+================================================================================
+
+Imports:
+from __future__ import annotations
+import unittest
+from io import BytesIO
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import patch
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram import Message
+from telegram import Update
+from telegram import User
+from telegram.ext import CallbackContext
+from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.entities.field_config import FieldConfig
+from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.use_cases.create_easy_task import JiraEasyTaskCreation
+from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
+from jira_telegram_bot import DEFAULT_PATH
+
+Global Initiations:
+task_data = self.context.user_data['task_data']
+query = MagicMock()
+query = MagicMock()
+query = MagicMock()
+query = MagicMock()
+query = MagicMock()
+query = MagicMock()
+query = MagicMock()
+task_data = TaskData()
+issue_fields = self.task_creation.build_issue_fields(task_data)
+expected_fields = {'project': {'key': 'PA'}, 'summary': 'Test Summary', 'description': 'Test Description', 'issuetype': {'name': 'Task'}, 'components': [{'name': 'Component X'}], 'customfield_10106': 5.0, 'customfield_10104': 101, 'customfield_10105': 'EPIC-1', 'fixVersions': [{'name': 'Version 1.0'}]}
+query = MagicMock()
+issue = MagicMock()
+attachments = {'images': [BytesIO(b'fake image data')], 'videos': [BytesIO(b'fake video data')], 'audio': [BytesIO(b'fake audio data')], 'documents': [BytesIO(b'fake document data')]}
+mock_response = AsyncMock()
+valid_image_data = f.read()
+
+__main__ Section:
+if __name__ == '__main__':
+    unittest.main()
+
+Classes and Methods:
+Class: TestJiraEasyTaskCreation
+  setUp (self: Any) -> None
+  test_start_with_user_config_project (self: Any, mock_check_user_allowed: Any) -> None
+  test_start_without_user_config_project (self: Any, mock_check_user_allowed: Any) -> None
+  test_add_project (self: Any) -> None
+  test_add_summary (self: Any) -> None
+  test_add_description (self: Any) -> None
+  test_add_component (self: Any) -> None
+  test_add_task_type (self: Any) -> None
+  test_add_story_points (self: Any) -> None
+  test_add_sprint (self: Any) -> None
+  test_add_epic_link (self: Any) -> None
+  test_add_release (self: Any) -> None
+  test_add_attachment_skip (self: Any) -> None
+  test_add_attachment_with_files (self: Any) -> None
+  test_build_issue_fields (self: Any) -> None
+  test_send_message_with_message (self: Any) -> None
+  test_send_message_with_callback_query (self: Any) -> None
+  test_send_message_error (self: Any) -> None
+  test_handle_attachments (self: Any) -> None
+  test_get_file_extension (self: Any) -> None
+
+
