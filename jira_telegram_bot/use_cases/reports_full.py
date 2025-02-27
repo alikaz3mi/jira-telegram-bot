@@ -22,7 +22,6 @@ def remove_illegal_chars(value):
     Specifically remove ASCII control characters 0-8, 11-12, 14-31, 127-159.
     """
     if isinstance(value, str):
-        # This regex matches ASCII control chars except \t, \n, and \r
         return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]", "", value)
     return value
 

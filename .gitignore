@@ -6,6 +6,7 @@
 *.csv
 *.xlsx
 *.log
+cron.log
 extract.py
 
 __pycache__

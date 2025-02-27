@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import time
 from typing import Dict
 from typing import List
@@ -8,6 +10,7 @@ from typing import Optional
 from jira import Issue
 from jira import JIRA
 
+from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
@@ -26,6 +29,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
         )
         self.cache = {}
         self.jira_story_point_id = "customfield_10106"
+        self.jira_original_estimate_id = "customfield_10111"
         self.jira_sprint_id = "customfield_10104"
         self.jira_epic_link_id = "customfield_10100"
 
@@ -74,6 +78,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
         boards = self.jira.boards()
         for board in boards:
             if project_key in board.name:
+                self.board_type = board.type
                 self._set_cache(cache_key, board.id)
                 return board.id
         return None
@@ -84,7 +89,10 @@ class JiraRepository(TaskManagerRepositoryInterface):
         if result is not None:
             return result
 
-        result = self.jira.sprints(board_id=board_id)
+        if self.board_type == "scrum":
+            result = self.jira.sprints(board_id=board_id)
+        else:
+            result = []
         self._set_cache(cache_key, result)
         return result
 
@@ -162,10 +170,15 @@ class JiraRepository(TaskManagerRepositoryInterface):
             "issuetype": {"name": task_data.task_type or "Task"},
         }
 
-        if task_data.component:
-            issue_fields["components"] = [{"name": task_data.component}]
+        if task_data.components:
+            issue_fields["components"] = [
+                {"name": component} for component in task_data.components
+            ]  # TODO: components / component
         if task_data.story_points is not None:
-            issue_fields[self.jira_story_point_id] = task_data.story_points
+            issue_fields["timetracking"] = {
+                "originalEstimate": f"{int(task_data.story_points * 8)}h",
+                "remainingEstimate": f"{int(task_data.story_points * 8)}h",
+            }
         if task_data.sprint_id:
             issue_fields[self.jira_sprint_id] = task_data.sprint_id
         if task_data.epic_link:
@@ -177,13 +190,13 @@ class JiraRepository(TaskManagerRepositoryInterface):
         if task_data.priority:
             issue_fields["priority"] = {"name": task_data.priority}
 
-        # if task_data.due_date:
-        #     issue_fields["duedate"] = task_data.due_date  # standard Jira due date
-        # if task_data.target_end:
-        #     issue_fields["customfield_10110"] = task_data.target_end  # "Target End" custom field
+        if task_data.due_date:
+            issue_fields["duedate"] = task_data.due_date
 
         if task_data.labels:
-            issue_fields["labels"] = task_data.labels
+            issue_fields["labels"] = [
+                label.replace(" ", "-") for label in task_data.labels
+            ]
 
         return issue_fields
 
@@ -217,17 +230,20 @@ class JiraRepository(TaskManagerRepositoryInterface):
         self.jira.add_comment(issue_key, comment)
 
     def create_task_data_from_jira_issue(self, issue) -> TaskData:
-        last_sprint_of_task = (
-            getattr(issue.fields, self.jira_sprint_id)[-1]
-            if getattr(issue.fields, self.jira_sprint_id)
-            else None
-        )
-        sprint_name = None
-        if not last_sprint_of_task:
-            name_position = last_sprint_of_task.find("name=")
-            sprint_name = (
-                last_sprint_of_task[name_position:].split(",")[0].strip("name=")
+        if self.board_type == "kanban":
+            sprint_name = "kanban"
+        else:
+            last_sprint_of_task = (
+                getattr(issue.fields, self.jira_sprint_id)[-1]
+                if getattr(issue.fields, self.jira_sprint_id)
+                else None
             )
+            sprint_name = None
+            if not last_sprint_of_task:
+                name_position = last_sprint_of_task.find("name=")
+                sprint_name = (
+                    last_sprint_of_task[name_position:].split(",")[0].strip("name=")
+                )
         return TaskData(
             project_key=getattr(issue.fields.project, "key", None),
             summary=issue.fields.summary,
@@ -235,6 +251,11 @@ class JiraRepository(TaskManagerRepositoryInterface):
             component=(
                 issue.fields.components[0].name if issue.fields.components else None
             ),
+            components=[
+                component.name
+                for component in issue.fields.components
+                if issue.fields.components
+            ],
             task_type=getattr(issue.fields.issuetype, "name", None),
             story_points=getattr(issue.fields, self.jira_story_point_id, None),
             sprint_name=sprint_name,
@@ -245,3 +266,50 @@ class JiraRepository(TaskManagerRepositoryInterface):
             assignee=getattr(issue.fields.assignee, "displayName", None),
             priority=getattr(issue.fields.priority, "name", None),
         )
+
+    def get_labels(self, project_key: str) -> List[str]:
+        try:
+            filepath = os.path.join(
+                DEFAULT_PATH,
+                "jira_telegram_bot/settings/project_labels.json",
+            )
+            labels = set()
+            if os.path.exists(filepath):
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+                    if project_key in data:
+                        labels.update(data[project_key])
+            if not labels:
+                issues = self.jira.search_issues(
+                    f'project = "{project_key}"',
+                    maxResults=1000,
+                )
+                for issue in issues:
+                    if issue.fields.labels:
+                        labels.update(issue.fields.labels)
+
+            label_list = sorted(list(labels))
+            return label_list
+        except Exception as e:
+            LOGGER.error(f"Error fetching labels for project {project_key}: {e}")
+            return []
+
+    def set_labels(self, project_key: str, labels: List[str]) -> bool:
+        try:
+            filepath = os.path.join(
+                DEFAULT_PATH,
+                "jira_telegram_bot/settings/project_labels.json",
+            )
+            data = {}
+            if os.path.exists(filepath):
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+
+            data[project_key] = labels
+
+            with open(filepath, "w") as f:
+                json.dump(data, f, indent=2)
+            return True
+        except Exception as e:
+            LOGGER.error(f"Error saving labels for project {project_key}: {e}")
+            return False

@@ -10,6 +10,7 @@ from sqlalchemy import Float
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -38,18 +39,39 @@ session = Session()
 Base = declarative_base()
 
 
+def ensure_schema_updates():
+    """
+    Dynamically adds the new columns to the 'jira_tasks' table if they
+    do not exist already. This way, we avoid manual migration steps.
+    """
+    with engine.begin() as conn:
+        # Add 'release' (array of text) if not exists
+        conn.execute(
+            text("ALTER TABLE jira_tasks ADD COLUMN IF NOT EXISTS release text[];"),
+        )
+        # Add 'original_estimate' (text) if not exists
+        conn.execute(
+            text(
+                "ALTER TABLE jira_tasks ADD COLUMN IF NOT EXISTS original_estimate text;",
+            ),
+        )
+        # Add 'remaining_estimate' (text) if not exists
+        conn.execute(
+            text(
+                "ALTER TABLE jira_tasks ADD COLUMN IF NOT EXISTS remaining_estimate text;",
+            ),
+        )
+
+
 class Task(Base):
     """
     SQLAlchemy ORM model for Jira tasks.
-    The Jira `key` is now the primary key, so duplicates will be updated.
+    The Jira `key` is the primary key, so duplicates will be updated.
     """
 
     __tablename__ = "jira_tasks"
 
-    # Make `key` the primary key
-    key = Column(String, primary_key=True)  # <--- Primary key
-
-    # Other fields
+    key = Column(String, primary_key=True)
     summary = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
     epic_name = Column(Text, nullable=True)
@@ -70,8 +92,17 @@ class Task(Base):
     last_sprint = Column(String, nullable=True)
     sprint_repeats = Column(Integer, nullable=True)
 
+    # Newly added columns:
+    release = Column(ARRAY(String), nullable=True)
+    original_estimate = Column(Text, nullable=True)
+    remaining_estimate = Column(Text, nullable=True)
 
-# Create the table if it doesn't exist
+
+# 1. Ensure the existing table has the new columns (migration in code)
+ensure_schema_updates()
+
+# 2. Reflect updated metadata & create any missing tables
+#    (If the table doesn't exist at all, this will create it; if it does, we're good)
 Base.metadata.create_all(engine)
 
 jira_repository = JiraRepository(settings=JIRA_SETTINGS)
@@ -116,12 +147,13 @@ def get_tasks_info(project_key: str) -> list[dict]:
 
         # Gather comments
         comments_text = []
-        for comment in issue.fields.comment.comments:
-            commenter = comment.author.displayName
-            if commenter != issue.fields.reporter.displayName:
-                comments_text.append(f"{commenter}: {comment.body}")
+        if issue.fields.comment:
+            for comment in issue.fields.comment.comments:
+                commenter = comment.author.displayName
+                if commenter != issue.fields.reporter.displayName:
+                    comments_text.append(f"{commenter}: {comment.body}")
 
-        # Extract sprint information
+        # Extract sprint info
         sprint_field = getattr(issue.fields, "customfield_10104", None)
         if sprint_field and len(sprint_field) > 0:
             sprint_str = str(sprint_field[-1])
@@ -132,7 +164,22 @@ def get_tasks_info(project_key: str) -> list[dict]:
             last_sprint_name = "Backlog"
         sprint_count = len(sprint_field) if sprint_field else 0
 
+        # Extract story points
         story_points = getattr(issue.fields, "customfield_10106", None)
+
+        # Extract fixVersions -> store as "release"
+        fix_versions = issue.fields.fixVersions
+        release_list = [fv.name for fv in fix_versions] if fix_versions else []
+
+        # Extract time-tracking estimates
+        # Note: 'originalEstimate' or 'remainingEstimate' might be None or strings like "2h", "3d", etc.
+        timetracking = getattr(issue.fields, "timetracking", None)
+        if timetracking:
+            original_estimate = getattr(timetracking, "originalEstimate", None)
+            remaining_estimate = getattr(timetracking, "remainingEstimate", None)
+        else:
+            original_estimate = None
+            remaining_estimate = None
 
         task_info = {
             "key": issue.key,
@@ -141,11 +188,11 @@ def get_tasks_info(project_key: str) -> list[dict]:
             "epic_name": epics.get(issue.fields.customfield_10100),
             "comments": "\n".join(comments_text),
             "task_type": issue.fields.issuetype.name,
-            "assignee": issue.fields.assignee.displayName
-            if issue.fields.assignee
-            else None,
+            "assignee": (
+                issue.fields.assignee.displayName if issue.fields.assignee else None
+            ),
             "reporter": issue.fields.reporter.displayName,
-            "priority": issue.fields.priority.name if issue.fields.priority else None,
+            "priority": (issue.fields.priority.name if issue.fields.priority else None),
             "status": issue.fields.status.name,
             "created_at": issue.fields.created,
             "updated_at": issue.fields.updated,
@@ -153,12 +200,17 @@ def get_tasks_info(project_key: str) -> list[dict]:
             "target_start": getattr(issue.fields, "customfield_10109", None),
             "target_end": getattr(issue.fields, "customfield_10110", None),
             "story_points": story_points,
-            "components": [c.name for c in issue.fields.components]
-            if issue.fields.components
-            else [],
+            "components": (
+                [c.name for c in issue.fields.components]
+                if issue.fields.components
+                else []
+            ),
             "labels": issue.fields.labels if issue.fields.labels else [],
             "last_sprint": last_sprint_name,
             "sprint_repeats": sprint_count,
+            "release": release_list,  # new field
+            "original_estimate": original_estimate,  # new field
+            "remaining_estimate": remaining_estimate,  # new field
         }
         tasks_info.append(task_info)
 
@@ -186,7 +238,7 @@ def store_tasks_in_db(tasks: list[dict]):
                 except Exception:
                     t[time_field] = None
 
-        # Create a Task object
+        # Build the Task object
         task_obj = Task(
             key=t["key"],
             summary=t["summary"],
@@ -208,10 +260,12 @@ def store_tasks_in_db(tasks: list[dict]):
             labels=t["labels"],
             last_sprint=t["last_sprint"],
             sprint_repeats=t["sprint_repeats"],
+            release=t["release"],
+            original_estimate=t["original_estimate"],
+            remaining_estimate=t["remaining_estimate"],
         )
 
-        # Merge will insert if the primary key doesn't exist,
-        # or update if it does exist
+        # Merge = insert if new, update if primary key exists
         session.merge(task_obj)
 
     session.commit()
@@ -219,34 +273,15 @@ def store_tasks_in_db(tasks: list[dict]):
 
 
 if __name__ == "__main__":
-    # 1. Fetch tasks from PARSCHAT
+    # Example usage:
     parschat_tasks = get_tasks_info("PARSCHAT")
 
-    # 2. Fetch tasks from PCT
     pct_tasks = get_tasks_info("PCT")
 
-    # Combine them into one list if you like
     all_tasks = parschat_tasks + pct_tasks
 
-    # 3. Convert to DataFrame (for debugging or exporting)
     df = pd.DataFrame(all_tasks)
+    LOGGER.info(f"DataFrame shape: {df.shape}")
 
-    # If needed, ensure date/datetime columns are properly converted for the DataFrame
-    datetime_columns = [
-        "created_at",
-        "updated_at",
-        "resolved_at",
-        "target_start",
-        "target_end",
-    ]
-    for col in datetime_columns:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
-            # Format for external usage (e.g., CSV/Excel)
-            df[col] = df[col].apply(
-                lambda x: x.strftime("%Y-%m-%d %H:%M:%S%z") if pd.notnull(x) else None,
-            )
-
-    # 5. Store in PostgreSQL via SQLAlchemy (upsert)
     store_tasks_in_db(all_tasks)
     LOGGER.info("Tasks have been stored (upserted) in the PostgreSQL database.")

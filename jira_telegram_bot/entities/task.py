@@ -16,7 +16,9 @@ class TaskData(BaseModel):
     project_key: Optional[str] = Field(default=None)
     summary: Optional[str] = Field(default=None)
     description: Optional[str] = Field(default=None)
-    component: Optional[str] = Field(default=None)
+    component: Optional[str] = Field(default=None)  # TODO: omit this one
+    components: Optional[List[str]] = Field(default=None)
+    labels: Optional[List[str]] = Field(default=None)
     task_type: Optional[str] = Field(default=None)
     story_points: Optional[float] = Field(default=None)
     sprint_id: Optional[int] = Field(default=None)
@@ -39,7 +41,6 @@ class TaskData(BaseModel):
     epics: List[Issue] = Field(default_factory=list)
     board_id: Optional[int] = Field(default=None)
 
-    # The user picks a day offset; we convert it to a date string (YYYY-MM-DD)
     due_date: Optional[str] = Field(
         default=None,
         description="The actual date for the task due_date in YYYY-MM-DD.",

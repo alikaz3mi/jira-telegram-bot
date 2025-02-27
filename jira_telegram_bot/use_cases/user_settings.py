@@ -163,10 +163,12 @@ class UserSettingsConversation:
 
     def build_toggles_kb(self, user_cfg) -> InlineKeyboardMarkup:
         """
-        Build an inline keyboard that shows each field:
+        Build an inline keyboard that shows each field as a toggle:
           [component ✔], [task_type], etc.
-        We'll say "✔" if set_field=True, else blank.
+        "✔" if set_field = True, else blank.
         Then a 'Done' button at the bottom.
+
+        # <-- NEW: We now add "deadline" and "labels" in the toggles as well.
         """
         field_names = [
             "project",
@@ -179,13 +181,19 @@ class UserSettingsConversation:
             "sprint",
             "assignee",
             "priority",
+            "deadline",  # <-- NEW
+            "labels",  # <-- NEW
         ]
 
         rows = []
         temp_row = []
 
         for fname in field_names:
-            field_config = getattr(user_cfg, fname)
+            field_config = getattr(user_cfg, fname, None)
+            if not field_config:
+                # If the user_config does not have that field for some reason,
+                # skip it. (But normally it should exist.)
+                continue
             check_mark = "✔" if field_config.set_field else ""
             button_text = f"{fname} {check_mark}"
             cb_data = f"toggle|{fname}"
@@ -204,6 +212,7 @@ class UserSettingsConversation:
     async def toggle_field(self, update: Update, context: CallbackContext) -> int:
         """
         The user clicked on a toggle button for a field, e.g. "toggle|component".
+        This flips the `set_field` boolean in user_cfg for that field.
         """
         query = update.callback_query
         await query.answer()
@@ -263,7 +272,6 @@ class UserSettingsConversation:
         """
         The user is asked to type the new user's Telegram username.
         """
-        # Save it to context, then ask for Jira username
         new_username = update.message.text.strip().lstrip("@")
         context.user_data["new_user_username"] = new_username
         await update.message.reply_text(

@@ -21,7 +21,13 @@ from jira_telegram_bot.use_cases.interface.task_manager_repository_interface imp
 
 def escape_markdown_v2(text):
     """Escapes characters for MarkdownV2."""
-    return re.sub(r"([_*[\]()~`>#+\-=|{}.!])", r"\\\1", text)
+    escaped_text = re.sub(
+        r"(?<!\\)([_*\[\]\(\)~`>\#+\-=|{}\.!])",
+        r"\\\1",
+        text,
+    )
+
+    return escaped_text
 
 
 class BoardSummaryGenerator:
@@ -381,17 +387,19 @@ class BoardSummaryGenerator:
                     task = self.jira_repository.create_task_data_from_jira_issue(issue)
                     tasks.append(task)
                 issue_summary = escape_markdown_v2(response_text)
+
                 await update.message.reply_text(issue_summary, parse_mode="MarkdownV2")
                 result = self.summary_generator.process_tasks(tasks)
                 await update.message.reply_text(
                     escape_markdown_v2(result),
-                    parse_mode="MarkdownV2",
+                    parse_mode="Markdown",
                 )
 
             else:
                 await update.message.reply_text("No tasks found matching the criteria.")
         except Exception as e:
             error_message = f"Failed to fetch tasks: {e}"
+            LOGGER.error(error_message)
             await update.message.reply_text(error_message)
 
         return ConversationHandler.END

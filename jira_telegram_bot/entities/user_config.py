@@ -18,4 +18,6 @@ class UserConfig(BaseModel):
     release: FieldConfig
     sprint: FieldConfig
     assignee: FieldConfig
+    labels: FieldConfig = FieldConfig(default=FieldConfig(set_field=False))
+    deadline: FieldConfig = FieldConfig(default=FieldConfig(set_field=False))
     priority: FieldConfig = FieldConfig(default=FieldConfig(set_field=True))

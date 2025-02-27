@@ -38,7 +38,9 @@ class TaskCreationHandler(TaskHandlerInterface):
                     ),
                 ],
                 self.task_creation_use_case.COMPONENT: [
-                    CallbackQueryHandler(self.task_creation_use_case.add_component),
+                    CallbackQueryHandler(
+                        self.task_creation_use_case.toggle_component_selection,
+                    ),
                 ],
                 self.task_creation_use_case.ASSIGNEE: [
                     CallbackQueryHandler(self.task_creation_use_case.add_assignee),
@@ -72,9 +74,20 @@ class TaskCreationHandler(TaskHandlerInterface):
                 self.task_creation_use_case.STORY_POINTS: [
                     CallbackQueryHandler(self.task_creation_use_case.add_story_points),
                 ],
-                # New deadline step
                 self.task_creation_use_case.DEADLINE: [
                     CallbackQueryHandler(self.task_creation_use_case.add_deadline),
+                ],
+                # <-- NEW: Labels
+                self.task_creation_use_case.LABELS: [
+                    CallbackQueryHandler(
+                        self.task_creation_use_case.toggle_label_selection,
+                    ),
+                ],
+                self.task_creation_use_case.LABELS_NEW: [
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self.task_creation_use_case.add_new_label,
+                    ),
                 ],
                 self.task_creation_use_case.ATTACHMENT: [
                     MessageHandler(
