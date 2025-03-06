@@ -28,24 +28,24 @@ from jira_telegram_bot.use_cases.interface.user_config_interface import (
 
 class JiraTaskCreation:
     (
-        PROJECT,  # 0
-        SUMMARY,  # 1
-        DESCRIPTION,  # 2
-        COMPONENT,  # 3  (multi-component)
-        ASSIGNEE,  # 4
-        PRIORITY,  # 5
-        SPRINT,  # 6
-        EPIC,  # 7
-        RELEASE,  # 8
-        TASK_TYPE,  # 9
-        STORY_POINTS,  # 10
-        DEADLINE,  # 11
-        LABELS,  # 12  # <-- NEW
-        LABELS_NEW,  # 13  # <-- NEW
-        ATTACHMENT,  # 14
-        ASSIGNEE_SEARCH,  # 15
-        ASSIGNEE_RESULT,  # 16
-        CREATE_ANOTHER,  # 17
+        PROJECT,
+        SUMMARY,
+        DESCRIPTION,
+        COMPONENT,
+        ASSIGNEE,
+        PRIORITY,
+        SPRINT,
+        EPIC,
+        RELEASE,
+        TASK_TYPE,
+        STORY_POINTS,
+        DEADLINE,
+        LABELS,
+        LABELS_NEW,
+        ATTACHMENT,
+        ASSIGNEE_SEARCH,
+        ASSIGNEE_RESULT,
+        CREATE_ANOTHER,
     ) = range(18)
 
     DEADLINE_OPTIONS = [
@@ -122,9 +122,6 @@ class JiraTaskCreation:
             keyboard.append([InlineKeyboardButton("Skip", callback_data="skip")])
         return InlineKeyboardMarkup(keyboard)
 
-    # --------------------------------------------------------------------------
-    # Multi-Component logic
-    # --------------------------------------------------------------------------
     def build_component_selection_keyboard(
         self,
         all_components: List[str],
@@ -140,15 +137,12 @@ class JiraTaskCreation:
         for i in range(0, len(all_components), row_width):
             row = []
             for comp in all_components[i : i + row_width]:
-                # If comp is selected, show a checkmark
                 mark = "✔" if comp in selected else ""
                 btn_text = f"{comp} {mark}"
-                # We encode callback_data as "cmp|<component_name>"
                 row.append(
                     InlineKeyboardButton(btn_text, callback_data=f"cmp|{comp}"),
                 )
             keyboard.append(row)
-        # "Done" and "Skip" at the bottom
         bottom_row = [
             InlineKeyboardButton("Done", callback_data="cmp_done"),
             InlineKeyboardButton("Skip", callback_data="skip"),
@@ -156,9 +150,6 @@ class JiraTaskCreation:
         keyboard.append(bottom_row)
         return InlineKeyboardMarkup(keyboard)
 
-    # --------------------------------------------------------------------------
-    # Multi-Label logic - NEW
-    # --------------------------------------------------------------------------
     def build_label_selection_keyboard(
         self,
         all_labels: List[str],
@@ -176,12 +167,10 @@ class JiraTaskCreation:
             for lbl in all_labels[i : i + row_width]:
                 mark = "✔" if lbl in selected else ""
                 btn_text = f"{lbl} {mark}"
-                # We encode callback_data as "lbl|<label>"
                 row.append(
                     InlineKeyboardButton(btn_text, callback_data=f"lbl|{lbl}"),
                 )
             keyboard.append(row)
-        # Bottom row: "New Label", "Done", "Skip"
 
         bottom_row = [
             InlineKeyboardButton("New Label", callback_data="lbl_new"),
@@ -191,9 +180,6 @@ class JiraTaskCreation:
         keyboard.append(bottom_row)
         return InlineKeyboardMarkup(keyboard)
 
-    # --------------------------------------------------------------------------
-    # Conversation Start
-    # --------------------------------------------------------------------------
     async def start(self, update: Update, context: CallbackContext) -> int:
         """User starts conversation with /create_task."""
         if not self.user_config.get_user_config(update.message.from_user.username):
@@ -201,7 +187,6 @@ class JiraTaskCreation:
 
         context.user_data.clear()
 
-        # Initialize attachments as well as a list for components
         task_data = TaskData()
         task_data.attachments = {
             "images": [],
@@ -252,9 +237,6 @@ class JiraTaskCreation:
         await query.edit_message_text(text="Please enter the task summary:")
         return self.SUMMARY
 
-    # --------------------------------------------------------------------------
-    # Summary + Description
-    # --------------------------------------------------------------------------
     async def add_summary(self, update: Update, context: CallbackContext) -> int:
         """User typed or forwarded a summary."""
         task_data: TaskData = context.user_data["task_data"]
@@ -293,7 +275,6 @@ class JiraTaskCreation:
 
         last_message_id = context.user_data["last_inline_message_id"]
 
-        # Check user_cfg for whether we set component or not
         if not user_cfg.component.set_field:
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
@@ -302,7 +283,6 @@ class JiraTaskCreation:
             )
             return await self.ask_assignee_from_text(update, context)
 
-        # If user config has predefined component values, use them
         if user_cfg.component.values:
             options = user_cfg.component.values
         else:
@@ -319,11 +299,9 @@ class JiraTaskCreation:
                 return await self.ask_assignee_from_text(update, context)
             options = [c.name for c in jira_components]
 
-        # Start with empty selection:
         context.user_data["available_components"] = options
         task_data.components = []
 
-        # Build a multi-select keyboard
         reply_markup = self.build_component_selection_keyboard(
             all_components=options,
             selected=task_data.components,
@@ -337,9 +315,6 @@ class JiraTaskCreation:
         )
         return self.COMPONENT
 
-    # --------------------------------------------------------------------------
-    # Multi-Component toggling
-    # --------------------------------------------------------------------------
     async def toggle_component_selection(
         self,
         update: Update,
@@ -384,9 +359,6 @@ class JiraTaskCreation:
 
         return self.COMPONENT
 
-    # --------------------------------------------------------------------------
-    # Assignee
-    # --------------------------------------------------------------------------
     async def ask_assignee_from_text(
         self,
         update: Update,
@@ -528,9 +500,6 @@ class JiraTaskCreation:
             LOGGER.info("Assignee selected from search: %s", task_data.assignee)
             return await self.ask_priority_from_query(query, context)
 
-    # --------------------------------------------------------------------------
-    # Priority
-    # --------------------------------------------------------------------------
     async def ask_priority_from_text(
         self,
         update: Update,
@@ -602,9 +571,6 @@ class JiraTaskCreation:
 
         return await self.ask_sprint(query, context)
 
-    # --------------------------------------------------------------------------
-    # Sprint
-    # --------------------------------------------------------------------------
     async def ask_sprint(self, query: CallbackQuery, context: CallbackContext) -> int:
         chat_id = query.message.chat_id
         message_id = query.message.message_id
@@ -671,9 +637,6 @@ class JiraTaskCreation:
 
         return await self.ask_epic_from_query(query, context)
 
-    # --------------------------------------------------------------------------
-    # Epic
-    # --------------------------------------------------------------------------
     async def ask_epic_from_query(
         self,
         query: CallbackQuery,
@@ -742,9 +705,6 @@ class JiraTaskCreation:
 
         return await self.ask_release_from_query(query, context)
 
-    # --------------------------------------------------------------------------
-    # Release
-    # --------------------------------------------------------------------------
     async def ask_release_from_query(
         self,
         query: CallbackQuery,
@@ -813,9 +773,6 @@ class JiraTaskCreation:
 
         return await self.ask_task_type_from_query(query, context)
 
-    # --------------------------------------------------------------------------
-    # Task Type
-    # --------------------------------------------------------------------------
     async def ask_task_type_from_query(
         self,
         query: CallbackQuery,
@@ -870,9 +827,6 @@ class JiraTaskCreation:
             query.message.message_id,
         )
 
-    # --------------------------------------------------------------------------
-    # Story Points
-    # --------------------------------------------------------------------------
     async def _ask_story_points_common(
         self,
         context: CallbackContext,
@@ -922,19 +876,14 @@ class JiraTaskCreation:
             query.message.message_id,
         )
 
-    # --------------------------------------------------------------------------
-    # Deadline - now checking user_cfg
-    # --------------------------------------------------------------------------
     async def _ask_deadline_common(
         self,
         context: CallbackContext,
         chat_id: int,
         message_id: int,
     ) -> int:
-        task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
 
-        # If user doesn't want to set deadline, skip to labels
         if not user_cfg.deadline.set_field:
             await context.bot.edit_message_text(
                 chat_id=chat_id,
@@ -943,7 +892,6 @@ class JiraTaskCreation:
             )
             return await self._ask_labels_common(context, chat_id, message_id)
 
-        # Otherwise show user the day offsets
         days_text = [item[1] for item in self.DEADLINE_OPTIONS]
         days_data = [item[0] for item in self.DEADLINE_OPTIONS]
         reply_markup = self.build_keyboard(
@@ -995,9 +943,6 @@ class JiraTaskCreation:
             query.message.message_id,
         )
 
-    # --------------------------------------------------------------------------
-    # Labels - NEW
-    # --------------------------------------------------------------------------
     async def _ask_labels_common(
         self,
         context: CallbackContext,
@@ -1018,14 +963,9 @@ class JiraTaskCreation:
             )
             return await self._ask_attachment_prompt(context, chat_id, message_id)
 
-        # If user_cfg has some pre-defined labels, use them; else get them from JIRA if desired
-        # For simplicity, let's assume user_cfg.labels.values are the ones we present.
-        # If you have a method to fetch "all known JIRA labels", you can call it here instead.
         if user_cfg.labels.values:
             all_labels = user_cfg.labels.values
         else:
-            # If there's no user-defined set, we can just start with an empty list or
-            # pull from JIRA. We'll keep it empty if you have no method to get them.
             all_labels = []
 
         context.user_data["available_labels"] = all_labels
@@ -1081,7 +1021,6 @@ class JiraTaskCreation:
             return self.LABELS
 
         elif data == "lbl_new":
-            # Move to label-new state, ask user to type their new label.
             await query.edit_message_text("Please type your new label:")
             return self.LABELS_NEW
 
@@ -1112,26 +1051,21 @@ class JiraTaskCreation:
         available_labels = context.user_data.get("available_labels", [])
 
         new_label = update.message.text.strip()
-        # Avoid duplicates, or add anyway if you prefer
         if new_label not in available_labels:
             available_labels.append(new_label)
         if new_label not in task_data.labels:
             task_data.labels.append(new_label)
 
-        # Rebuild the label selection UI
         reply_markup = self.build_label_selection_keyboard(
             all_labels=available_labels,
             selected=task_data.labels,
         )
-        msg = await update.message.reply_text(
+        await update.message.reply_text(
             "Label added. Toggle any others, or 'New Label' again, or 'Done'/'Skip'.",
             reply_markup=reply_markup,
         )
         return self.LABELS
 
-    # --------------------------------------------------------------------------
-    # Attachments
-    # --------------------------------------------------------------------------
     async def _ask_attachment_prompt(
         self,
         context: CallbackContext,
@@ -1286,9 +1220,6 @@ class JiraTaskCreation:
             else:
                 LOGGER.error("Failed to fetch media from %s", media_file.file_path)
 
-    # --------------------------------------------------------------------------
-    # Finalization
-    # --------------------------------------------------------------------------
     async def finalize_task(
         self,
         update_or_message: Any,
@@ -1301,7 +1232,6 @@ class JiraTaskCreation:
 
         task_data: TaskData = context.user_data["task_data"]
         try:
-            # create_task can handle `task_data.components` (list) & `task_data.labels` (list)
             new_issue = self.jira_repository.create_task(task_data)
             await message.reply_text(
                 f"Task created successfully! Link: {JIRA_SETTINGS.domain}/browse/{new_issue.key}",
@@ -1337,7 +1267,6 @@ class JiraTaskCreation:
         await query.answer()
         if query.data == "yes":
             task_data: TaskData = context.user_data["task_data"]
-            # Clear relevant fields for the new creation
             task_data.summary = None
             task_data.description = None
             task_data.story_points = None

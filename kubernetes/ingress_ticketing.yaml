@@ -9,7 +9,7 @@ metadata:
 spec: #core
   ingressClassName: nginx
   rules:
-  - host: ticketing.api.chat.parstechai.com
+  - host: ticketing.api.chat.hooshdevi.ir
     http:
       paths:
       - path: /
@@ -21,5 +21,5 @@ spec: #core
               number: 2315
   tls:
   - hosts:
-    - ticketing.api.chat.parstechai.com
+    - ticketing.api.chat.hooshdev.ir
     secretName: admin-ssl # The secret that will hold the certificate.
