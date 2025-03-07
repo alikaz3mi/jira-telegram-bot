@@ -16,108 +16,24 @@ import requests
 import uvicorn
 from fastapi import FastAPI
 from fastapi import Request
-from langchain.chains import LLMChain
-from langchain.output_parsers import ResponseSchema
-from langchain.output_parsers import StructuredOutputParser
-from langchain.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
-from pydantic_settings import BaseSettings
-from pydantic_settings import SettingsConfigDict
 
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.settings import OPENAI_SETTINGS
-from jira_telegram_bot.settings import TELEGRAM_SETTINGS
-
-
-def parse_jira_prompt(content: str) -> Dict[str, str]:
-    """
-    Uses a LangChain LLM prompt to parse the content and produce a JSON string
-    with 'summary', 'task_type', and 'description'. Then returns it as a dict.
-    """
-
-    schema = [
-        ResponseSchema(
-            name="task_info",
-            description="A JSON object containing summary, task_type, label, and description fields. Example: {'summary': 'Task summary', 'task_type': 'Bug', 'description': 'Task description', 'label': '#ID121'}",
-            type="json",
-        ),
-    ]
-
-    parser = StructuredOutputParser.from_response_schemas(schema)
-    format_instructions = parser.get_format_instructions()
-
-    template_text = """
-                    You are given the following content from a user:
-
-                    {content}
-
-                    Your job is to analyze this content and provide structured output for creating a task for jira.
-                    keep the same language as the content.
-
-
-                    {format_instructions}
-
-                    Instructions:
-                    1. "task_type": The type of task must only be Task or Bug.
-                    2. "summary": the summary must be a single line. with the same language as content. If exists in content, keep #ID number in the summary.
-                    3. "description": the description must be a single line. with the same language as content.
-                    4. "label": label is the #ID if the content has it.
-                    """
-
-    llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
-        openai_api_key=OPENAI_SETTINGS.token,
-        temperature=0.2,
-    )
-    prompt = PromptTemplate(
-        template=template_text,
-        input_variables=["content"],
-        partial_variables={"format_instructions": format_instructions},
-    )
-
-    chain = prompt | llm | parser
-
-    result = chain.invoke(input={"content": content})
-
-    try:
-        return {
-            "summary": result["task_info"].get("summary", ""),
-            "task_type": result["task_info"].get("task_type", "Task"),
-            "description": result["task_info"].get("description", ""),
-            "labels": result["task_info"].get("label", ""),
-        }
-    except Exception as e:
-        return {
-            "summary": "No Summary",
-            "task_type": "Task",
-            "description": content or "No description provided.",
-        }
-
-
-class JiraSettings(BaseSettings):
-    base_url: str
-    project_key: str
-    email: str
-    password: str
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
+from jira_telegram_bot.settings import TELEGRAM_SETTINGS, TELEGRAM_WEBHOOK_SETTINGS
+from jira_telegram_bot.use_cases.prompts.ticket_issue_prompt import parse_jira_prompt
+from jira_telegram_bot.adapters.telegram_gateway import TelegramGateway
 
 app = FastAPI()
 
-TELEGRAM_BOT_TOKEN = "7673971624:AAHKBV6IIrGTFTtR2_gA04AqeIyOIuvQY6M"
+TELEGRAM_BOT_TOKEN = TELEGRAM_WEBHOOK_SETTINGS.TOKEN
 TELEGRAM_WEBHOOK_URL = TELEGRAM_SETTINGS.WEBHOOK_URL
 JIRA_BASE_URL = JIRA_SETTINGS.domain
 JIRA_PROJECT_KEY = "PCT"
 jira_repository = JiraRepository(JIRA_SETTINGS)
+telegram_gateway = TelegramGateway(TELEGRAM_WEBHOOK_SETTINGS)
 
 users = {
     "alikaz3mi": "a_kazemi",
@@ -132,22 +48,6 @@ GROUP_TIMEOUT_SECONDS = 5.0
 
 DATA_STORE_PATH = f"{DEFAULT_PATH}/data_store.json"
 
-
-def send_telegram_message(
-    chat_id: int,
-    text: str,
-    reply_message_id: Optional[int] = None,
-):
-    """Send a message to a Telegram chat."""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
-    if reply_message_id:
-        payload["reply_parameters"] = {"message_id": reply_message_id}
-    resp = requests.post(url, json=payload)
-    if resp.status_code != 200:
-        LOGGER.error(
-            f"Failed to send Telegram message to chat_id={chat_id}: {resp.text}",
-        )
 
 
 class MockTelegramPhoto:
@@ -188,10 +88,10 @@ class MockFilePath:
 
 
 async def fetch_and_store_media(
-    media: Any,
-    session: aiohttp.ClientSession,
-    storage_list: List,
-    filename: str,
+        media: Any,
+        session: aiohttp.ClientSession,
+        storage_list: List,
+        filename: str,
 ):
     """Fetch media from Telegram and store it in the provided storage list."""
     media_file = await media.get_file()
@@ -260,7 +160,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
     issue_message = f"Task created (media group) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
     LOGGER.info(issue_message)
     first_chat_id = messages[0]["chat"]["id"]
-    send_telegram_message(first_chat_id, issue_message)
+    telegram_gateway.send_telegram_message(first_chat_id, issue_message)
 
     channel_post_id = messages[0]["message_id"]
     save_mapping(channel_post_id, issue.key, messages[0]["chat"]["id"], first_chat_id)
@@ -316,7 +216,7 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
     issue_message = f"Task created (single) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
     LOGGER.info(issue_message)
     chat_id = channel_post["chat"]["id"]
-    send_telegram_message(chat_id, issue_message)
+    telegram_gateway.send_telegram_message(chat_id, issue_message)
 
     channel_post_id = channel_post["message_id"]
     save_mapping(channel_post_id, issue.key, channel_post["chat"]["id"], chat_id)
@@ -405,7 +305,7 @@ async def telegram_webhook(request: Request):
             else:
                 # Single message (text, or text+media)
                 if any(
-                    k in channel_post for k in ["photo", "video", "audio", "document"]
+                        k in channel_post for k in ["photo", "video", "audio", "document"]
                 ):
                     await process_single_message(channel_post, task_data)
                 else:
@@ -469,7 +369,7 @@ async def telegram_webhook(request: Request):
                     # Send message to the group
                     issue_link = f"{JIRA_SETTINGS.domain}/browse/{issue_key}"
                     issue_message = f"Jira Issue Created:\nLink: {issue_link}"
-                    send_telegram_message(
+                    telegram_gateway.send_telegram_message(
                         group_chat_id,
                         issue_message,
                         reply_message_id=message_id,
