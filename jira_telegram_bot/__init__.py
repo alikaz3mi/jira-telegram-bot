@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__version__ = "2.22.11"
+__version__ = "2.22.12"
 __name__ = "jira_telegram_bot"
 
 import os
@@ -14,4 +14,4 @@ DEFAULT_PATH = Path(os.path.realpath(__file__)).parents[1]
 LOGGER = loguru_logger(__name__)
 
 
-__all__ = ["__version__", "__name__", "loguru_logger", "DEFAULT_PATH"]
+__all__ = ["__version__", "__name__", "loguru_logger", "DEFAULT_PATH", "LOGGER"]

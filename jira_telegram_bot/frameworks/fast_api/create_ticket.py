@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 from collections import defaultdict
-from io import BytesIO
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
 
-import aiohttp
 import requests
 import uvicorn
 from fastapi import FastAPI
@@ -20,11 +17,15 @@ from fastapi import Request
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.telegram.telegram_gateway import TelegramGateway
+from jira_telegram_bot.adapters.telegram.telegram_utils import get_text_from_message
+from jira_telegram_bot.adapters.telegram.telegram_utils import get_username_from_post
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.settings import TELEGRAM_SETTINGS, TELEGRAM_WEBHOOK_SETTINGS
+from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.settings import TELEGRAM_WEBHOOK_SETTINGS
 from jira_telegram_bot.use_cases.prompts.ticket_issue_prompt import parse_jira_prompt
-from jira_telegram_bot.adapters.telegram_gateway import TelegramGateway
+from jira_telegram_bot.utils.data_store import load_data_store
 
 app = FastAPI()
 
@@ -49,112 +50,10 @@ GROUP_TIMEOUT_SECONDS = 5.0
 DATA_STORE_PATH = f"{DEFAULT_PATH}/data_store.json"
 
 
-
-class MockTelegramPhoto:
-    def __init__(self, file_id):
-        self.file_id = file_id
-
-    async def get_file(self):
-        return MockFilePath(self.file_id)
-
-
-class MockTelegramDocument(MockTelegramPhoto):
-    pass
-
-
-class MockTelegramVideo(MockTelegramPhoto):
-    pass
-
-
-class MockTelegramAudio(MockTelegramPhoto):
-    pass
-
-
-class MockFilePath:
-    def __init__(self, file_id):
-        self.file_id = file_id
-        self.file_path = self._get_file_path()
-
-    def _get_file_path(self) -> str:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={self.file_id}"
-        resp = requests.get(url)
-        if resp.status_code == 200:
-            result = resp.json()["result"]
-            return result["file_path"]
-        else:
-            raise Exception(
-                f"Failed to get file path for file_id={self.file_id}, status={resp.status_code}",
-            )
-
-
-async def fetch_and_store_media(
-        media: Any,
-        session: aiohttp.ClientSession,
-        storage_list: List,
-        filename: str,
-):
-    """Fetch media from Telegram and store it in the provided storage list."""
-    media_file = await media.get_file()
-    file_url = (
-        f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{media_file.file_path}"
-    )
-    async with session.get(file_url) as response:
-        if response.status == 200:
-            buffer = BytesIO(await response.read())
-            storage_list.append((filename, buffer))
-        else:
-            LOGGER.error(
-                f"Failed to fetch media: {media_file.file_path} (status {response.status})",
-            )
-
-
 async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskData):
     """Process a group of media messages and create a Jira issue."""
     attachments = task_data.attachments
-    async with aiohttp.ClientSession() as session:
-        for idx, msg in enumerate(messages):
-            if "photo" in msg:
-                photo_array = msg["photo"]
-                file_info = photo_array[-1]
-                file_id = file_info["file_id"]
-                mock_media = MockTelegramPhoto(file_id)
-                await fetch_and_store_media(
-                    mock_media,
-                    session,
-                    attachments["images"],
-                    f"image_{idx}.jpg",
-                )
-            elif "document" in msg:
-                doc = msg["document"]
-                file_id = doc["file_id"]
-                file_name = doc.get("file_name", f"document_{idx}")
-                mock_media = MockTelegramDocument(file_id)
-                await fetch_and_store_media(
-                    mock_media,
-                    session,
-                    attachments["documents"],
-                    file_name,
-                )
-            elif "video" in msg:
-                vid = msg["video"]
-                file_id = vid["file_id"]
-                mock_media = MockTelegramVideo(file_id)
-                await fetch_and_store_media(
-                    mock_media,
-                    session,
-                    attachments["videos"],
-                    f"video_{idx}.mp4",
-                )
-            elif "audio" in msg:
-                aud = msg["audio"]
-                file_id = aud["file_id"]
-                mock_media = MockTelegramAudio(file_id)
-                await fetch_and_store_media(
-                    mock_media,
-                    session,
-                    attachments["audio"],
-                    f"audio_{idx}.mp3",
-                )
+    await telegram_gateway.process_media_group(attachments, messages)
 
     issue = jira_repository.create_task(task_data)
     issue_message = f"Task created (media group) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
@@ -169,48 +68,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
 async def process_single_message(channel_post: Dict[str, Any], task_data: TaskData):
     """Process a single message and create a Jira issue."""
     attachments = task_data.attachments
-    async with aiohttp.ClientSession() as session:
-        if "photo" in channel_post:
-            photo_array = channel_post["photo"]
-            file_id = photo_array[-1]["file_id"]
-            mock_media = MockTelegramPhoto(file_id)
-            await fetch_and_store_media(
-                mock_media,
-                session,
-                attachments["images"],
-                "single_image.jpg",
-            )
-        elif "document" in channel_post:
-            doc = channel_post["document"]
-            file_id = doc["file_id"]
-            file_name = doc.get("file_name", "single_document")
-            mock_media = MockTelegramDocument(file_id)
-            await fetch_and_store_media(
-                mock_media,
-                session,
-                attachments["documents"],
-                file_name,
-            )
-        elif "video" in channel_post:
-            vid = channel_post["video"]
-            file_id = vid["file_id"]
-            mock_media = MockTelegramVideo(file_id)
-            await fetch_and_store_media(
-                mock_media,
-                session,
-                attachments["videos"],
-                "single_video.mp4",
-            )
-        elif "audio" in channel_post:
-            aud = channel_post["audio"]
-            file_id = aud["file_id"]
-            mock_media = MockTelegramAudio(file_id)
-            await fetch_and_store_media(
-                mock_media,
-                session,
-                attachments["audio"],
-                "single_audio.mp3",
-            )
+    await telegram_gateway.process_single_media(attachments, channel_post)
 
     issue = jira_repository.create_task(task_data)
     issue_message = f"Task created (single) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
@@ -220,14 +78,6 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
 
     channel_post_id = channel_post["message_id"]
     save_mapping(channel_post_id, issue.key, channel_post["chat"]["id"], chat_id)
-
-
-def load_data_store() -> Dict[str, Any]:
-    """Load the data store from the JSON file."""
-    if not os.path.exists(DATA_STORE_PATH):
-        return {}
-    with open(DATA_STORE_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def save_data_store(data: Dict[str, Any]):
@@ -276,8 +126,8 @@ async def telegram_webhook(request: Request):
 
         if "channel_post" in data:
             channel_post = data["channel_post"]
-            username = channel_post.get("from", {}).get("username", "UnknownUser")
-            text = channel_post.get("text") or channel_post.get("caption") or ""
+            username = get_username_from_post(channel_post)
+            text = get_text_from_message(channel_post)
 
             parsed_fields = parse_jira_prompt(text)
 
@@ -305,7 +155,7 @@ async def telegram_webhook(request: Request):
             else:
                 # Single message (text, or text+media)
                 if any(
-                        k in channel_post for k in ["photo", "video", "audio", "document"]
+                    k in channel_post for k in ["photo", "video", "audio", "document"]
                 ):
                     await process_single_message(channel_post, task_data)
                 else:
@@ -401,7 +251,7 @@ async def telegram_webhook(request: Request):
 @app.on_event("startup")
 async def on_startup():
     set_telegram_webhook()
-    asyncio.create_task(finalize_media_groups())
+    await asyncio.create_task(finalize_media_groups())
 
 
 @app.on_event("shutdown")
@@ -449,13 +299,12 @@ async def finalize_media_groups():
                 username = first_message.get("from", {}).get("username", "UnknownUser")
                 text = first_message.get("text") or first_message.get("caption") or ""
 
-                # Use LangChain to parse the text
                 parsed_fields = parse_jira_prompt(text)
 
                 task_data = TaskData(
                     project_key=JIRA_PROJECT_KEY,
                     summary=parsed_fields["summary"],
-                    description=parsed_fields["description"],
+                    description=text,
                     task_type=parsed_fields["task_type"],
                     assignee=users.get(username, None),
                 )

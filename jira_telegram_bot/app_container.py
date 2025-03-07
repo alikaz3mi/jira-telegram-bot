@@ -5,7 +5,7 @@ from lagom.integrations.fast_api import FastApiIntegration
 
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
 from jira_telegram_bot.adapters.openai_gateway import OpenAIGateway
-from jira_telegram_bot.adapters.telegram_gateway import TelegramGateway
+from jira_telegram_bot.adapters.telegram.telegram_gateway import TelegramGateway
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
     HandleJiraWebhookUseCase,

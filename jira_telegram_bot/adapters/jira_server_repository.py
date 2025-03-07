@@ -294,7 +294,8 @@ class JiraRepository(TaskManagerRepositoryInterface):
             LOGGER.error(f"Error fetching labels for project {project_key}: {e}")
             return []
 
-    def set_labels(self, project_key: str, labels: List[str]) -> bool:
+    @staticmethod
+    def set_labels(project_key: str, labels: List[str]) -> bool:
         try:
             filepath = os.path.join(
                 DEFAULT_PATH,
