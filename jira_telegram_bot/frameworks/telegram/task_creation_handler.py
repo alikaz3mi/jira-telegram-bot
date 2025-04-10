@@ -71,13 +71,16 @@ class TaskCreationHandler(TaskHandlerInterface):
                 self.task_creation_use_case.TASK_TYPE: [
                     CallbackQueryHandler(self.task_creation_use_case.add_task_type),
                 ],
+                # NEW STEP for picking parent story if sub-task
+                self.task_creation_use_case.SELECT_STORY: [
+                    CallbackQueryHandler(self.task_creation_use_case.add_subtask_story),
+                ],
                 self.task_creation_use_case.STORY_POINTS: [
                     CallbackQueryHandler(self.task_creation_use_case.add_story_points),
                 ],
                 self.task_creation_use_case.DEADLINE: [
                     CallbackQueryHandler(self.task_creation_use_case.add_deadline),
                 ],
-                # <-- NEW: Labels
                 self.task_creation_use_case.LABELS: [
                     CallbackQueryHandler(
                         self.task_creation_use_case.toggle_label_selection,
@@ -102,6 +105,12 @@ class TaskCreationHandler(TaskHandlerInterface):
                 self.task_creation_use_case.CREATE_ANOTHER: [
                     CallbackQueryHandler(
                         self.task_creation_use_case.handle_create_another,
+                    ),
+                ],
+                # NEW STEP for keep-fields multi-select
+                self.task_creation_use_case.KEEP_FIELDS: [
+                    CallbackQueryHandler(
+                        self.task_creation_use_case.toggle_keep_field_selection,
                     ),
                 ],
             },

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
 from jira_telegram_bot.settings import JIRA_SETTINGS
 
@@ -26,6 +27,7 @@ jira = JiraRepository(JIRA_SETTINGS)
 # issue.update(timetracking={'originalEstimate': '3d', 'remainingEstimate': '2d'})
 
 issues = jira.jira.search_issues("project = PARSCHAT", maxResults=1000)
+
 for issue in issues:
     try:
         if issue.fields.customfield_10106:
@@ -59,4 +61,4 @@ for issue in issues:
                     },
                 )
     except Exception as e:
-        print(f"{issue.key} failed: {e}")
+        LOGGER.error(f"{issue.key} failed: {e}")

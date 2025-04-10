@@ -16,6 +16,9 @@ from jira_telegram_bot.frameworks.telegram.board_summary_generator_handler impor
 from jira_telegram_bot.frameworks.telegram.task_creation_handler import (
     TaskCreationHandler,
 )
+from jira_telegram_bot.frameworks.telegram.task_get_users_time_handler import (
+    TaskGetUsersTimeHandler,
+)
 from jira_telegram_bot.frameworks.telegram.task_status_handler import TaskStatusHandler
 from jira_telegram_bot.frameworks.telegram.task_transition_handler import (
     TaskTransitionHandler,
@@ -29,6 +32,7 @@ from jira_telegram_bot.use_cases.board_summarizer import create_llm_chain
 from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
 from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
+from jira_telegram_bot.use_cases.task_get_users_time import TaskGetUsersTime
 from jira_telegram_bot.use_cases.task_status import TaskStatus
 from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
 from jira_telegram_bot.use_cases.user_settings import UserSettingsConversation
@@ -51,7 +55,8 @@ async def help_command(update, context):
         "3. **/status** - Get the status of a task.\n"
         "5. **/summary_tasks** - Get a summary of completed tasks and tasks that are ready for review\n"
         "6. **/setting** - Update user settings\n"
-        "7. **/cancel** - cancel current running operation"
+        "7. **/get_users_time** - Get users' time spent on tasks\n"
+        "8. **/cancel** - Cancel the current running operation"
     )
     await update.message.reply_text(help_text)
     LOGGER.info("Displayed help information")
@@ -106,6 +111,10 @@ def main():
         user_config_instance,
         ["alikaz3mi"],
     )
+    task_get_users_time_use_case = TaskGetUsersTime(
+        jira_repo,
+        ["alikaz3mi", "hamed_ahmadi1991"],
+    )
     board_summary_generator_use_case = BoardSummaryGenerator(
         jira_repo,
         summary_generator,
@@ -118,12 +127,14 @@ def main():
     board_summary_generator_handler = BoardSummaryGeneratorHandler(
         board_summary_generator_use_case,
     )
+    task_get_users_time_handler = TaskGetUsersTimeHandler(task_get_users_time_use_case)
 
     application.add_handler(task_creation_handler.get_handler())
     application.add_handler(task_transition_handler.get_handler())
     application.add_handler(task_status_handler.get_handler())
     application.add_handler(board_summary_generator_handler.get_handler())
     application.add_handler(user_settings_handler.get_handler())
+    application.add_handler(task_get_users_time_handler.get_handler())
     application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
 

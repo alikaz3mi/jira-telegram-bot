@@ -46,7 +46,9 @@ class JiraTaskCreation:
         ASSIGNEE_SEARCH,
         ASSIGNEE_RESULT,
         CREATE_ANOTHER,
-    ) = range(18)
+        KEEP_FIELDS,  # <-- For multi-select of fields to keep
+        SELECT_STORY,  # <-- For sub-task parent story selection
+    ) = range(20)
 
     DEADLINE_OPTIONS = [
         ("0", "Current Day"),
@@ -180,6 +182,9 @@ class JiraTaskCreation:
         keyboard.append(bottom_row)
         return InlineKeyboardMarkup(keyboard)
 
+    # -------------------------------------------------------------------------
+    #  START
+    # -------------------------------------------------------------------------
     async def start(self, update: Update, context: CallbackContext) -> int:
         """User starts conversation with /create_task."""
         if not self.user_config.get_user_config(update.message.from_user.username):
@@ -194,16 +199,16 @@ class JiraTaskCreation:
             "videos": [],
             "audio": [],
         }
-        task_data.components = []  # empty initially
-        task_data.labels = []  # <-- NEW: track multiple labels
+        task_data.components = []
+        task_data.labels = []
 
         context.user_data["task_data"] = task_data
         config = self.user_config.get_user_config(update.message.from_user.username)
         context.user_data["user_config"] = config
 
         projects = self.jira_repository.get_projects()
-        options = [project.name for project in projects]
-        data = [project.key for project in projects]
+        options = [p.name for p in projects]
+        data = [p.key for p in projects]
         reply_markup = self.build_keyboard(options, data, row_width=3)
 
         await update.message.reply_text(
@@ -237,6 +242,9 @@ class JiraTaskCreation:
         await query.edit_message_text(text="Please enter the task summary:")
         return self.SUMMARY
 
+    # -------------------------------------------------------------------------
+    #  SUMMARY / DESCRIPTION
+    # -------------------------------------------------------------------------
     async def add_summary(self, update: Update, context: CallbackContext) -> int:
         """User typed or forwarded a summary."""
         task_data: TaskData = context.user_data["task_data"]
@@ -275,6 +283,17 @@ class JiraTaskCreation:
 
         last_message_id = context.user_data["last_inline_message_id"]
 
+        # 1) Skip if user already has components (carried over)
+        if task_data.components:
+            LOGGER.info("Components already exist, skipping component step.")
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=last_message_id,
+                text="Components retained from previous task. Proceeding...",
+            )
+            return await self.ask_assignee_from_text(update, context)
+
+        # 2) If user_cfg says skip or no components
         if not user_cfg.component.set_field:
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
@@ -309,21 +328,22 @@ class JiraTaskCreation:
         await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
             message_id=last_message_id,
-            text="Got it! Choose one or more components below (toggle on/off). "
-            "Press Done when finished, or Skip to skip this step.",
+            text=(
+                "Got it! Choose one or more components below (toggle on/off). "
+                "Press Done when finished, or Skip to skip this step."
+            ),
             reply_markup=reply_markup,
         )
         return self.COMPONENT
 
+    # -------------------------------------------------------------------------
+    #  COMPONENT
+    # -------------------------------------------------------------------------
     async def toggle_component_selection(
         self,
         update: Update,
         context: CallbackContext,
     ) -> int:
-        """
-        Handler for each component toggle. We add/remove the selected component
-        from the task_data.components list, then rebuild the keyboard.
-        """
         query = update.callback_query
         await query.answer()
 
@@ -359,6 +379,9 @@ class JiraTaskCreation:
 
         return self.COMPONENT
 
+    # -------------------------------------------------------------------------
+    #  ASSIGNEE
+    # -------------------------------------------------------------------------
     async def ask_assignee_from_text(
         self,
         update: Update,
@@ -384,6 +407,20 @@ class JiraTaskCreation:
     ) -> int:
         task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        # If we already have an assignee, skip
+        if task_data.assignee:
+            LOGGER.info("Assignee already set, skipping assignee step.")
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Assignee retained from previous task. Proceeding...",
+            )
+            return await self.ask_priority_from_text_internal(
+                context,
+                chat_id,
+                message_id,
+            )
 
         if not user_cfg.assignee.set_field:
             await context.bot.edit_message_text(
@@ -500,6 +537,9 @@ class JiraTaskCreation:
             LOGGER.info("Assignee selected from search: %s", task_data.assignee)
             return await self.ask_priority_from_query(query, context)
 
+    # -------------------------------------------------------------------------
+    #  PRIORITY
+    # -------------------------------------------------------------------------
     async def ask_priority_from_text(
         self,
         update: Update,
@@ -535,7 +575,18 @@ class JiraTaskCreation:
         chat_id: int,
         message_id: int,
     ) -> int:
+        task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        # Skip if priority is already set
+        if task_data.priority:
+            LOGGER.info("Priority already set, skipping step.")
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Priority retained from previous task. Proceeding...",
+            )
+            return await self._ask_sprint_common(context, chat_id, message_id)
 
         if not user_cfg.priority.set_field:
             await context.bot.edit_message_text(
@@ -571,6 +622,9 @@ class JiraTaskCreation:
 
         return await self.ask_sprint(query, context)
 
+    # -------------------------------------------------------------------------
+    #  SPRINT
+    # -------------------------------------------------------------------------
     async def ask_sprint(self, query: CallbackQuery, context: CallbackContext) -> int:
         chat_id = query.message.chat_id
         message_id = query.message.message_id
@@ -584,6 +638,19 @@ class JiraTaskCreation:
     ) -> int:
         task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        # If we already have a sprint => skip
+        if task_data.sprint_id is not None:
+            LOGGER.info(
+                "Sprint already set (%s), skipping sprint step.",
+                task_data.sprint_id,
+            )
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Sprint retained from previous task. Proceeding...",
+            )
+            return await self._ask_epic_common(context, chat_id, message_id)
 
         if not user_cfg.sprint.set_field:
             await context.bot.edit_message_text(
@@ -637,6 +704,9 @@ class JiraTaskCreation:
 
         return await self.ask_epic_from_query(query, context)
 
+    # -------------------------------------------------------------------------
+    #  EPIC
+    # -------------------------------------------------------------------------
     async def ask_epic_from_query(
         self,
         query: CallbackQuery,
@@ -654,6 +724,19 @@ class JiraTaskCreation:
     ) -> int:
         task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        # If epic is already set => skip
+        if task_data.epic_link:
+            LOGGER.info(
+                "Epic already set (%s), skipping epic step.",
+                task_data.epic_link,
+            )
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Epic retained from previous task. Proceeding...",
+            )
+            return await self._ask_release_common(context, chat_id, message_id)
 
         if not user_cfg.epic_link.set_field:
             await context.bot.edit_message_text(
@@ -705,6 +788,9 @@ class JiraTaskCreation:
 
         return await self.ask_release_from_query(query, context)
 
+    # -------------------------------------------------------------------------
+    #  RELEASE
+    # -------------------------------------------------------------------------
     async def ask_release_from_query(
         self,
         query: CallbackQuery,
@@ -722,6 +808,19 @@ class JiraTaskCreation:
     ) -> int:
         task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        # If release is already set => skip
+        if task_data.release:
+            LOGGER.info(
+                "Release already set (%s), skipping release step.",
+                task_data.release,
+            )
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Release retained from previous task. Proceeding...",
+            )
+            return await self._ask_task_type_common(context, chat_id, message_id)
 
         if not user_cfg.release.set_field:
             await context.bot.edit_message_text(
@@ -773,6 +872,9 @@ class JiraTaskCreation:
 
         return await self.ask_task_type_from_query(query, context)
 
+    # -------------------------------------------------------------------------
+    #  TASK TYPE
+    # -------------------------------------------------------------------------
     async def ask_task_type_from_query(
         self,
         query: CallbackQuery,
@@ -790,6 +892,22 @@ class JiraTaskCreation:
     ) -> int:
         task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        # If task_type already set => skip
+        if task_data.task_type:
+            LOGGER.info(
+                "Task type already set (%s), skipping step.",
+                task_data.task_type,
+            )
+            # If it's sub-task, we might need to ask for parent story
+            if task_data.task_type.lower() == "sub-task":
+                return await self._maybe_ask_for_subtask_story(
+                    context,
+                    chat_id,
+                    message_id,
+                )
+            else:
+                return await self._ask_story_points_common(context, chat_id, message_id)
 
         if not user_cfg.task_type.set_field:
             await context.bot.edit_message_text(
@@ -814,6 +932,7 @@ class JiraTaskCreation:
         return self.TASK_TYPE
 
     async def add_task_type(self, update: Update, context: CallbackContext) -> int:
+        """If user selects sub-task, we ask for the parent story; else go on."""
         query = update.callback_query
         await query.answer()
 
@@ -821,19 +940,140 @@ class JiraTaskCreation:
         task_data.task_type = query.data
         LOGGER.info("Task type selected: %s", task_data.task_type)
 
+        if task_data.task_type.lower() == "sub-task":
+            return await self._maybe_ask_for_subtask_story(
+                context,
+                query.message.chat_id,
+                query.message.message_id,
+            )
+        else:
+            return await self._ask_story_points_common(
+                context,
+                query.message.chat_id,
+                query.message.message_id,
+            )
+
+    async def _maybe_ask_for_subtask_story(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        message_id: int,
+    ) -> int:
+        """
+        If sub-task is selected but the user already has parent_issue_key
+        from keep-fields, skip. Otherwise, ask which story should be the parent.
+        """
+        task_data: TaskData = context.user_data["task_data"]
+
+        if task_data.parent_issue_key:
+            LOGGER.info(
+                "Sub-task story already set (%s). Skipping selection.",
+                task_data.parent_issue_key,
+            )
+            # Remove epic from sub-task
+            task_data.epic_link = None
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Sub-task story retained from previous task. Proceeding...",
+            )
+            return await self._ask_story_points_common(context, chat_id, message_id)
+
+        # Otherwise ask for parent story
+        return await self.ask_subtask_story(chat_id, message_id, context)
+
+    # -------------------------------------------------------------------------
+    #  SUB-TASK: SELECT PARENT STORY
+    # -------------------------------------------------------------------------
+    async def ask_subtask_story(
+        self,
+        chat_id: int,
+        message_id: int,
+        context: CallbackContext,
+    ) -> int:
+        """List stories in the chosen epic if epic_link is set, else all stories in the project."""
+        task_data: TaskData = context.user_data["task_data"]
+        if task_data.epic_link:
+            stories = self.jira_repository.get_stories_by_epic(
+                project_key=task_data.project_key,
+                epic_key=task_data.epic_link,
+            )
+        else:
+            stories = self.jira_repository.get_stories_by_project(
+                task_data.project_key,
+            )
+
+        if not stories:
+            LOGGER.info(
+                "No stories found for sub-task creation. Skipping parent story.",
+            )
+            task_data.epic_link = None
+            return await self._ask_story_points_common(context, chat_id, message_id)
+
+        story_texts = []
+        story_data = []
+        for s in stories:
+            story_texts.append(s.fields.summary)
+            story_data.append(s.key)
+
+        reply_markup = self.build_keyboard(
+            options=story_texts,
+            data=story_data,
+            row_width=3,
+        )
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=(
+                "Since you selected a sub-task, please choose the parent Story.\n"
+                "(Stories listed in the chosen epic if any, else all project stories.)"
+            ),
+            reply_markup=reply_markup,
+        )
+        return self.SELECT_STORY
+
+    async def add_subtask_story(self, update: Update, context: CallbackContext) -> int:
+        """
+        The user picked which story is the parent. Then remove epic from final data
+        because sub-tasks can't have an epic.
+        """
+        query = update.callback_query
+        await query.answer()
+
+        task_data: TaskData = context.user_data["task_data"]
+        task_data.parent_issue_key = query.data
+        LOGGER.info("Sub-task parent story: %s", task_data.parent_issue_key)
+
+        task_data.epic_link = None  # remove epic for sub-tasks
         return await self._ask_story_points_common(
             context,
             query.message.chat_id,
             query.message.message_id,
         )
 
+    # -------------------------------------------------------------------------
+    #  STORY POINTS
+    # -------------------------------------------------------------------------
     async def _ask_story_points_common(
         self,
         context: CallbackContext,
         chat_id: int,
         message_id: int,
     ) -> int:
+        task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        if task_data.story_points is not None:
+            LOGGER.info(
+                "Story points already set (%s), skipping step.",
+                task_data.story_points,
+            )
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Story points retained from previous task. Proceeding...",
+            )
+            return await self._ask_deadline_common(context, chat_id, message_id)
 
         if not user_cfg.story_point.set_field:
             await context.bot.edit_message_text(
@@ -876,13 +1116,26 @@ class JiraTaskCreation:
             query.message.message_id,
         )
 
+    # -------------------------------------------------------------------------
+    #  DEADLINE
+    # -------------------------------------------------------------------------
     async def _ask_deadline_common(
         self,
         context: CallbackContext,
         chat_id: int,
         message_id: int,
     ) -> int:
+        task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        if task_data.due_date is not None:
+            LOGGER.info("Deadline already set (%s), skipping step.", task_data.due_date)
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Deadline retained from previous task. Proceeding...",
+            )
+            return await self._ask_labels_common(context, chat_id, message_id)
 
         if not user_cfg.deadline.set_field:
             await context.bot.edit_message_text(
@@ -943,17 +1196,27 @@ class JiraTaskCreation:
             query.message.message_id,
         )
 
+    # -------------------------------------------------------------------------
+    #  LABELS
+    # -------------------------------------------------------------------------
     async def _ask_labels_common(
         self,
         context: CallbackContext,
         chat_id: int,
         message_id: int,
     ) -> int:
-        """
-        Ask the user to choose multiple labels (toggle). They can skip or define new ones.
-        """
         task_data: TaskData = context.user_data["task_data"]
         user_cfg = context.user_data["user_config"]
+
+        # If labels exist => skip
+        if task_data.labels:
+            LOGGER.info("Labels already exist (%s), skipping step.", task_data.labels)
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="Labels retained from previous task. Proceeding to attachments...",
+            )
+            return await self._ask_attachment_prompt(context, chat_id, message_id)
 
         if not user_cfg.labels.set_field:
             await context.bot.edit_message_text(
@@ -969,8 +1232,7 @@ class JiraTaskCreation:
             all_labels = []
 
         context.user_data["available_labels"] = all_labels
-        if task_data.labels is None:
-            task_data.labels = []
+        task_data.labels = []
 
         reply_markup = self.build_label_selection_keyboard(
             all_labels=all_labels,
@@ -992,10 +1254,6 @@ class JiraTaskCreation:
         update: Update,
         context: CallbackContext,
     ) -> int:
-        """
-        Handler for each label toggle. We add/remove the selected label
-        from the task_data.labels list, then rebuild the keyboard.
-        """
         query = update.callback_query
         await query.answer()
 
@@ -1044,9 +1302,6 @@ class JiraTaskCreation:
         return self.LABELS
 
     async def add_new_label(self, update: Update, context: CallbackContext) -> int:
-        """
-        User typed a new label to add. We'll store it and rebuild the label keyboard.
-        """
         task_data: TaskData = context.user_data["task_data"]
         available_labels = context.user_data.get("available_labels", [])
 
@@ -1066,6 +1321,9 @@ class JiraTaskCreation:
         )
         return self.LABELS
 
+    # -------------------------------------------------------------------------
+    #  ATTACHMENTS
+    # -------------------------------------------------------------------------
     async def _ask_attachment_prompt(
         self,
         context: CallbackContext,
@@ -1073,6 +1331,7 @@ class JiraTaskCreation:
         message_id: int,
     ) -> int:
         user_cfg = context.user_data["user_config"]
+        # Typically we don't "keep" attachments, but you could if desired.
 
         if not user_cfg.attachment.set_field:
             await context.bot.edit_message_text(
@@ -1121,6 +1380,7 @@ class JiraTaskCreation:
                 )
                 return self.ATTACHMENT
 
+        # If media_group_id is set, we collect them for a single group
         if update.message.media_group_id:
             msgs = media_group_messages.setdefault(update.message.media_group_id, [])
             msgs.append(update.message)
@@ -1220,11 +1480,15 @@ class JiraTaskCreation:
             else:
                 LOGGER.error("Failed to fetch media from %s", media_file.file_path)
 
+    # -------------------------------------------------------------------------
+    #  FINALIZE AND CREATE ANOTHER?
+    # -------------------------------------------------------------------------
     async def finalize_task(
         self,
         update_or_message: Any,
         context: CallbackContext,
     ) -> None:
+        # figure out actual message object
         if hasattr(update_or_message, "message") and update_or_message.message:
             message = update_or_message.message
         else:
@@ -1243,7 +1507,10 @@ class JiraTaskCreation:
                 try:
                     await context.bot.send_message(
                         chat_id=assignee_user_data.telegram_user_chat_id,
-                        text=f"Task \n📄{task_data.summary} \n{JIRA_SETTINGS.domain}/browse/{new_issue.key} was created for you",
+                        text=(
+                            f"Task \n📄{task_data.summary} "
+                            f"\n{JIRA_SETTINGS.domain}/browse/{new_issue.key} was created for you"
+                        ),
                     )
                 except Exception as e:
                     LOGGER.error("Failed to notify user about task creation: %s", e)
@@ -1251,10 +1518,16 @@ class JiraTaskCreation:
             await message.reply_text(f"Failed to create task: {e}")
             return
 
-        reply_markup = self.build_keyboard(["Yes", "No"], ["yes", "no"], row_width=2)
+        # Ask if they want to create another
+        reply_markup = self.build_keyboard(
+            ["Yes", "Yes, same as before", "No"],
+            ["yes", "yes, same as before", "no"],
+            row_width=2,
+        )
         msg = await message.reply_text(
-            "Do you want to create another task with similar fields?",
+            "Do you want to create another task **with similar fields**?",
             reply_markup=reply_markup,
+            parse_mode="Markdown",
         )
         context.user_data["last_inline_message_id"] = msg.message_id
 
@@ -1265,22 +1538,199 @@ class JiraTaskCreation:
     ) -> int:
         query = update.callback_query
         await query.answer()
+
         if query.data == "yes":
-            task_data: TaskData = context.user_data["task_data"]
-            task_data.summary = None
-            task_data.description = None
-            task_data.story_points = None
-            task_data.attachments = {
+            await query.edit_message_text(
+                "Please select which fields to keep from the previous task (multi-select).",
+            )
+            return await self.ask_keep_fields(query, context)
+        elif query.data == "yes, same as before":
+            old_data: TaskData = context.user_data["task_data"]
+
+            new_data = old_data.model_copy()
+            new_data.attachments = {
                 "images": [],
                 "documents": [],
                 "videos": [],
                 "audio": [],
             }
-            task_data.components = []
-            task_data.labels = []
-
-            await query.edit_message_text("Please enter the task summary:")
+            context.user_data["task_data"] = new_data
+            await query.edit_message_text(
+                "Please enter the task summary for the new issue:",
+            )
             return self.SUMMARY
         else:
             await query.edit_message_text("Task Creation Completed!")
             return ConversationHandler.END
+
+    # -------------------------------------------------------------------------
+    #  MULTI-SELECT FIELDS TO KEEP
+    # -------------------------------------------------------------------------
+    def build_keep_fields_keyboard(
+        self,
+        possible_fields: List[str],
+        selected_fields: List[str],
+    ) -> InlineKeyboardMarkup:
+        """
+        Build a toggle keyboard for selecting which fields to keep.
+        Show a "✔" if selected. Always add a "Done" and "Skip" at the bottom.
+        """
+        keyboard = []
+        row_width = 2
+
+        for i in range(0, len(possible_fields), row_width):
+            row = []
+            chunk = possible_fields[i : i + row_width]
+            for field in chunk:
+                mark = "✔" if field in selected_fields else ""
+                btn_text = f"{field} {mark}"
+                row.append(
+                    InlineKeyboardButton(btn_text, callback_data=f"keep|{field}"),
+                )
+            keyboard.append(row)
+
+        bottom_row = [
+            InlineKeyboardButton("Done", callback_data="keep_done"),
+            InlineKeyboardButton("Skip", callback_data="keep_skip"),
+        ]
+        keyboard.append(bottom_row)
+
+        return InlineKeyboardMarkup(keyboard)
+
+    async def ask_keep_fields(self, update: Update, context: CallbackContext) -> int:
+        """
+        Present a multi-select list of fields:
+         - project
+         - sprint
+         - epic
+         - assignee
+         - component
+         - label
+         - (plus 'story' if the old task was sub-task)
+        """
+        task_data: TaskData = context.user_data["task_data"]
+
+        fields = ["project", "sprint", "epic", "assignee", "component", "label"]
+        if task_data.task_type and task_data.task_type.lower() == "sub-task":
+            fields.append("story")
+
+        context.user_data["possible_keep_fields"] = fields
+        context.user_data["selected_keep_fields"] = []
+
+        reply_markup = self.build_keep_fields_keyboard(fields, [])
+        await update.edit_message_text(
+            text="Select which fields you want to keep for the new task:",
+            reply_markup=reply_markup,
+        )
+        return self.KEEP_FIELDS
+
+    async def toggle_keep_field_selection(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        query = update.callback_query
+        await query.answer()
+
+        data = query.data
+        possible_fields = context.user_data["possible_keep_fields"]
+        selected_fields = context.user_data["selected_keep_fields"]
+
+        if data.startswith("keep|"):
+            field = data.split("|", 1)[1]
+            if field in selected_fields:
+                selected_fields.remove(field)
+            else:
+                selected_fields.append(field)
+
+            reply_markup = self.build_keep_fields_keyboard(
+                possible_fields,
+                selected_fields,
+            )
+            await query.edit_message_text(
+                text="Toggle the fields you want to keep, then 'Done' or 'Skip'.",
+                reply_markup=reply_markup,
+            )
+            return self.KEEP_FIELDS
+
+        elif data == "keep_done":
+            return await self._setup_new_task_with_kept_fields(
+                query,
+                context,
+                selected_fields,
+            )
+
+        elif data == "keep_skip":
+            # skip => keep nothing
+            return await self._setup_new_task_with_kept_fields(query, context, [])
+
+        return self.KEEP_FIELDS
+
+    async def _setup_new_task_with_kept_fields(
+        self,
+        query: CallbackQuery,
+        context: CallbackContext,
+        selected_fields: List[str],
+    ) -> int:
+        """
+        Build a new TaskData with only the selected fields from the old one.
+        Then proceed with summary step again.
+        """
+        old_data: TaskData = context.user_data["task_data"]
+
+        new_data = TaskData()
+        new_data.attachments = {
+            "images": [],
+            "documents": [],
+            "videos": [],
+            "audio": [],
+        }
+        new_data.components = []
+        new_data.labels = []
+
+        # Copy over selected fields
+        if "project" in selected_fields:
+            new_data.project_key = old_data.project_key
+            new_data.board_id = old_data.board_id
+            new_data.sprints = old_data.sprints
+            new_data.task_types = old_data.task_types
+            new_data.epics = old_data.epics
+
+        if "sprint" in selected_fields:
+            new_data.sprint_id = old_data.sprint_id
+
+        # Always allow epic if user selected it, even if old was sub-task
+        if "epic" in selected_fields:
+            if old_data.epic_link:
+                # If old_data actually has an epic, carry it over
+                new_data.epic_link = old_data.epic_link
+            else:
+                # Old sub-task probably had no epic.
+                # Leave new_data.epic_link = None so that the user is prompted
+                pass
+
+        if "assignee" in selected_fields:
+            new_data.assignee = old_data.assignee
+
+        if (
+            "story" in selected_fields
+            and old_data.task_type
+            and old_data.task_type.lower() == "sub-task"
+        ):
+            new_data.parent_issue_key = old_data.parent_issue_key
+            new_data.task_type = "Sub-task"  # preserve sub-task type as well
+
+        if "component" in selected_fields:
+            new_data.components = old_data.components.copy()
+
+        if "label" in selected_fields:
+            new_data.labels = old_data.labels.copy()
+
+        # Store new_data as the new "task_data"
+        context.user_data["task_data"] = new_data
+
+        # Now ask for summary again
+        await query.edit_message_text(
+            "Please enter the task summary for the new issue:",
+        )
+        return self.SUMMARY

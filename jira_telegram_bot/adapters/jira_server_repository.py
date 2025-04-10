@@ -162,6 +162,35 @@ class JiraRepository(TaskManagerRepositoryInterface):
         self._set_cache(cache_key, user_list)
         return user_list
 
+    def search_for_issues(self, query: str, max_results: int = 1000) -> List[Issue]:
+        all_issues = []
+        block_size = 100  # You can adjust the block size as needed.
+        block_num = 0
+        while True:
+            start_idx = block_num * block_size
+            issues_block = self.jira.search_issues(
+                query,
+                startAt=start_idx,
+                maxResults=block_size,
+            )
+            all_issues.extend(issues_block)
+            if len(issues_block) < block_size:
+                break
+            block_num += 1
+        return all_issues
+
+    def get_stories_by_epic(self, epic_key: str, project_key: str) -> List[Issue]:
+        query = (
+            f'issue in linkedIssues("{epic_key}") OR '
+            f'"Epic Link" = {epic_key} AND '
+            f'project = "{project_key}" AND issuetype = Story'
+        )
+        return self.search_for_issues(query)
+
+    def get_stories_by_project(self, project_key: str) -> List[Issue]:
+        query = f'project = "{project_key}" AND issuetype = Story'
+        return self.search_for_issues(query)
+
     def build_issue_fields(self, task_data: TaskData) -> dict:
         issue_fields = {
             "project": {"key": task_data.project_key},
@@ -197,6 +226,10 @@ class JiraRepository(TaskManagerRepositoryInterface):
             issue_fields["labels"] = [
                 label.replace(" ", "-") for label in task_data.labels
             ]
+
+        if task_data.task_type == "Sub-task":
+            issue_fields["parent"] = {"key": task_data.parent_issue_key}
+            del issue_fields[self.jira_sprint_id]
 
         return issue_fields
 
