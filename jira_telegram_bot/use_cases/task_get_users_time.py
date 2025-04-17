@@ -116,6 +116,8 @@ class TaskGetUsersTime:
                 continue
 
             for wl in worklogs:
+                if not wl.started >= first_day.strftime("%Y-%m-%d"):
+                    continue
                 author_name = wl.author.displayName
                 time_spent_seconds = wl.timeSpentSeconds or 0
                 comment = (wl.comment or "").lower()
@@ -125,7 +127,7 @@ class TaskGetUsersTime:
                 user_data_map[author_name]["total_time"] += time_spent_seconds
 
                 # Check if "remote" is in the worklog comment
-                if "remote" in comment:
+                if "remote" in comment or "remote" in issue.fields.summary.lower():
                     user_data_map[author_name]["remote_time"] += time_spent_seconds
 
                 # Parse the start date of the worklog

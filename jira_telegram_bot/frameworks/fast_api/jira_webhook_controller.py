@@ -1,4 +1,3 @@
-# jira_telegram_bot/frameworks/fast_api/jira_webhook_controller.py
 from __future__ import annotations
 
 from fastapi import APIRouter
@@ -13,7 +12,7 @@ from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
 router = APIRouter()
 
 
-@router.post("/jira/webhook")
+@router.post("/jira-webhook")
 async def jira_webhook_endpoint(
     request: Request,
     handle_jira_uc: HandleJiraWebhookUseCase = Depends(

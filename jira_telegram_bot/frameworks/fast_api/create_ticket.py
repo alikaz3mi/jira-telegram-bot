@@ -113,8 +113,9 @@ class JiraSettings(BaseSettings):
 
 app = FastAPI()
 
-TELEGRAM_BOT_TOKEN = "7673971624:AAHKBV6IIrGTFTtR2_gA04AqeIyOIuvQY6M"
+TELEGRAM_BOT_TOKEN = "7819906825:AAH7rydW84kCIf1C__Jk_BcK3VtFHtMvcL0"
 TELEGRAM_WEBHOOK_URL = TELEGRAM_SETTINGS.WEBHOOK_URL
+GROUP_CHAT_ID = -1002491201232
 JIRA_BASE_URL = JIRA_SETTINGS.domain
 JIRA_PROJECT_KEY = "PCT"
 jira_repository = JiraRepository(JIRA_SETTINGS)
@@ -317,6 +318,7 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
     LOGGER.info(issue_message)
     chat_id = channel_post["chat"]["id"]
     send_telegram_message(chat_id, issue_message)
+    send_telegram_message(chat_id, issue_message, reply_message_id=chat_id)
 
     channel_post_id = channel_post["message_id"]
     save_mapping(channel_post_id, issue.key, channel_post["chat"]["id"], chat_id)
@@ -362,6 +364,25 @@ def get_group_chat_id_from_channel_post(channel_post_id: int) -> Optional[int]:
 async def add_comment_to_jira(issue_key: str, comment: str):
     """Add a comment to a Jira issue."""
     jira_repository.add_comment(issue_key, comment)
+
+
+@app.post("/jira-webhook")
+async def jira_webhook_endpoint(
+    request: Request,
+):
+    """
+    FastAPI endpoint receiving Jira webhook events,
+    then passing them to the HandleJiraWebhookUseCase.
+    """
+    try:
+        body = await request.json()
+        LOGGER.debug(f"Incoming Jira webhook data: {body}")
+        result = 1
+        return result
+
+    except Exception as e:
+        # Log or handle errors
+        return {"status": "error", "message": str(e)}
 
 
 @app.post("/webhook")
@@ -421,6 +442,10 @@ async def telegram_webhook(request: Request):
                     # Save mapping
                     channel_post_id = channel_post["message_id"]
                     save_mapping(channel_post_id, issue.key, chat_id, chat_id)
+                    send_telegram_message(
+                        GROUP_CHAT_ID,
+                        issue_message,
+                    )  # TODO: send to group using other way
 
                 return {
                     "status": "success",
