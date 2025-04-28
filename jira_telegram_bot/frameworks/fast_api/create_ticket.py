@@ -12,6 +12,7 @@ from typing import List
 from typing import Optional
 
 import aiohttp
+import jdatetime
 import requests
 import uvicorn
 from fastapi import FastAPI
@@ -139,10 +140,11 @@ def send_telegram_message(
     chat_id: int,
     text: str,
     reply_message_id: Optional[int] = None,
+    parse_mode: str = "Markdown",
 ):
     """Send a message to a Telegram chat."""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
     if reply_message_id:
         payload["reply_parameters"] = {"message_id": reply_message_id}
     resp = requests.post(url, json=payload)
@@ -265,7 +267,13 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
     send_telegram_message(first_chat_id, issue_message)
 
     channel_post_id = messages[0]["message_id"]
-    save_mapping(channel_post_id, issue.key, messages[0]["chat"]["id"], first_chat_id)
+    await save_mapping(
+        channel_post_id,
+        issue.key,
+        messages[0]["chat"]["id"],
+        first_chat_id,
+        message_data=messages[0],
+    )
 
 
 async def process_single_message(channel_post: Dict[str, Any], task_data: TaskData):
@@ -318,11 +326,17 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
     issue_message = f"Task created (single) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
     LOGGER.info(issue_message)
     chat_id = channel_post["chat"]["id"]
-    send_telegram_message(chat_id, issue_message)
+    # send_telegram_message(chat_id, issue_message)
     send_telegram_message(chat_id, issue_message, reply_message_id=chat_id)
 
     channel_post_id = channel_post["message_id"]
-    save_mapping(channel_post_id, issue.key, channel_post["chat"]["id"], chat_id)
+    await save_mapping(
+        channel_post_id,
+        issue.key,
+        channel_post["chat"]["id"],
+        chat_id,
+        message_data=channel_post,
+    )
 
 
 def load_data_store() -> Dict[str, Any]:
@@ -339,13 +353,53 @@ def save_data_store(data: Dict[str, Any]):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-def save_mapping(channel_post_id: int, issue_key: str, chat_id: int, group_id: int):
-    """Save the mapping between channel post and Jira issue."""
+async def save_mapping(
+    channel_post_id: int,
+    issue_key: str,
+    channel_chat_id: int,
+    group_id: int,
+    message_data: Dict[str, Any],
+):
+    """Save the mapping between channel post and Jira issue with additional metadata.
+
+    Args:
+        channel_post_id: The ID of the post in the channel
+        issue_key: The Jira issue key (e.g. PCT-123)
+        channel_chat_id: ID of the channel where message was posted
+        group_id: ID of the group where the message was forwarded
+        message_data: The full message data containing metadata
+    """
     data = load_data_store()
+
+    # Extract additional metadata
+    created_at = message_data.get("date", int(time.time()))  # Fallback to current time
+    from_user = message_data.get("from", {})
+    message_type = "channel_post"
+
+    # Media type detection
+    if "photo" in message_data:
+        content_type = "photo"
+    elif "video" in message_data:
+        content_type = "video"
+    elif "document" in message_data:
+        content_type = "document"
+    elif "audio" in message_data:
+        content_type = "audio"
+    else:
+        content_type = "text"
+
     data[str(channel_post_id)] = {
+        "type": "jira_issue_mapping",
         "issue_key": issue_key,
-        "channel_chat_id": chat_id,
+        "channel_chat_id": channel_chat_id,
         "group_chat_id": group_id,
+        "metadata": {
+            "created_at": created_at,
+            "creator_id": from_user.get("id"),
+            "creator_username": from_user.get("username"),
+            "content_type": content_type,
+            "message_type": message_type,
+        },
     }
     save_data_store(data)
 
@@ -368,22 +422,94 @@ async def add_comment_to_jira(issue_key: str, comment: str):
 
 
 @app.post("/jira-webhook")
-async def jira_webhook_endpoint(
-    request: Request,
-):
+async def jira_webhook_endpoint(request: Request):
     """
-    FastAPI endpoint receiving Jira webhook events,
-    then passing them to the HandleJiraWebhookUseCase.
+    FastAPI endpoint receiving Jira webhook events.
+    Handles state transitions and due date changes.
     """
     try:
         body = await request.json()
-        # LOGGER.debug(f"Incoming Jira webhook data: {body}")
-        result = 1
-        return result
+
+        # Get the relevant data from the webhook
+        issue_key = body.get("issue", {}).get("key")
+        if not issue_key:
+            return {"status": "error", "message": "No issue key found in webhook data"}
+
+        # Load the data store to find the associated group chat
+        data_store = load_data_store()
+        group_chat_info = find_group_chat_by_issue(data_store, issue_key)
+
+        if not group_chat_info:
+            LOGGER.warning(f"No group chat mapping found for issue {issue_key}")
+            return {"status": "ignored", "message": "No group chat mapping found"}
+
+        group_chat_id = group_chat_info["group_chat_id"]
+
+        # Handle status transition
+        changelog = body.get("changelog", {}).get("items", [])
+        for item in changelog:
+            if item.get("field") == "status":
+                old_status = item.get("fromString")
+                new_status = item.get("toString")
+                message = f"*📊 Status Update *\n\nTask {issue_key} moved from *'{old_status}'* to *'{new_status}'*"
+                send_telegram_message(
+                    group_chat_id,
+                    message,
+                    reply_message_id=group_chat_info["reply_message_id"],
+                )
+                LOGGER.info(f"Sent status transition notification for {issue_key}")
+
+            elif item.get("field") == "duedate":
+                old_date = item.get("fromString", "not set")
+                new_date = item.get("toString", "not set")
+                year, month, day = new_date.split(" ")[0].split("-")
+                time = new_date.split(" ")[1]
+                georgian_time = jdatetime.GregorianToJalali(
+                    int(year),
+                    int(month),
+                    int(day),
+                )
+                new_date = f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday} {time}"
+                if new_date != "not set":
+                    message = (
+                        f"*📅 Due Date Set*\n\nTask {issue_key} is due on *{new_date}*"
+                    )
+                elif old_date != "not set":
+                    old_date = old_date.split(" ")[0]
+                    year, month, day = old_date.split("-")
+                    georgian_time = jdatetime.GregorianToJalali(
+                        int(year),
+                        int(month),
+                        int(day),
+                    )
+                    old_date = f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday}"
+                    message = f"*📅 Due Date Removed*\n\nTask {issue_key} due date has been cleared (was: {old_date})"
+                else:
+                    message = f"*📅 Due Date Cleared*\n\nTask {issue_key} due date has been cleared"
+                # Send the message to the group chat
+                send_telegram_message(
+                    group_chat_id,
+                    message,
+                    reply_message_id=group_chat_info["reply_message_id"],
+                )
+                LOGGER.info(f"Sent due date update notification for {issue_key}")
+
+        return {"status": "success", "message": "Webhook processed"}
 
     except Exception as e:
-        # Log or handle errors
+        LOGGER.error(f"Error processing Jira webhook: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
+
+
+def find_group_chat_by_issue(
+    data_store: Dict[str, Any],
+    issue_key: str,
+) -> Optional[Dict[str, Any]]:
+    """Find the group chat info for a given issue key."""
+    for entry in data_store.values():
+        if entry.get("issue_key") == issue_key:
+            return entry
+    return None
 
 
 async def handle_channel_post(channel_post: Dict[str, Any]) -> Dict[str, Any]:
@@ -444,13 +570,19 @@ async def process_text_only_message(
     chat_id = channel_post["chat"]["id"]
 
     channel_post_id = channel_post["message_id"]
-    save_mapping(channel_post_id, issue.key, chat_id, chat_id)
+    await save_mapping(
+        channel_post_id,
+        issue.key,
+        chat_id,
+        chat_id,
+        message_data=channel_post,
+    )
     # send_telegram_message(chat_id, issue_message)
 
 
 async def handle_group_message(message: Dict[str, Any]) -> Dict[str, Any]:
     """Handle messages in group chats."""
-    if message.get("is_automatic_forward", False):
+    if message.get("is_automatic_forward", False) is True:
         return await handle_auto_forward_message(message)
     else:
         return await handle_group_comment(message)
@@ -471,8 +603,12 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
 
         data_local = load_data_store()
         if str(original_message_id) in data_local:
-            data_local[str(original_message_id)]["reply_message_id"] = message_id
+            entry = data_local[str(original_message_id)]
+            entry["group_chat_id"] = group_chat_id
+            entry["metadata"]["forwarded_at"] = int(time.time())
+            entry["reply_message_id"] = message_id
             save_data_store(data_local)
+
         LOGGER.info(
             f"Sent Jira issue link to group chat_id={group_chat_id}: {issue_link}",
         )
@@ -490,7 +626,7 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
     message_from = message.get("from", {}).get("username", "UnknownUser")
     username = users.get(message_from, None)
     text = message.get("text") or message.get("caption") or ""
-    text = f"Comment from @{username}:\n{text}"
+    text = f"h6. Comment from [~{username}] :\n\n{text}"
 
     issue_key = find_issue_key_from_message_id(
         f"{message['reply_to_message']['forward_from_message_id']}",
