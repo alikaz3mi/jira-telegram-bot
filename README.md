@@ -1,3 +1,5 @@
+# Jira Telegram Bot
+
 <p align="center">
    <img src="docs/image.png" alt="Jira Telegram Bot" width="50%">
 </p>
