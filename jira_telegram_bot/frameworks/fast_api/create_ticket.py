@@ -129,6 +129,14 @@ users = {
     "Parschat_AI": "sh_zanganeh",
 }
 
+jira_users = {
+    "a_kazemi": "alikaz3mi",
+    "m_mousavi": "Mousavi_Shoushtari",
+    "a_nasim": "Alirezanasim_1991",
+    "a_barghamadi": "Abolfazl2883",
+    "sh_zanganeh": "Parschat_AI",
+}
+
 MEDIA_GROUP_STORE: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 MEDIA_GROUP_METADATA: Dict[str, float] = {}
 GROUP_TIMEOUT_SECONDS = 5.0
@@ -445,6 +453,22 @@ async def jira_webhook_endpoint(request: Request):
 
         group_chat_id = group_chat_info["group_chat_id"]
 
+        issue_commented = body.get("issue_event_type_name", {})
+        if issue_commented == "issue_commented":
+            comment = body.get("comment", {})
+            if comment:
+                comment_body = comment.get("body", "")
+                username = comment.get("author", {}).get("name", "UnknownUser")
+                username = jira_users.get(username, username)
+                comment_content = f"Comment from [@{username}] :\n\n{comment_body}"
+                message = f"*💬 Comment Added*\n\nTask {issue_key} has a new comment: {comment_content}"
+                send_telegram_message(
+                    group_chat_id,
+                    message,
+                    reply_message_id=group_chat_info["reply_message_id"],
+                )
+                LOGGER.info(f"Sent comment notification for {issue_key}")
+
         # Handle status transition
         changelog = body.get("changelog", {}).get("items", [])
         for item in changelog:
@@ -458,12 +482,60 @@ async def jira_webhook_endpoint(request: Request):
                     reply_message_id=group_chat_info["reply_message_id"],
                 )
                 LOGGER.info(f"Sent status transition notification for {issue_key}")
+                if new_status == "Review":
+                    creator_username = group_chat_info.get("metadata", {}).get(
+                        "creator_username",
+                    )
+                    if creator_username and creator_username in users:
+                        assignee = users[creator_username]
+                        jira_repository.assign_issue(issue_key, assignee)
+                        notify_msg = f"*👤 Task Reassigned*\n\nTask {issue_key} has been assigned to @{creator_username} for review"
+                        send_telegram_message(
+                            group_chat_id,
+                            notify_msg,
+                            reply_message_id=group_chat_info["reply_message_id"],
+                        )
+                        LOGGER.info(f"Reassigned {issue_key} to {assignee} for review")
 
             elif item.get("field") == "duedate":
                 old_date = item.get("fromString", "not set")
                 new_date = item.get("toString", "not set")
                 year, month, day = new_date.split(" ")[0].split("-")
                 time = new_date.split(" ")[1]
+                georgian_time = jdatetime.GregorianToJalali(
+                    int(year),
+                    int(month),
+                    int(day),
+                )
+                new_date = f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday} {time}"
+                if new_date != "not set":
+                    message = (
+                        f"*📅 Due Date Set*\n\nTask {issue_key} is due on *{new_date}*"
+                    )
+                elif old_date != "not set":
+                    old_date = old_date.split(" ")[0]
+                    year, month, day = old_date.split("-")
+                    georgian_time = jdatetime.GregorianToJalali(
+                        int(year),
+                        int(month),
+                        int(day),
+                    )
+                    old_date = f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday}"
+                    message = f"*📅 Due Date Removed*\n\nTask {issue_key} due date has been cleared (was: {old_date})"
+                else:
+                    message = f"*📅 Due Date Cleared*\n\nTask {issue_key} due date has been cleared"
+                # Send the message to the group chat
+                send_telegram_message(
+                    group_chat_id,
+                    message,
+                    reply_message_id=group_chat_info["reply_message_id"],
+                )
+                LOGGER.info(f"Sent due date update notification for {issue_key}")
+            elif item.get("field") == "due date":
+                old_date = item.get("from", "not set")
+                new_date = item.get("to", "not set")
+                year, month, day = new_date.split("T")[0].split("-")
+                time = item.get("toString", "not set").split(" ", 1)[1]
                 georgian_time = jdatetime.GregorianToJalali(
                     int(year),
                     int(month),
