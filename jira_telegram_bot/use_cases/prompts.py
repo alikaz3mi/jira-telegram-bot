@@ -1,5 +1,98 @@
 from __future__ import annotations
 
+from typing import Dict
+
+COMPONENT_TASK_TEMPLATES = {
+    "frontend": """
+    Component: Frontend Development
+    Consider:
+    - User interface components needed
+    - State management requirements
+    - API integration points
+    - Responsive design requirements
+    - Browser compatibility
+    - Performance optimizations
+    - Form validations
+    - Error handling patterns
+    """,
+    "backend": """
+    Component: Backend Development
+    Consider:
+    - API endpoints required
+    - Database schema changes
+    - Data validation rules
+    - Authentication/Authorization
+    - Rate limiting
+    - Caching strategies
+    - Error handling and logging
+    - Performance considerations
+    """,
+    "AI": """
+    Component: AI/NLP Development
+    Consider:
+    - Model selection/training requirements
+    - Data preprocessing needs
+    - Integration with existing AI pipeline
+    - Performance metrics
+    - Error handling and fallbacks
+    - Model evaluation criteria
+    - Scalability considerations
+    """,
+    "DevOPS": """
+    Component: DevOps/Infrastructure
+    Consider:
+    - Deployment requirements
+    - Infrastructure changes needed
+    - Monitoring and alerting
+    - Backup and recovery
+    - Security considerations
+    - Performance optimization
+    - Resource scaling
+    """,
+    "UI/UX": """
+    Component: UI/UX Design
+    Consider:
+    - User flow diagrams
+    - Wireframe requirements
+    - Design system updates
+    - Usability testing needs
+    - Accessibility requirements
+    - Design documentation
+    - User research tasks
+    """,
+}
+
+COMPLEXITY_GUIDELINES = {
+    "story_points": {
+        "1-2": "Very simple changes with minimal risk",
+        "3-5": "Standard complexity, well-understood work",
+        "8": "Complex changes affecting multiple components",
+        "13": "Very complex work with significant uncertainty",
+    },
+    "subtask_points": {
+        "0.5": "Trivial changes (< 2 hours)",
+        "1": "Simple, straightforward tasks (2-4 hours)",
+        "2": "Standard complexity (4-8 hours)",
+        "3": "More complex tasks (1-1.5 days)",
+        "5": "Complex tasks requiring deep focus (2-3 days)",
+        "8": "Very complex tasks (3-4 days)",
+    },
+}
+
+
+def get_component_prompt(component: str) -> str:
+    """Get the template for a specific component."""
+    return COMPONENT_TASK_TEMPLATES.get(
+        component,
+        "Consider:\n- Technical requirements\n- Dependencies\n- Testing needs",
+    )
+
+
+def get_complexity_guidelines() -> Dict[str, Dict[str, str]]:
+    """Get the story point guidelines."""
+    return COMPLEXITY_GUIDELINES
+
+
 task_statistics = """
 You are a JIRA query assistant. Your task is to translate complex natural language user requests into JIRA Query Language (JQL) format.
 The user will provide a query in plain English, and you will convert it into a precise JQL statement that can be used in JIRA to retrieve or calculate the desired information.

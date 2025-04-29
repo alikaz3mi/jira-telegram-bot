@@ -9,7 +9,11 @@ from telegram.warnings import PTBUserWarning
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.speech_processor import SpeechProcessor
 from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.frameworks.telegram.advanced_task_creation_handler import (
+    AdvancedTaskCreationHandler,
+)
 from jira_telegram_bot.frameworks.telegram.board_summary_generator_handler import (
     BoardSummaryGeneratorHandler,
 )
@@ -28,6 +32,7 @@ from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
 )
 from jira_telegram_bot.settings import OPENAI_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.use_cases.advanced_task_creation import AdvancedTaskCreation
 from jira_telegram_bot.use_cases.board_summarizer import create_llm_chain
 from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
@@ -53,9 +58,10 @@ async def help_command(update, context):
         "1. **/create_task** - Start creating a new task.\n"
         "2. **/transition** - Transition an existing task.\n"
         "3. **/status** - Get the status of a task.\n"
-        "5. **/summary_tasks** - Get a summary of completed tasks and tasks that are ready for review\n"
-        "6. **/setting** - Update user settings\n"
-        "7. **/get_users_time** - Get users' time spent on tasks\n"
+        "4. **/summary_tasks** - Get a summary of completed tasks and tasks that are ready for review\n"
+        "5. **/setting** - Update user settings\n"
+        "6. **/get_users_time** - Get users' time spent on tasks\n"
+        "7. **/advanced_task** - Create multiple related tasks using AI-powered task breakdown\n"
         "8. **/cancel** - Cancel the current running operation"
     )
     await update.message.reply_text(help_text)
@@ -103,6 +109,7 @@ def main():
 
     jira_repo = JiraRepository()
     user_config_instance = UserConfig()
+    speech_processor = SpeechProcessor()
 
     task_creation_use_case = JiraTaskCreation(jira_repo, user_config_instance)
     task_status_use_case = TaskStatus(jira_repo.jira)
@@ -119,6 +126,10 @@ def main():
         jira_repo,
         summary_generator,
     )
+    advanced_task_creation_use_case = AdvancedTaskCreation(
+        jira_repo,
+        user_config_instance,
+    )
 
     task_creation_handler = TaskCreationHandler(task_creation_use_case)
     task_status_handler = TaskStatusHandler(task_status_use_case)
@@ -128,6 +139,10 @@ def main():
         board_summary_generator_use_case,
     )
     task_get_users_time_handler = TaskGetUsersTimeHandler(task_get_users_time_use_case)
+    advanced_task_creation_handler = AdvancedTaskCreationHandler(
+        advanced_task_creation_use_case,
+        speech_processor,
+    )
 
     application.add_handler(task_creation_handler.get_handler())
     application.add_handler(task_transition_handler.get_handler())
@@ -135,6 +150,7 @@ def main():
     application.add_handler(board_summary_generator_handler.get_handler())
     application.add_handler(user_settings_handler.get_handler())
     application.add_handler(task_get_users_time_handler.get_handler())
+    application.add_handler(advanced_task_creation_handler.get_handler())
     application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
 

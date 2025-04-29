@@ -17,7 +17,6 @@ import requests
 import uvicorn
 from fastapi import FastAPI
 from fastapi import Request
-from langchain.chains import LLMChain
 from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
 from langchain.prompts import PromptTemplate
@@ -271,16 +270,20 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
     issue = jira_repository.create_task(task_data)
     issue_message = f"Task created (media group) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
     LOGGER.info(issue_message)
-    first_chat_id = messages[0]["chat"]["id"]
-    send_telegram_message(first_chat_id, issue_message)
-
-    channel_post_id = messages[0]["message_id"]
-    await save_mapping(
-        channel_post_id,
-        issue.key,
-        messages[0]["chat"]["id"],
-        first_chat_id,
-        message_data=messages[0],
+    post = load_data_store()[str(messages[-1]["message_id"])]
+    group_chat_id = post["group_chat_id"]
+    data_store = load_data_store()
+    for message in messages:
+        if str(message["message_id"]) in data_store:
+            data_store[str(message["message_id"])]["issue_key"] = issue.key
+            data_store[str(message["message_id"])]["reply_message_id"] = message[
+                "message_id"
+            ]
+            save_data_store(data_store)
+    send_telegram_message(
+        group_chat_id,
+        issue_message,
+        reply_message_id=post["reply_message_id"],
     )
 
 
@@ -334,8 +337,6 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
     issue_message = f"Task created (single) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
     LOGGER.info(issue_message)
     chat_id = channel_post["chat"]["id"]
-    # send_telegram_message(chat_id, issue_message)
-    send_telegram_message(chat_id, issue_message, reply_message_id=chat_id)
 
     channel_post_id = channel_post["message_id"]
     await save_mapping(
@@ -609,6 +610,14 @@ async def handle_media_group_message(
     LOGGER.info(
         f"Stored media_group_id={media_group_id} update. Total so far: {len(MEDIA_GROUP_STORE[media_group_id])} messages.",
     )
+    for message in MEDIA_GROUP_STORE[media_group_id]:
+        await save_mapping(
+            message["message_id"],
+            "pending",  # Will be updated when issue is created
+            message["chat"]["id"],
+            message["chat"]["id"],
+            message_data=message,
+        )
     return {
         "status": "success",
         "message": "Media group update stored. Awaiting more.",
@@ -671,7 +680,12 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
     if issue_key:
         issue_link = f"{JIRA_SETTINGS.domain}/browse/{issue_key}"
         issue_message = f"Jira Issue Created:\nLink: {issue_link}"
-        send_telegram_message(group_chat_id, issue_message, reply_message_id=message_id)
+        if issue_key != "pending":
+            send_telegram_message(
+                group_chat_id,
+                issue_message,
+                reply_message_id=message_id,
+            )
 
         data_local = load_data_store()
         if str(original_message_id) in data_local:

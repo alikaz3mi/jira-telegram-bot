@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from jira_telegram_bot import DEFAULT_PATH
+from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
@@ -20,3 +21,4 @@ TELEGRAM_WEBHOOK_SETTINGS = TelegramWebhookConnectionSettings(
 )
 GITLAB_SETTINGS = GitlabSettings(_env=f"{DEFAULT_PATH}/.env")
 POSTGRES_SETTINGS = PostgresSettings(_env=f"{DEFAULT_PATH}/.env")
+GEMINI_SETTINGS = GeminiConnectionSetting(_env=f"{DEFAULT_PATH}/.env")
