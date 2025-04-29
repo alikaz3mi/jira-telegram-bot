@@ -113,7 +113,7 @@ class JiraSettings(BaseSettings):
 
 app = FastAPI()
 
-TELEGRAM_BOT_TOKEN = "7601757345:AAFFbCKqIlLWMWcQn3HGstGWlClJmw-YtkU"
+TELEGRAM_BOT_TOKEN = TELEGRAM_SETTINGS.HOOK_TOKEN
 TELEGRAM_WEBHOOK_URL = TELEGRAM_SETTINGS.WEBHOOK_URL
 JIRA_BASE_URL = JIRA_SETTINGS.domain
 JIRA_PROJECT_KEY = "PCT"
@@ -276,9 +276,6 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
     for message in messages:
         if str(message["message_id"]) in data_store:
             data_store[str(message["message_id"])]["issue_key"] = issue.key
-            data_store[str(message["message_id"])]["reply_message_id"] = message[
-                "message_id"
-            ]
             save_data_store(data_store)
     send_telegram_message(
         group_chat_id,
@@ -462,6 +459,8 @@ async def jira_webhook_endpoint(request: Request):
                 username = comment.get("author", {}).get("name", "UnknownUser")
                 username = jira_users.get(username, username)
                 comment_content = f"Comment from [@{username}] :\n\n{comment_body}"
+                if "h6. Comment from" in comment_content:
+                    return {"status": "success", "message": "Webhook processed"}
                 message = f"*💬 Comment Added*\n\nTask {issue_key} has a new comment: {comment_content}"
                 send_telegram_message(
                     group_chat_id,

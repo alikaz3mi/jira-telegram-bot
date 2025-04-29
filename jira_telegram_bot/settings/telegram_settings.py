@@ -13,6 +13,9 @@ class TelegramConnectionSettings(BaseSettings):
         description="List of telegram users that are authorized to create task",
     )
     WEBHOOK_URL: str = Field(description="Telegram Webhook URL")
+    HOOK_TOKEN: str = Field(
+        description="Telegram Webhook Token",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
