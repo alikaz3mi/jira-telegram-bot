@@ -1,7 +1,5 @@
-# Jira Telegram Bot
-
 <p align="center">
-   <img src="docs/image.png" alt="Jira Telegram Bot">
+   <img src="docs/image.png" alt="Jira Telegram Bot" width="50%">
 </p>
 
 A powerful Telegram bot that integrates with Jira to streamline task management through chat interface. This bot enables creating, tracking, and managing Jira tasks directly from Telegram, with support for advanced features like AI-powered task breakdown and voice commands.
