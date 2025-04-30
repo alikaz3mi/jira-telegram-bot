@@ -12,8 +12,8 @@ from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.use_cases.authentication import check_user_allowed
-from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
+from jira_telegram_bot.adapters.services.telegram.authentication import check_user_allowed
+from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )

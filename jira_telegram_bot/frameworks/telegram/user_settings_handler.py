@@ -9,7 +9,7 @@ from telegram.ext import MessageHandler
 from jira_telegram_bot.use_cases.interface.task_handler_interface import (
     TaskHandlerInterface,
 )
-from jira_telegram_bot.use_cases.user_settings import UserSettingsConversation
+from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
 
 
 class UserSettingsHandler(TaskHandlerInterface):

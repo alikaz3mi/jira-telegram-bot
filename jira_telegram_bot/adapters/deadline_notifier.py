@@ -6,7 +6,7 @@ from datetime import timedelta
 import requests
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS

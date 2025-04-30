@@ -8,7 +8,7 @@ from telegram.ext import MessageHandler
 from jira_telegram_bot.use_cases.interface.task_handler_interface import (
     TaskHandlerInterface,
 )
-from jira_telegram_bot.use_cases.task_status import TaskStatus
+from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
 
 
 class TaskStatusHandler(TaskHandlerInterface):

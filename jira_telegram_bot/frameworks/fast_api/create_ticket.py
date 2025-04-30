@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import time
 from collections import defaultdict
-from io import BytesIO
 from typing import Any
 from typing import Dict
 from typing import List
-from typing import Optional
 
 import aiohttp
 import jdatetime
@@ -17,105 +13,22 @@ import requests
 import uvicorn
 from fastapi import FastAPI
 from fastapi import Request
-from langchain.output_parsers import ResponseSchema
-from langchain.output_parsers import StructuredOutputParser
-from langchain.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
-from pydantic_settings import BaseSettings
-from pydantic_settings import SettingsConfigDict
 
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.file_storage import load_data_store, save_data_store, save_mapping, \
+    get_issue_key_from_channel_post, find_issue_key_from_message_id, find_group_chat_by_issue
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.services.telegram import MockTelegramPhoto, MockTelegramDocument, MockTelegramVideo, \
+    MockTelegramAudio
+from jira_telegram_bot.adapters.services.telegram.telegram_gateway import send_telegram_message, fetch_and_store_media
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.settings import OPENAI_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
-
-
-def parse_jira_prompt(content: str) -> Dict[str, str]:
-    """
-    Uses a LangChain LLM prompt to parse the content and produce a JSON string
-    with 'summary', 'task_type', and 'description'. Then returns it as a dict.
-    """
-
-    schema = [
-        ResponseSchema(
-            name="task_info",
-            description="A JSON object containing summary, task_type, label, and description fields. Example: {'summary': 'Task summary', 'task_type': 'Bug', 'description': 'Task description', 'label': '#ID121'}",
-            type="json",
-        ),
-    ]
-
-    parser = StructuredOutputParser.from_response_schemas(schema)
-    format_instructions = parser.get_format_instructions()
-
-    template_text = """
-                    You are given the following content from a user:
-
-                    {content}
-
-                    Your job is to analyze this content and provide structured output for creating a task for jira.
-                    keep the same language as the content.
-
-
-                    {format_instructions}
-
-                    Instructions:
-                    1. "task_type": The type of task must only be Task or Bug.
-                    2. "summary": the summary must be a single line. with the same language as content. If exists in content, keep #ID number in the summary.
-                    3. "description": the description must be a single line. with the same language as content.
-                    4. "label": label is the #ID if the content has it.
-                    """
-
-    llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
-        openai_api_key=OPENAI_SETTINGS.token,
-        temperature=0.2,
-    )
-    prompt = PromptTemplate(
-        template=template_text,
-        input_variables=["content"],
-        partial_variables={"format_instructions": format_instructions},
-    )
-
-    chain = prompt | llm | parser
-
-    result = chain.invoke(input={"content": content})
-
-    try:
-        return {
-            "summary": result["task_info"].get("summary", ""),
-            "task_type": result["task_info"].get("task_type", "Task"),
-            "description": result["task_info"].get("description", ""),
-            "labels": result["task_info"].get("label", ""),
-        }
-    except Exception as e:
-        return {
-            "summary": "No Summary",
-            "task_type": "Task",
-            "description": content or "No description provided.",
-        }
-
-
-class JiraSettings(BaseSettings):
-    base_url: str
-    project_key: str
-    email: str
-    password: str
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
+from jira_telegram_bot.use_cases.ai_agents.create_ticketing_issue import parse_jira_prompt
 
 app = FastAPI()
 
-TELEGRAM_BOT_TOKEN = TELEGRAM_SETTINGS.HOOK_TOKEN
-TELEGRAM_WEBHOOK_URL = TELEGRAM_SETTINGS.WEBHOOK_URL
-JIRA_BASE_URL = JIRA_SETTINGS.domain
 JIRA_PROJECT_KEY = "PCT"
 jira_repository = JiraRepository(JIRA_SETTINGS)
 
@@ -141,82 +54,6 @@ MEDIA_GROUP_METADATA: Dict[str, float] = {}
 GROUP_TIMEOUT_SECONDS = 5.0
 
 DATA_STORE_PATH = f"{DEFAULT_PATH}/data_store.json"
-
-
-def send_telegram_message(
-    chat_id: int,
-    text: str,
-    reply_message_id: Optional[int] = None,
-    parse_mode: str = "Markdown",
-):
-    """Send a message to a Telegram chat."""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
-    if reply_message_id:
-        payload["reply_parameters"] = {"message_id": reply_message_id}
-    resp = requests.post(url, json=payload)
-    if resp.status_code != 200:
-        LOGGER.error(
-            f"Failed to send Telegram message to chat_id={chat_id}: {resp.text}",
-        )
-
-
-class MockTelegramPhoto:
-    def __init__(self, file_id):
-        self.file_id = file_id
-
-    async def get_file(self):
-        return MockFilePath(self.file_id)
-
-
-class MockTelegramDocument(MockTelegramPhoto):
-    pass
-
-
-class MockTelegramVideo(MockTelegramPhoto):
-    pass
-
-
-class MockTelegramAudio(MockTelegramPhoto):
-    pass
-
-
-class MockFilePath:
-    def __init__(self, file_id):
-        self.file_id = file_id
-        self.file_path = self._get_file_path()
-
-    def _get_file_path(self) -> str:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={self.file_id}"
-        resp = requests.get(url)
-        if resp.status_code == 200:
-            result = resp.json()["result"]
-            return result["file_path"]
-        else:
-            raise Exception(
-                f"Failed to get file path for file_id={self.file_id}, status={resp.status_code}",
-            )
-
-
-async def fetch_and_store_media(
-    media: Any,
-    session: aiohttp.ClientSession,
-    storage_list: List,
-    filename: str,
-):
-    """Fetch media from Telegram and store it in the provided storage list."""
-    media_file = await media.get_file()
-    file_url = (
-        f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{media_file.file_path}"
-    )
-    async with session.get(file_url) as response:
-        if response.status == 200:
-            buffer = BytesIO(await response.read())
-            storage_list.append((filename, buffer))
-        else:
-            LOGGER.error(
-                f"Failed to fetch media: {media_file.file_path} (status {response.status})",
-            )
 
 
 async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskData):
@@ -343,88 +180,6 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
         chat_id,
         message_data=channel_post,
     )
-
-
-def load_data_store() -> Dict[str, Any]:
-    """Load the data store from the JSON file."""
-    if not os.path.exists(DATA_STORE_PATH):
-        return {}
-    with open(DATA_STORE_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_data_store(data: Dict[str, Any]):
-    """Save the data store to the JSON file."""
-    with open(DATA_STORE_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-
-async def save_mapping(
-    channel_post_id: int,
-    issue_key: str,
-    channel_chat_id: int,
-    group_id: int,
-    message_data: Dict[str, Any],
-):
-    """Save the mapping between channel post and Jira issue with additional metadata.
-
-    Args:
-        channel_post_id: The ID of the post in the channel
-        issue_key: The Jira issue key (e.g. PCT-123)
-        channel_chat_id: ID of the channel where message was posted
-        group_id: ID of the group where the message was forwarded
-        message_data: The full message data containing metadata
-    """
-    data = load_data_store()
-
-    # Extract additional metadata
-    created_at = message_data.get("date", int(time.time()))  # Fallback to current time
-    from_user = message_data.get("from", {})
-    message_type = "channel_post"
-
-    # Media type detection
-    if "photo" in message_data:
-        content_type = "photo"
-    elif "video" in message_data:
-        content_type = "video"
-    elif "document" in message_data:
-        content_type = "document"
-    elif "audio" in message_data:
-        content_type = "audio"
-    else:
-        content_type = "text"
-
-    data[str(channel_post_id)] = {
-        "type": "jira_issue_mapping",
-        "issue_key": issue_key,
-        "channel_chat_id": channel_chat_id,
-        "group_chat_id": group_id,
-        "metadata": {
-            "created_at": created_at,
-            "creator_id": from_user.get("id"),
-            "creator_username": from_user.get("username"),
-            "content_type": content_type,
-            "message_type": message_type,
-        },
-    }
-    save_data_store(data)
-
-
-def get_issue_key_from_channel_post(channel_post_id: int) -> Optional[str]:
-    """Retrieve the Jira issue key associated with a channel post."""
-    data = load_data_store()
-    return data.get(str(channel_post_id), {}).get("issue_key")
-
-
-def get_group_chat_id_from_channel_post(channel_post_id: int) -> Optional[int]:
-    """Retrieve the group chat ID associated with a channel post."""
-    data = load_data_store()
-    return data.get(str(channel_post_id), {}).get("group_chat_id")
-
-
-async def add_comment_to_jira(issue_key: str, comment: str):
-    """Add a comment to a Jira issue."""
-    jira_repository.add_comment(issue_key, comment)
 
 
 @app.post("/jira-webhook")
@@ -573,17 +328,6 @@ async def jira_webhook_endpoint(request: Request):
         return {"status": "error", "message": str(e)}
 
 
-def find_group_chat_by_issue(
-    data_store: Dict[str, Any],
-    issue_key: str,
-) -> Optional[Dict[str, Any]]:
-    """Find the group chat info for a given issue key."""
-    for entry in data_store.values():
-        if entry.get("issue_key") == issue_key:
-            return entry
-    return None
-
-
 async def handle_channel_post(channel_post: Dict[str, Any]) -> Dict[str, Any]:
     """Handle incoming channel posts."""
     username = channel_post.get("from", {}).get("username", "UnknownUser")
@@ -717,7 +461,7 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
         f"{message['reply_to_message']['forward_from_message_id']}",
     )
     if issue_key:
-        await add_comment_to_jira(issue_key, text)
+        jira_repository.add_comment(issue_key, text)
         LOGGER.info(f"Added comment to Jira issue {issue_key}: {text}")
         return {
             "status": "success",
@@ -729,21 +473,6 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
             "status": "ignored",
             "reason": "No Jira issue mapping found for this group.",
         }
-
-
-def find_issue_key_for_group(chat_id: int) -> Optional[str]:
-    """Find the Jira issue key associated with a group chat."""
-    data_store = load_data_store()
-    for mapping in data_store.values():
-        if mapping.get("group_chat_id") == chat_id:
-            return mapping.get("issue_key")
-    return None
-
-
-def find_issue_key_from_message_id(message_id: int) -> Optional[str]:
-    """Find the Jira issue key associated with a message ID."""
-    data_store = load_data_store()
-    return data_store.get(str(message_id), {}).get("issue_key")
 
 
 def create_task_data(username: str, parsed_fields: Dict[str, str]) -> TaskData:
@@ -804,7 +533,7 @@ async def on_shutdown():
 
 async def remove_telegram_webhook():
     """Remove the Telegram webhook."""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook"
+    url = f"https://api.telegram.org/bot{TELEGRAM_SETTINGS.HOOK_TOKEN}/deleteWebhook"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             if response.status == 200:
@@ -818,15 +547,15 @@ async def remove_telegram_webhook():
 def set_telegram_webhook():
     """Set the Telegram webhook."""
     # Delete webhook if it exists
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook"
+    url = f"https://api.telegram.org/bot{TELEGRAM_SETTINGS.HOOK_TOKEN}/deleteWebhook"
     response = requests.get(url)
     if response.status_code == 200:
         LOGGER.info("Existing Telegram webhook deleted successfully.")
     else:
         LOGGER.error(f"Failed to delete existing Telegram webhook: {response.content}")
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
+    url = f"https://api.telegram.org/bot{TELEGRAM_SETTINGS.HOOK_TOKEN}/setWebhook"
     payload = {
-        "url": TELEGRAM_WEBHOOK_URL,
+        "url": TELEGRAM_SETTINGS.WEBHOOK_URL,
         "max_connections": 100,
         "drop_pending_updates": True,
     }

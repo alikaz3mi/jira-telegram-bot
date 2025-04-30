@@ -1,4 +1,4 @@
-# jira_telegram_bot/adapters/openai_gateway.py
+# jira_telegram_bot/adapters/openai_model.py
 from __future__ import annotations
 
 from langchain_openai import ChatOpenAI

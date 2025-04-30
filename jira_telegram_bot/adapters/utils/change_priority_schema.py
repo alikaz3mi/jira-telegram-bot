@@ -7,7 +7,7 @@ from jira import Issue
 from jira.exceptions import JIRAError
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
 
 
 # --------------------------------------------------------------------------- #

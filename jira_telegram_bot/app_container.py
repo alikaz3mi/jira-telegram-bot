@@ -3,10 +3,10 @@ from __future__ import annotations
 from lagom import Container
 from lagom.integrations.fast_api import FastApiIntegration
 
-from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
-from jira_telegram_bot.adapters.openai_gateway import OpenAIGateway
-from jira_telegram_bot.adapters.speech_processor import SpeechProcessor
-from jira_telegram_bot.adapters.telegram_gateway import TelegramGateway
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.ai_models.openai_model import OpenAIGateway
+from jira_telegram_bot.adapters.ai_models.speech_processor import SpeechProcessor
+from jira_telegram_bot.adapters.services.telegram.telegram_gateway import TelegramGateway
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
     HandleJiraWebhookUseCase,
@@ -23,7 +23,7 @@ from jira_telegram_bot.use_cases.interface.task_manager_repository_interface imp
 from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import (
     TelegramGatewayInterface,
 )
-from jira_telegram_bot.use_cases.parse_jira_prompt_usecase import ParseJiraPromptUseCase
+from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 
 
 def create_container() -> Container:

@@ -8,8 +8,8 @@ from telegram.ext import CommandHandler
 from telegram.warnings import PTBUserWarning
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
-from jira_telegram_bot.adapters.speech_processor import SpeechProcessor
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.ai_models.speech_processor import SpeechProcessor
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.frameworks.telegram.advanced_task_creation_handler import (
     AdvancedTaskCreationHandler,
@@ -32,15 +32,15 @@ from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
 )
 from jira_telegram_bot.settings import OPENAI_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
-from jira_telegram_bot.use_cases.advanced_task_creation import AdvancedTaskCreation
-from jira_telegram_bot.use_cases.board_summarizer import create_llm_chain
-from jira_telegram_bot.use_cases.board_summarizer import TaskProcessor
-from jira_telegram_bot.use_cases.board_summary_generator import BoardSummaryGenerator
-from jira_telegram_bot.use_cases.create_task import JiraTaskCreation
-from jira_telegram_bot.use_cases.task_get_users_time import TaskGetUsersTime
-from jira_telegram_bot.use_cases.task_status import TaskStatus
-from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
-from jira_telegram_bot.use_cases.user_settings import UserSettingsConversation
+from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
+from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import create_llm_chain
+from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import TaskProcessor
+from jira_telegram_bot.use_cases.telegram_commands.board_summary_generator import BoardSummaryGenerator
+from jira_telegram_bot.use_cases.telegram_commands.create_task import JiraTaskCreation
+from jira_telegram_bot.use_cases.telegram_commands.task_get_users_time import TaskGetUsersTime
+from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
+from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTaskTransition
+from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
 
 llm_chain = create_llm_chain(OPENAI_SETTINGS)
 summary_generator = TaskProcessor(llm_chain)

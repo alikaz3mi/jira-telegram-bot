@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings import POSTGRES_SETTINGS
 

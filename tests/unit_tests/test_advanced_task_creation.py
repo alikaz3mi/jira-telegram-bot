@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from jira_telegram_bot.use_cases.advanced_task_creation import AdvancedTaskCreation
+from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
 
 
 @pytest.fixture

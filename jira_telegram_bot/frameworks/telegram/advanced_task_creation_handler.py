@@ -3,13 +3,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Dict
-from typing import List
 
-import aiohttp
 from telegram import InlineKeyboardButton
 from telegram import InlineKeyboardMarkup
-from telegram import Message
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.ext import CallbackQueryHandler
@@ -21,7 +17,7 @@ from telegram.ext import MessageHandler
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.speech import TranscriptionResult
-from jira_telegram_bot.use_cases.advanced_task_creation import AdvancedTaskCreation
+from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
 from jira_telegram_bot.use_cases.interface.speech_processor_interface import (
     SpeechProcessorInterface,
 )

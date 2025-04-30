@@ -13,7 +13,7 @@ from jira_telegram_bot.use_cases.interface.task_manager_repository_interface imp
 from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import (
     TelegramGatewayInterface,
 )
-from jira_telegram_bot.use_cases.parse_jira_prompt_usecase import ParseJiraPromptUseCase
+from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 from jira_telegram_bot.utils.data_store import get_issue_key_from_channel_post
 from jira_telegram_bot.utils.data_store import save_comment
 from jira_telegram_bot.utils.data_store import save_mapping

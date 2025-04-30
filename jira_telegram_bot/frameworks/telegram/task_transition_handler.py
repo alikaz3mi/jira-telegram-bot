@@ -7,7 +7,7 @@ from telegram.ext import ConversationHandler
 from jira_telegram_bot.use_cases.interface.task_handler_interface import (
     TaskHandlerInterface,
 )
-from jira_telegram_bot.use_cases.transition_task import JiraTaskTransition
+from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTaskTransition
 
 
 class TaskTransitionHandler(TaskHandlerInterface):
