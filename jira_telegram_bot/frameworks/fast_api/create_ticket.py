@@ -14,46 +14,49 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi import Request
 
-from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.repositories.file_storage import load_data_store, save_data_store, save_mapping, \
-    get_issue_key_from_channel_post, find_issue_key_from_message_id, find_group_chat_by_issue
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
-from jira_telegram_bot.adapters.services.telegram import MockTelegramPhoto, MockTelegramDocument, MockTelegramVideo, \
-    MockTelegramAudio
-from jira_telegram_bot.adapters.services.telegram.telegram_gateway import send_telegram_message, fetch_and_store_media
+from jira_telegram_bot.adapters.repositories.file_storage import (
+    find_group_chat_by_issue,
+)
+from jira_telegram_bot.adapters.repositories.file_storage import (
+    find_issue_key_from_message_id,
+)
+from jira_telegram_bot.adapters.repositories.file_storage import (
+    get_issue_key_from_channel_post,
+)
+from jira_telegram_bot.adapters.repositories.file_storage import load_data_store
+from jira_telegram_bot.adapters.repositories.file_storage import save_data_store
+from jira_telegram_bot.adapters.repositories.file_storage import save_mapping
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
+    JiraRepository,
+)
+from jira_telegram_bot.adapters.services.telegram import MockTelegramAudio
+from jira_telegram_bot.adapters.services.telegram import MockTelegramDocument
+from jira_telegram_bot.adapters.services.telegram import MockTelegramPhoto
+from jira_telegram_bot.adapters.services.telegram import MockTelegramVideo
+from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
+    fetch_and_store_media,
+)
+from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
+    send_telegram_message,
+)
+from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
-from jira_telegram_bot.use_cases.ai_agents.create_ticketing_issue import parse_jira_prompt
+from jira_telegram_bot.use_cases.ai_agents.create_ticketing_issue import (
+    parse_jira_prompt,
+)
+
 
 app = FastAPI()
+jira_repository = JiraRepository(JIRA_SETTINGS)
+user_config = UserConfig()
 
 JIRA_PROJECT_KEY = "PCT"
-jira_repository = JiraRepository(JIRA_SETTINGS)
-
-users = {
-    "alikaz3mi": "a_kazemi",
-    "Mousavi_Shoushtari": "m_mousavi",
-    "Alirezanasim_1991": "a_nasim",
-    "GroupAnonymousBot": "a_kazemi",
-    "Abolfazl2883": "a_barghamadi",
-    "Parschat_AI": "sh_zanganeh",
-}
-
-jira_users = {
-    "a_kazemi": "alikaz3mi",
-    "m_mousavi": "Mousavi_Shoushtari",
-    "a_nasim": "Alirezanasim_1991",
-    "a_barghamadi": "Abolfazl2883",
-    "sh_zanganeh": "Parschat_AI",
-}
-
 MEDIA_GROUP_STORE: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 MEDIA_GROUP_METADATA: Dict[str, float] = {}
 GROUP_TIMEOUT_SECONDS = 5.0
-
-DATA_STORE_PATH = f"{DEFAULT_PATH}/data_store.json"
 
 
 async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskData):
@@ -211,9 +214,13 @@ async def jira_webhook_endpoint(request: Request):
             comment = body.get("comment", {})
             if comment:
                 comment_body = comment.get("body", "")
-                username = comment.get("author", {}).get("name", "UnknownUser")
-                username = jira_users.get(username, username)
-                comment_content = f"Comment from [@{username}] :\n\n{comment_body}"
+                jira_username = comment.get("author", {}).get("name", "UnknownUser")
+                telegram_username = user_config.get_user_config_by_jira_username(
+                    jira_username,
+                ).telegram_username
+                comment_content = (
+                    f"Comment from [@{telegram_username}] :\n\n{comment_body}"
+                )
                 if "h6. Comment from" in comment_content:
                     return {"status": "success", "message": "Webhook processed"}
                 message = f"*💬 Comment Added*\n\nTask {issue_key} has a new comment: {comment_content}"
@@ -241,10 +248,16 @@ async def jira_webhook_endpoint(request: Request):
                     creator_username = group_chat_info.get("metadata", {}).get(
                         "creator_username",
                     )
-                    if creator_username and creator_username in users:
-                        assignee = users[creator_username]
+                    if (
+                        creator_username
+                        and creator_username in user_config.list_all_users()
+                    ):
+                        assignee = user_config.get_user_config(
+                            creator_username,
+                        ).jira_username
                         jira_repository.assign_issue(issue_key, assignee)
-                        notify_msg = f"*👤 Task Reassigned*\n\nTask {issue_key} has been assigned to @{creator_username} for review"
+                        notify_msg = f"""*👤 Task Reassigned*\n\nTask {issue_key}
+                                         has been assigned to @{creator_username} for review"""
                         send_telegram_message(
                             group_chat_id,
                             notify_msg,
@@ -401,7 +414,6 @@ async def process_text_only_message(
         chat_id,
         message_data=channel_post,
     )
-    # send_telegram_message(chat_id, issue_message)
 
 
 async def handle_group_message(message: Dict[str, Any]) -> Dict[str, Any]:
@@ -453,9 +465,9 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
     """Handle comments in group chats."""
     chat_id = message["chat"]["id"]
     message_from = message.get("from", {}).get("username", "UnknownUser")
-    username = users.get(message_from, None)
+    jira_username = user_config.get_user_config(message_from).jira_username
     text = message.get("text") or message.get("caption") or ""
-    text = f"h6. Comment from [~{username}] :\n\n{text}"
+    text = f"h6. Comment from [~{jira_username}] :\n\n{text}"
 
     issue_key = find_issue_key_from_message_id(
         f"{message['reply_to_message']['forward_from_message_id']}",
@@ -483,7 +495,7 @@ def create_task_data(username: str, parsed_fields: Dict[str, str]) -> TaskData:
         description=parsed_fields["description"],
         task_type=parsed_fields["task_type"],
         labels=[parsed_fields.get("labels", "")],
-        assignee=users.get(username, None),
+        assignee=user_config.get_user_config(username).jira_username,
     )
 
 
@@ -593,7 +605,7 @@ async def finalize_media_groups():
                     summary=parsed_fields["summary"],
                     description=parsed_fields["description"],
                     task_type=parsed_fields["task_type"],
-                    assignee=users.get(username, None),
+                    assignee=user_config.get_user_config(username).jira_username,
                 )
 
                 await process_media_group(messages, task_data)

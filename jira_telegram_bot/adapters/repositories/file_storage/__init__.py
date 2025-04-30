@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Dict, Any, Optional
+from typing import Any
+from typing import Dict
+from typing import Optional
 
-from jira_telegram_bot.frameworks.fast_api.create_ticket import DATA_STORE_PATH
+from jira_telegram_bot import DEFAULT_PATH
+
+DATA_STORE_PATH = f"{DEFAULT_PATH}/data_store.json"
 
 
 def load_data_store() -> Dict[str, Any]:
