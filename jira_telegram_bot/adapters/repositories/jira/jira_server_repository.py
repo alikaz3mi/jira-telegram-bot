@@ -234,7 +234,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
         return issue_fields
 
     def handle_attachments(self, issue: Issue, attachments: Dict[str, List]):
-        for media_type, files in attachments.items():
+        for _, files in attachments.items():
             for filename, file_buffer in files:
                 self.add_attachment(
                     issue=issue,
@@ -346,3 +346,13 @@ class JiraRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error saving labels for project {project_key}: {e}")
             return False
+
+    def transition_task(self, issue_key: str, status: str) -> None:
+        """
+        Transition a task to a new status.
+        """
+        transitions = self.jira.transitions(issue_key)
+        for t in transitions:
+            if t["name"].lower() == status.lower():
+                self.jira.transition_issue(issue_key, t["id"])
+                break
