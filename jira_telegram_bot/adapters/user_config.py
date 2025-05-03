@@ -42,7 +42,7 @@ class UserConfig(UserConfigInterface):
         jira_username: str,
     ) -> Optional[UserConfigEntity]:
         for user_config in self.user_config.values():
-            if user_config.jira_username == jira_username:
+            if user_config.jira_username.lower() == jira_username.lower():
                 return user_config
         return None
 
