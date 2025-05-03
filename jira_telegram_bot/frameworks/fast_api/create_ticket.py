@@ -383,6 +383,20 @@ async def jira_webhook_endpoint(request: Request):
                     group_chat_id,
                     reply_message_id,
                 )
+            elif field == "assignee":
+                assignee = item.get("toString")
+                assignee = jira_repository.jira.issue(issue_key).fields.assignee.name
+                telegram_username = user_config.get_user_config_by_jira_username(
+                    assignee,
+                ).telegram_username
+                if assignee:
+                    message = f"👤 Task Assigned\n\nTask has been assigned to @{telegram_username}"
+                    send_telegram_message(
+                        group_chat_id,
+                        message,
+                        reply_message_id=reply_message_id,
+                    )
+                    LOGGER.info(f"Sent reassignment notification for {issue_key}")
 
         return {"status": "success", "message": "Webhook processed"}
 

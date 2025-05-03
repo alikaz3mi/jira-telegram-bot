@@ -109,6 +109,7 @@ class TelegramPostDataStore:
         return data_store.get(str(message_id), {}).get("issue_key")
 
     def find_group_chat_by_issue(
+        self,
         data_store: Dict[str, Any],
         issue_key: str,
     ) -> Optional[Dict[str, Any]]:
