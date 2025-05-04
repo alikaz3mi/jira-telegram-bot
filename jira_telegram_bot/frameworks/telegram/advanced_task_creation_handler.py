@@ -17,12 +17,14 @@ from telegram.ext import MessageHandler
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.speech import TranscriptionResult
-from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
 from jira_telegram_bot.use_cases.interface.speech_processor_interface import (
     SpeechProcessorInterface,
 )
 from jira_telegram_bot.use_cases.interface.task_handler_interface import (
     TaskHandlerInterface,
+)
+from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import (
+    AdvancedTaskCreation,
 )
 
 
@@ -30,10 +32,13 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
     # Define conversation states
     (
         SELECT_PROJECT,
+        SELECT_EPIC,
+        SELECT_TASK_TYPE,
+        SELECT_STORY,  # For selecting parent story when creating subtasks
         WAIT_FOR_DESCRIPTION,
         CONFIRM_TRANSCRIPTION,
         CONFIRM_BREAKDOWN,
-    ) = range(4)
+    ) = range(7)
 
     def __init__(
         self,
@@ -143,12 +148,13 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 suffix=".oga",
                 delete=False,
             ) as voice_file_tmp:
-                await voice_file.download_to_drive(voice_file_tmp.name)
+                file_path = f"{DEFAULT_PATH}/{voice_file.file_path.split('/')[-1]}"
+                await voice_file.download_to_drive(file_path)
 
                 # Process voice with transcription entity
                 result: TranscriptionResult = (
                     await self.speech_processor.process_voice_message(
-                        voice_file_tmp.name,
+                        file_path,
                     )
                 )
 
@@ -227,23 +233,23 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
                 return self.CONFIRM_TRANSCRIPTION
 
-        except ValueError as e:
+        except ValueError:
             await update.message.reply_text(
                 "❌ Sorry, I couldn't understand the voice message. Please try again "
                 "or type your description instead.",
             )
             return self.WAIT_FOR_DESCRIPTION
 
-        except RuntimeError as e:
-            LOGGER.error(f"Speech recognition error: {e}")
+        except RuntimeError as error:
+            LOGGER.error(f"Speech recognition error: {error}")
             await update.message.reply_text(
                 "❌ Sorry, there was an error processing your voice message. "
                 "Please try again or type your description instead.",
             )
             return self.WAIT_FOR_DESCRIPTION
 
-        except Exception as e:
-            LOGGER.error(f"Unexpected error processing voice message: {e}")
+        except Exception as error:
+            LOGGER.error(f"Unexpected error processing voice message: {error}")
             await update.message.reply_text(
                 "❌ An unexpected error occurred. Please try again or type your description.",
             )
@@ -308,7 +314,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(
+        message_text = (
             "*Task Creation Preview*\n\n"
             f"📝 *Description:*\n{preview}\n\n"
             f"🏢 *Project:* {project_key}\n"
@@ -318,10 +324,21 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             "2️⃣ Break down into component tasks\n"
             "3️⃣ Assign to team members\n"
             "4️⃣ Set story points & priorities\n\n"
-            "Would you like to proceed?",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
+            "Would you like to proceed?"
         )
+
+        if hasattr(update, "callback_query") and update.callback_query:
+            await update.callback_query.edit_message_text(
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_text(
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
+            )
 
         return self.CONFIRM_BREAKDOWN
 
@@ -408,6 +425,166 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         await update.message.reply_text("❌ Advanced task creation cancelled.")
         return ConversationHandler.END
 
+    async def select_epic(self, update: Update, context: CallbackContext) -> int:
+        """Handle epic selection after project selection."""
+        query = update.callback_query
+        await query.answer()
+
+        project_key = query.data.split("|")[1]
+        context.user_data["project_key"] = project_key
+
+        # Get epics for the project
+        epics = self.advanced_task_creation.jira_repo.get_epics(project_key)
+
+        # Create keyboard with epic options
+        keyboard = []
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "Create New Story/Epic",
+                    callback_data="task_type|story",
+                ),
+            ],
+        )
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "Add Subtasks to Existing Story",
+                    callback_data="task_type|subtask",
+                ),
+            ],
+        )
+
+        if epics:
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "Select Epic for New Story",
+                        callback_data="select_epic",
+                    ),
+                ],
+            )
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            "How would you like to proceed?\n\n"
+            "• Create a new story/epic\n"
+            "• Add subtasks to an existing story\n"
+            "• Create a story under an existing epic",
+            reply_markup=reply_markup,
+        )
+
+        return self.SELECT_TASK_TYPE
+
+    async def handle_task_type_selection(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Handle task type selection (story or subtask)."""
+        query = update.callback_query
+        await query.answer()
+
+        selection = query.data.split("|")[1]
+        project_key = context.user_data["project_key"]
+
+        if selection == "story":
+            context.user_data["task_type"] = "story"
+            # Show available departments and proceed to description
+            project_info = context.user_data["project_info"]
+            dept_info = "\n".join(
+                [
+                    f"👥 *{dept}*: {info['description']}"
+                    for dept, info in project_info["departments"].items()
+                ],
+            )
+
+            await query.edit_message_text(
+                f"📋 *Creating New Story*\n\n"
+                f"*Available Departments:*\n{dept_info}\n\n"
+                "Please describe the work needed. You can:\n"
+                "1️⃣ Type a detailed description\n"
+                "2️⃣ Send a voice message\n"
+                "3️⃣ Forward requirements",
+                parse_mode="Markdown",
+            )
+            return self.WAIT_FOR_DESCRIPTION
+
+        elif selection == "subtask":
+            # Get stories from the project
+            stories = self.advanced_task_creation.jira_repo.get_stories_by_project(
+                project_key,
+            )
+
+            if not stories:
+                await query.edit_message_text(
+                    "No stories found in this project. Please create a story first.",
+                )
+                return ConversationHandler.END
+
+            # Create keyboard with story options - 3 items per row
+            keyboard = []
+            current_row = []
+
+            for story in stories:
+                button = InlineKeyboardButton(
+                    f"{story.key}: {story.fields.summary[:40]}...",
+                    callback_data=f"story|{story.key}",
+                )
+                current_row.append(button)
+
+                # When we have 3 buttons or it's the last story, add the row
+                if len(current_row) == 3 or story == stories[-1]:
+                    keyboard.append(current_row)
+                    current_row = []
+
+            # If there are any remaining buttons (less than 3), add them as the last row
+            if current_row:
+                keyboard.append(current_row)
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "Select the story to add subtasks to:",
+                reply_markup=reply_markup,
+            )
+            return self.SELECT_STORY
+
+        return ConversationHandler.END
+
+    async def handle_story_selection(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Handle selection of parent story for subtasks."""
+        query = update.callback_query
+        await query.answer()
+
+        story_key = query.data.split("|")[1]
+        context.user_data["parent_story_key"] = story_key
+        context.user_data["task_type"] = "subtask"
+
+        # Show available departments and proceed to description
+        project_info = context.user_data["project_info"]
+        dept_info = "\n".join(
+            [
+                f"👥 *{dept}*: {info['description']}"
+                for dept, info in project_info["departments"].items()
+            ],
+        )
+
+        await query.edit_message_text(
+            f"📋 *Adding Subtasks to {story_key}*\n\n"
+            f"*Available Departments:*\n{dept_info}\n\n"
+            "Please describe the subtasks needed. You can:\n"
+            "1️⃣ Type a detailed description\n"
+            "2️⃣ Send a voice message\n"
+            "3️⃣ Forward requirements",
+            parse_mode="Markdown",
+        )
+        return self.WAIT_FOR_DESCRIPTION
+
     def get_handler(self):
         """Return the ConversationHandler for this flow."""
         return ConversationHandler(
@@ -415,6 +592,21 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             states={
                 self.SELECT_PROJECT: [
                     CallbackQueryHandler(self.select_project, pattern="^project\\|"),
+                ],
+                self.SELECT_EPIC: [
+                    CallbackQueryHandler(self.select_epic, pattern="^epic\\|"),
+                ],
+                self.SELECT_TASK_TYPE: [
+                    CallbackQueryHandler(
+                        self.handle_task_type_selection,
+                        pattern="^task_type\\|",
+                    ),
+                ],
+                self.SELECT_STORY: [
+                    CallbackQueryHandler(
+                        self.handle_story_selection,
+                        pattern="^story\\|",
+                    ),
                 ],
                 self.WAIT_FOR_DESCRIPTION: [
                     MessageHandler(

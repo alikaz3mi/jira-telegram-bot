@@ -356,3 +356,13 @@ class JiraRepository(TaskManagerRepositoryInterface):
             if t["name"].lower() == status.lower():
                 self.jira.transition_issue(issue_key, t["id"])
                 break
+
+    def assign_issue(
+        self,
+        issue_key: str,
+        assignee: str,
+    ) -> None:
+        """
+        Assign an issue to a user.
+        """
+        self.jira.assign_issue(issue_key, assignee)

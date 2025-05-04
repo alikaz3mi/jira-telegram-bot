@@ -62,6 +62,87 @@ COMPONENT_TASK_TEMPLATES = {
     """,
 }
 
+STORY_DECOMPOSITION_PROMPT = """You are an expert technical project manager with deep experience in breaking down complex projects into actionable tasks. Your expertise lies in creating well-structured user stories and tasks that align with team capabilities and project goals.
+
+Context and Project Information:
+{project_context}
+
+Description of Work Needed:
+{description}
+
+Available Departments/Components:
+{departments}
+
+Department Skills and Tools:
+{department_details}
+
+Current Assignees and Their Roles:
+{assignee_details}
+
+Your Task:
+1) First, break this down into coherent user stories that deliver complete features or capabilities
+2) For each story:
+   - Write a clear summary and description
+   - Identify which components/departments need to be involved
+   - For each component involved, create specific subtasks
+   - Each subtask should be achievable in 1-2 days
+3) Follow these principles:
+   - User stories should be independent and deliver value
+   - Tasks should have clear acceptance criteria
+   - Story points follow modified fibonacci (1,2,3,5,8,13)
+   - Subtask points range from 0.5 to 8
+   - Consider dependencies between components
+   - Assign tasks based on skill level (junior, mid-level, senior)
+
+Remember:
+- Tasks should be concrete and actionable
+- Include clear acceptance criteria
+- Consider team skills and capacity
+- Factor in technical dependencies
+- Make assignments based on experience level"""
+
+SUBTASK_DECOMPOSITION_PROMPT = """You are an expert technical project manager helping to break down an existing user story into specific subtasks.
+
+Context and Project Information:
+{project_context}
+
+Parent Story Information:
+{parent_story}
+
+New Requirements/Description:
+{description}
+
+Available Departments/Components:
+{departments}
+
+Department Skills and Tools:
+{department_details}
+
+Current Assignees and Their Roles:
+{assignee_details}
+
+Your Task:
+1) Review the parent story and new requirements
+2) Break down the work into specific subtasks that:
+   - Are aligned with the parent story's goals
+   - Can be completed in 1-2 days
+   - Have clear acceptance criteria
+   - Are assigned to specific components/departments
+3) For each subtask:
+   - Write a clear summary and description
+   - Specify the component/department
+   - Estimate story points (0.5-8)
+   - Consider skill level requirements
+   - Define acceptance criteria
+
+Remember:
+- Each subtask should be independently testable
+- Keep tasks small and focused
+- Include technical details needed for implementation
+- Consider dependencies between tasks
+- Ensure alignment with parent story goals
+"""
+
 COMPLEXITY_GUIDELINES = {
     "story_points": {
         "1-2": "Very simple changes with minimal risk",

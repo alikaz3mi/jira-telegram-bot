@@ -64,12 +64,92 @@ class AdvancedTaskCreation:
     ):
         self.jira_repo = jira_repo
         self.user_config = user_config
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash-preview-04-17",
-            temperature=0.3,
-            convert_system_message_to_human=True,
-            google_api_key=gemini_connection_settings.token,
-        )
+
+    async def create_tasks(
+        self,
+        description: str,
+        project_key: str,
+        epic_key: Optional[str] = None,
+        parent_story_key: Optional[str] = None,
+        task_type: str = "story",  # "story" or "subtask"
+    ) -> List[TaskData]:
+        """Create multiple stories with their component-specific subtasks."""
+        # Load project info from projects_info.json
+        with open(
+            f"{DEFAULT_PATH}/jira_telegram_bot/settings/projects_info.json",
+            "r",
+        ) as f:
+            projects_info = json.load(f)
+            project_info = projects_info.get(project_key)
+
+        if not project_info:
+            raise ValueError(f"No project info found for {project_key}")
+
+        # Initialize the graph state
+        state = {
+            "description": description,
+            "project_info": project_info,
+            "epic_key": epic_key,
+            "parent_story_key": parent_story_key,
+            "task_type": task_type,
+        }
+
+        # Run the task decomposition workflow
+        chain = self.create_task_decomposition_chain(project_info)
+        final_state = chain.invoke(state)
+        decomposition = final_state["decomposition"]
+
+        # Create all tasks in Jira
+        created_tasks = []
+
+        if task_type == "story":
+            for story in decomposition.stories:
+                # Create the main story
+                story_data = TaskData(
+                    project_key=project_key,
+                    summary=story.summary,
+                    description=story.description,
+                    components=[ct.component for ct in story.component_tasks],
+                    story_points=story.story_points,
+                    task_type="Story",
+                    priority=story.priority,
+                    epic_link=epic_key,
+                )
+                story_issue = await self.jira_repo.create_task(story_data)
+                created_tasks.append(story_issue)
+
+                # Create subtasks for each component
+                for comp_tasks in story.component_tasks:
+                    for subtask in comp_tasks.subtasks:
+                        subtask_data = TaskData(
+                            project_key=project_key,
+                            summary=subtask.summary,
+                            description=subtask.description,
+                            components=[comp_tasks.component],
+                            story_points=subtask.story_points,
+                            assignee=subtask.assignee,
+                            task_type="Sub-task",
+                            parent_issue_key=story_issue.key,
+                        )
+                        subtask_issue = await self.jira_repo.create_task(subtask_data)
+                        created_tasks.append(subtask_issue)
+        else:  # task_type == "subtask"
+            # Create subtasks directly under the parent story
+            for subtask in decomposition.subtasks:
+                subtask_data = TaskData(
+                    project_key=project_key,
+                    summary=subtask.summary,
+                    description=subtask.description,
+                    components=[subtask.component],
+                    story_points=subtask.story_points,
+                    assignee=subtask.assignee,
+                    task_type="Sub-task",
+                    parent_issue_key=parent_story_key,
+                )
+                subtask_issue = await self.jira_repo.create_task(subtask_data)
+                created_tasks.append(subtask_issue)
+
+        return created_tasks
 
     def create_task_decomposition_chain(self, project_info: Dict):
         parser = PydanticOutputParser(pydantic_object=ProjectDecomposition)
@@ -227,7 +307,7 @@ Remember:
             return state
 
         # Create the graph
-        workflow = StateGraph(name="task-decomposition")
+        workflow = StateGraph()
 
         # Add nodes
         workflow.add_node("process", process_task)
@@ -241,62 +321,3 @@ Remember:
         workflow.set_entry_point("process")
 
         return workflow.compile()
-
-    async def create_tasks(self, description: str, project_key: str) -> List[TaskData]:
-        """Create multiple stories with their component-specific subtasks."""
-        # Load project info from projects_info.json
-        with open(
-            f"{DEFAULT_PATH}/jira_telegram_bot/settings/projects_info.json",
-            "r",
-        ) as f:
-            projects_info = json.load(f)
-            project_info = projects_info.get(project_key)
-
-        if not project_info:
-            raise ValueError(f"No project info found for {project_key}")
-
-        # Initialize the graph state
-        state = {
-            "description": description,
-            "project_info": project_info,
-        }
-
-        # Run the task decomposition workflow
-        chain = self.create_task_decomposition_chain(project_info)
-        final_state = chain.invoke(state)
-        decomposition = final_state["decomposition"]
-
-        # Create all tasks in Jira
-        created_tasks = []
-
-        for story in decomposition.stories:
-            # 1. Create the main story
-            story_data = TaskData(
-                project_key=project_key,
-                summary=story.summary,
-                description=story.description,
-                components=[ct.component for ct in story.component_tasks],
-                story_points=story.story_points,
-                task_type="Story",
-                priority=story.priority,
-            )
-            story_issue = await self.jira_repo.create_task(story_data)
-            created_tasks.append(story_issue)
-
-            # 2. Create subtasks for each component
-            for comp_tasks in story.component_tasks:
-                for subtask in comp_tasks.subtasks:
-                    subtask_data = TaskData(
-                        project_key=project_key,
-                        summary=subtask.summary,
-                        description=subtask.description,
-                        components=[comp_tasks.component],
-                        story_points=subtask.story_points,
-                        assignee=subtask.assignee,
-                        task_type="Sub-task",
-                        parent_issue_key=story_issue.key,
-                    )
-                    subtask_issue = await self.jira_repo.create_task(subtask_data)
-                    created_tasks.append(subtask_issue)
-
-        return created_tasks

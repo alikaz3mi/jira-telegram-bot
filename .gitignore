@@ -6,6 +6,9 @@
 *.csv
 *.xlsx
 *.log
+*.ogg
+*.mp3
+*.oga
 cron.log
 extract.py
 
