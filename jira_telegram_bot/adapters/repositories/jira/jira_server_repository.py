@@ -187,8 +187,14 @@ class JiraRepository(TaskManagerRepositoryInterface):
         )
         return self.search_for_issues(query)
 
-    def get_stories_by_project(self, project_key: str) -> List[Issue]:
+    def get_stories_by_project(
+        self,
+        project_key: str,
+        epic_link: str = None,
+    ) -> List[Issue]:
         query = f'project = "{project_key}" AND issuetype = Story'
+        if epic_link:
+            query += f' AND "Epic Link" = {epic_link}'
         return self.search_for_issues(query)
 
     def build_issue_fields(self, task_data: TaskData) -> dict:
@@ -229,7 +235,8 @@ class JiraRepository(TaskManagerRepositoryInterface):
 
         if task_data.task_type == "Sub-task":
             issue_fields["parent"] = {"key": task_data.parent_issue_key}
-            del issue_fields[self.jira_sprint_id]
+            if issue_fields.get(self.jira_sprint_id):
+                del issue_fields[self.jira_sprint_id]
 
         return issue_fields
 

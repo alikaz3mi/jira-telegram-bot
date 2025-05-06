@@ -12,6 +12,8 @@ from jira_telegram_bot.settings.telegram_settings import (
     TelegramWebhookConnectionSettings,
 )
 
+# from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
+
 JIRA_SETTINGS = JiraConnectionSettings(_env=f"{DEFAULT_PATH}/.env")
 JIRA_BOARD_SETTINGS = JiraBoardSettings(_env=f"{DEFAULT_PATH}/.env")
 TELEGRAM_SETTINGS = TelegramConnectionSettings(_env=f"{DEFAULT_PATH}/.env")
@@ -22,3 +24,4 @@ TELEGRAM_WEBHOOK_SETTINGS = TelegramWebhookConnectionSettings(
 GITLAB_SETTINGS = GitlabSettings(_env=f"{DEFAULT_PATH}/.env")
 POSTGRES_SETTINGS = PostgresSettings(_env=f"{DEFAULT_PATH}/.env")
 GEMINI_SETTINGS = GeminiConnectionSetting(_env=f"{DEFAULT_PATH}/.env")
+# GOOGLE_SHEETS_SETTINGS = GoogleSheetsConnectionSettings(_env=f"{DEFAULT_PATH}/.env")

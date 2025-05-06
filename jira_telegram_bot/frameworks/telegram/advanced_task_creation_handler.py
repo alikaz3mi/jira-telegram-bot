@@ -53,17 +53,25 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         # Get projects from Jira
         projects = self.advanced_task_creation.jira_repo.get_projects()
 
-        # Create keyboard with project options
+        # Create keyboard with project options - 3 per row
         keyboard = []
+        current_row = []
+
         for project in projects:
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        project.name,
-                        callback_data=f"project|{project.key}",
-                    ),
-                ],
+            button = InlineKeyboardButton(
+                project.name,
+                callback_data=f"project|{project.key}",
             )
+            current_row.append(button)
+
+            # When we have 3 buttons or it's the last project, add the row
+            if len(current_row) == 3 or project == projects[-1]:
+                keyboard.append(current_row)
+                current_row = []
+
+        # If there are any remaining buttons (less than 3), add them
+        if current_row:
+            keyboard.append(current_row)
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -99,33 +107,43 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
         if project_key in projects_info:
             context.user_data["project_info"] = projects_info[project_key]
-            project_info = projects_info[project_key]
 
-            # Get department info for the message
-            departments = project_info["departments"]
-            dept_info = "\n".join(
-                [
-                    f"👥 *{dept}*: {info['description']}"
-                    for dept, info in departments.items()
-                ],
-            )
+            # Get epics for the project
+            epics = self.advanced_task_creation.jira_repo.get_epics(project_key)
 
-            await query.edit_message_text(
-                f"📋 *Selected Project:* {project_key}\n\n"
-                f"*Available Departments:*\n{dept_info}\n\n"
-                "Now, please describe the work needed. You can:\n"
-                "1️⃣ Type a detailed description\n"
-                "2️⃣ Send a voice message (Persian/English)\n"
-                "3️⃣ Forward a message with requirements\n\n"
-                "*Include information about:*\n"
-                "• Overall goals/features\n"
-                "• Technical requirements\n"
-                "• Component-specific needs\n"
-                "• Dependencies\n"
-                "• Priority levels",
-                parse_mode="Markdown",
-            )
-            return self.WAIT_FOR_DESCRIPTION
+            # Create keyboard with epic options - 3 per row
+            keyboard = []
+            current_row = []
+
+            if epics:
+                for epic in epics:
+                    button = InlineKeyboardButton(
+                        f"{epic.fields.summary}",
+                        callback_data=f"epic|{epic.key}",
+                    )
+                    current_row.append(button)
+
+                    # When we have 3 buttons or it's the last epic, add the row
+                    if len(current_row) == 3 or epic == epics[-1]:
+                        keyboard.append(current_row)
+                        current_row = []
+
+                # If there are any remaining buttons (less than 3), add them
+                if current_row:
+                    keyboard.append(current_row)
+
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(
+                    "Please select an epic from the list below:",
+                    reply_markup=reply_markup,
+                )
+                return self.SELECT_EPIC
+            else:
+                await query.edit_message_text(
+                    "❌ No epics found in this project. Please create an epic first.",
+                )
+                return ConversationHandler.END
+
         else:
             await query.edit_message_text(
                 f"❌ Sorry, couldn't find project info for {project_key}. "
@@ -354,6 +372,12 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         await query.edit_message_text("🔄 Creating tasks... This might take a minute.")
 
         try:
+            user_story = await self.advanced_task_creation.create_structured_user_story(
+                description=context.user_data["description"],
+                project_key=context.user_data["project_key"],
+            )
+            context.user_data["user_story"] = user_story
+
             created_tasks = await self.advanced_task_creation.create_tasks(
                 description=context.user_data["description"],
                 project_key=context.user_data["project_key"],
@@ -391,6 +415,8 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
             # Format response message
             response = "✅ *Successfully created the following structure:*\n\n"
+            response += f"📝 *User Story: {user_story.summary}*\n"
+            response += f"🏢 Project: {user_story.description}\n"
             for story_key, story_info in stories.items():
                 response += f"📎 *{story_key}: {story_info['summary']}*\n"
                 response += f"⭐️ Priority: {story_info['priority']}\n"
@@ -488,6 +514,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
         selection = query.data.split("|")[1]
         project_key = context.user_data["project_key"]
+        epic_key = context.user_data.get("epic_key")
 
         if selection == "story":
             context.user_data["task_type"] = "story"
@@ -512,9 +539,10 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             return self.WAIT_FOR_DESCRIPTION
 
         elif selection == "subtask":
-            # Get stories from the project
+            # Get stories from the project related to the epic
             stories = self.advanced_task_creation.jira_repo.get_stories_by_project(
                 project_key,
+                epic_key,
             )
 
             if not stories:
@@ -595,11 +623,19 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 ],
                 self.SELECT_EPIC: [
                     CallbackQueryHandler(self.select_epic, pattern="^epic\\|"),
+                    CallbackQueryHandler(
+                        self.handle_task_type_selection,
+                        pattern="^task_type\\|",
+                    ),
                 ],
                 self.SELECT_TASK_TYPE: [
                     CallbackQueryHandler(
                         self.handle_task_type_selection,
                         pattern="^task_type\\|",
+                    ),
+                    CallbackQueryHandler(
+                        self.select_epic,
+                        pattern="^select_epic$",
                     ),
                 ],
                 self.SELECT_STORY: [
