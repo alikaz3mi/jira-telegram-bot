@@ -195,7 +195,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
     ) -> List[Issue]:
         query = f'project = "{project_key}" AND issuetype = Story'
         if status:
-            query += f' AND status in ({status})'
+            query += f" AND status in ({status})"
         if epic_link:
             query += f' AND "Epic Link" = {epic_link}'
         return self.search_for_issues(query)
@@ -242,7 +242,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
                 del issue_fields[self.jira_sprint_id]
 
         return issue_fields
-    
+
     def build_task_data_from_issue(self, issue: Issue) -> TaskData:
         return TaskData(
             project_key=issue.fields.project.key,
@@ -400,7 +400,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
         Assign an issue to a user.
         """
         self.jira.assign_issue(issue_key, assignee)
-    
+
     def update_issue(
         self,
         issue_key: str,
@@ -413,7 +413,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
         issue = self.jira.issue(issue_key)
         issue.update(fields=fields)
         LOGGER.info(f"Updated issue {issue_key} with fields: {fields}")
-    
+
     def update_issue_from_fields(
         self,
         issue_key: str,
@@ -424,8 +424,9 @@ class JiraRepository(TaskManagerRepositoryInterface):
         """
         issue = self.jira.issue(issue_key)
         issue.update(fields=fields)
-        LOGGER.info(f"Updated issue {issue_key} with fields: {fields}"
-    )
+        LOGGER.info(
+            f"Updated issue {issue_key} with fields: {fields}",
+        )
 
     def get_issue(self, issue_key: str) -> Optional[Issue]:
         """

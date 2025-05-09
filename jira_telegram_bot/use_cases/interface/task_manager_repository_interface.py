@@ -79,4 +79,3 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     def get_issue(self, task_id: str) -> Optional[Issue]:
         pass
-

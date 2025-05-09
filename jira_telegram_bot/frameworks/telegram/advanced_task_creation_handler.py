@@ -639,38 +639,40 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         """
         query = update.callback_query
         await query.answer()
-        
+
         project_key = context.user_data["project_key"]
         epics = self.advanced_task_creation.jira_repo.get_epics(project_key)
-        
+
         # Create keyboard with epic options - 2 per row
         keyboard = []
         current_row = []
-        
+
         for epic in epics:
             button = InlineKeyboardButton(
                 f"{epic.key}: {epic.fields.summary[:30]}...",
                 callback_data=f"epic_select|{epic.key}",
             )
             current_row.append(button)
-            
+
             # When we have 2 buttons or it's the last epic, add the row
             if len(current_row) == 2 or epic == epics[-1]:
                 keyboard.append(current_row)
                 current_row = []
-        
+
         # Add a "None" option
-        keyboard.append([
-            InlineKeyboardButton("No Epic", callback_data="epic_select|none"),
-        ])
-        
+        keyboard.append(
+            [
+                InlineKeyboardButton("No Epic", callback_data="epic_select|none"),
+            ]
+        )
+
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         await query.edit_message_text(
             "Select an epic to attach to your new story:",
             reply_markup=reply_markup,
         )
-        
+
         return self.SELECT_EPIC
 
     def get_handler(self):
