@@ -191,8 +191,11 @@ class JiraRepository(TaskManagerRepositoryInterface):
         self,
         project_key: str,
         epic_link: str = None,
+        status: str = None,
     ) -> List[Issue]:
         query = f'project = "{project_key}" AND issuetype = Story'
+        if status:
+            query += f' AND status in ({status})'
         if epic_link:
             query += f' AND "Epic Link" = {epic_link}'
         return self.search_for_issues(query)
@@ -239,6 +242,30 @@ class JiraRepository(TaskManagerRepositoryInterface):
                 del issue_fields[self.jira_sprint_id]
 
         return issue_fields
+    
+    def build_task_data_from_issue(self, issue: Issue) -> TaskData:
+        return TaskData(
+            project_key=issue.fields.project.key,
+            summary=issue.fields.summary,
+            description=issue.fields.description,
+            component=(
+                issue.fields.components[0].name if issue.fields.components else None
+            ),
+            components=[
+                component.name
+                for component in issue.fields.components
+                if issue.fields.components
+            ],
+            task_type=getattr(issue.fields.issuetype, "name", None),
+            story_points=getattr(issue.fields, self.jira_story_point_id, None),
+            sprint_name=None,
+            epic_link=getattr(issue.fields, self.jira_epic_link_id, None),
+            release=(
+                issue.fields.fixVersions[0].name if issue.fields.fixVersions else None
+            ),
+            assignee=getattr(issue.fields.assignee, "displayName", None),
+            priority=getattr(issue.fields.priority, "name", None),
+        )
 
     def handle_attachments(self, issue: Issue, attachments: Dict[str, List]):
         for _, files in attachments.items():
@@ -373,3 +400,40 @@ class JiraRepository(TaskManagerRepositoryInterface):
         Assign an issue to a user.
         """
         self.jira.assign_issue(issue_key, assignee)
+    
+    def update_issue(
+        self,
+        issue_key: str,
+        task_data: TaskData,
+    ) -> None:
+        """
+        Update an existing issue with new fields.
+        """
+        fields = self.build_issue_fields(task_data)
+        issue = self.jira.issue(issue_key)
+        issue.update(fields=fields)
+        LOGGER.info(f"Updated issue {issue_key} with fields: {fields}")
+    
+    def update_issue_from_fields(
+        self,
+        issue_key: str,
+        fields: dict,
+    ) -> None:
+        """
+        Update an existing issue with new fields.
+        """
+        issue = self.jira.issue(issue_key)
+        issue.update(fields=fields)
+        LOGGER.info(f"Updated issue {issue_key} with fields: {fields}"
+    )
+
+    def get_issue(self, issue_key: str) -> Optional[Issue]:
+        """
+        Get a Jira issue by its key.
+        """
+        try:
+            issue = self.jira.issue(issue_key)
+            return issue
+        except Exception as e:
+            LOGGER.error(f"Error fetching issue {issue_key}: {e}")
+            return None

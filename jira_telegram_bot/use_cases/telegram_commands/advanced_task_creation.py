@@ -94,7 +94,7 @@ class AdvancedTaskCreation:
                     priority=story["priority"],
                     epic_link=epic_key,  # Link to epic if provided
                 )
-                story_issue = await self.jira_repo.create_task(story_data)
+                story_issue = self.jira_repo.create_task(story_data)
                 created_tasks.append(story_issue)
 
                 # Create subtasks for each component
@@ -110,7 +110,10 @@ class AdvancedTaskCreation:
                             task_type="Sub-task",
                             parent_issue_key=story_issue.key,
                         )
-                        subtask_issue = await self.jira_repo.create_task(subtask_data)
+                        subtask_issue = self.jira_repo.create_task(subtask_data)
+                        LOGGER.info(
+                            f"Subtask created: {subtask_issue.key} under parent story {story_issue.key}",
+                        )
                         created_tasks.append(subtask_issue)
 
         else:  # task_type == "subtask"
@@ -130,6 +133,9 @@ class AdvancedTaskCreation:
                     parent_issue_key=parent_story_key,
                 )
                 subtask_issue = self.jira_repo.create_task(subtask_data)
+                LOGGER.info(
+                    f"Subtask created: {subtask_issue.key} under parent story {parent_story_key}",
+                )
                 created_tasks.append(subtask_issue)
 
         return created_tasks
@@ -173,7 +179,7 @@ class AdvancedTaskCreation:
         parent_story_context = {}
 
         if epic_key:
-            epic_issue = await self.jira_repo.get_task(epic_key)
+            epic_issue = self.jira_repo.get_issue(epic_key)
             if epic_issue:
                 epic_context = {
                     "key": epic_key,
@@ -182,7 +188,7 @@ class AdvancedTaskCreation:
                 }
 
         if parent_story_key:
-            parent_issue = await self.jira_repo.get_task(parent_story_key)
+            parent_issue = self.jira_repo.get_issue(parent_story_key)
             if parent_issue:
                 parent_story_context = {
                     "key": parent_story_key,
@@ -201,7 +207,7 @@ class AdvancedTaskCreation:
         # Create or update the task
         if parent_story_key:
             # Update existing story with enhanced content
-            parent_issue = await self.jira_repo.get_task(parent_story_key)
+            parent_issue = self.jira_repo.get_issue(parent_story_key)
 
             # Generate updated description that preserves original content
             original_description = parent_issue.fields.description or ""
@@ -210,19 +216,29 @@ class AdvancedTaskCreation:
                 user_story_content["description"],
             )
 
+            issue_fields = {
+                # "summary": user_story_content["summary"],
+                "description": updated_description,
+            }
             story_data = TaskData(
                 project_key=project_key,
-                summary=parent_issue.fields.summary,  # Keep original summary
+                summary=user_story_content["summary"],
                 description=updated_description,
-                epic_link=epic_key,  # Update epic link if provided
+                components=[user_story_content["component"]],
+                story_points=user_story_content.get("story_points", 5),
+                task_type="Story",
+                priority=user_story_content.get("priority", "Medium"),
             )
 
             # Update the existing story
-            updated_issue = await self.jira_repo.update_task(
+            self.jira_repo.update_issue_from_fields(
                 parent_story_key,
-                story_data,
+                issue_fields,
             )
-            return updated_issue
+            LOGGER.info(
+                f"Updated existing story: {parent_story_key} with new content",
+            )
+            return story_data
         else:
             # Create new story
             components = []
@@ -241,8 +257,11 @@ class AdvancedTaskCreation:
             )
 
             # Create the new story
-            new_issue = await self.jira_repo.create_task(story_data)
-            return new_issue
+            new_issue = self.jira_repo.create_task(story_data)
+            LOGGER.info(
+                f"Created new story: {new_issue.key} with structured content",
+            )
+            return story_data
 
     async def _generate_structured_user_story(
         self,
@@ -339,6 +358,8 @@ Tone & Style:
 - Clear, testable, and free of jargon
 - Bullet points where possible
 - Avoid passive voice
+- Generate the result in google doc format
+- Use markdown for formatting
 
 {format_instructions}
 """
@@ -594,6 +615,7 @@ Your Task:
 1) Break this down into coherent user stories that deliver complete features or capabilities
 2) For each story:
    - Write a clear summary and description
+    - Generate description in markdown format
    - Identify which components/departments need to be involved
    - For each component involved, create specific subtasks
    - Each subtask should be achievable in 1-2 days
@@ -628,6 +650,7 @@ Your Task:
 1) Break this down into specific subtasks that can each be completed in 1-2 days
 2) For each subtask:
    - Create a clear summary and description with acceptance criteria
+   - Generate description in markdown format
    - Assign to appropriate component/department
    - Estimate story points (0.5-8)
    - Consider which team member is best suited (optional)
@@ -808,21 +831,22 @@ if __name__ == "__main__":
     and place it in his web clock."""
 
     # Example of using the new create_structured_user_story method
-    asyncio.run(
+    result = asyncio.run(
         task_creator.create_structured_user_story(
             description=description,
             project_key="PARSCHAT",
             epic_key="PARSCHAT-15",
         ),
     )
+    print(result.description)
 
-    # Original example
-    asyncio.run(
-        task_creator.create_tasks(
-            description=description,
-            project_key="PARSCHAT",
-            epic_key="PARSCHAT-15",
-            task_type="subtask",
-            parent_story_key="PARSCHAT-2296",  # Example parent key
-        ),
-    )
+    # # Original example
+    # asyncio.run(
+    #     task_creator.create_tasks(
+    #         description=description,
+    #         project_key="PARSCHAT",
+    #         epic_key="PARSCHAT-15",
+    #         task_type="subtask",
+    #         parent_story_key="PARSCHAT-2296",  # Example parent key
+    #     ),
+    # )

@@ -375,12 +375,17 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             user_story = await self.advanced_task_creation.create_structured_user_story(
                 description=context.user_data["description"],
                 project_key=context.user_data["project_key"],
+                epic_key=context.user_data.get("epic_key"),
+                parent_story_key=context.user_data.get("parent_story_key"),
             )
             context.user_data["user_story"] = user_story
 
             created_tasks = await self.advanced_task_creation.create_tasks(
                 description=context.user_data["description"],
                 project_key=context.user_data["project_key"],
+                task_type=context.user_data["task_type"],
+                parent_story_key=context.user_data.get("parent_story_key"),
+                epic_key=context.user_data.get("epic_key"),
             )
 
             # Group tasks by story for better visualization
@@ -434,9 +439,9 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             if len(response) > 4000:
                 parts = [response[i : i + 4000] for i in range(0, len(response), 4000)]
                 for part in parts:
-                    await query.message.reply_text(part, parse_mode="Markdown")
+                    await query.message.reply_text(part, parse_mode="HTML")
             else:
-                await query.message.reply_text(response, parse_mode="Markdown")
+                await query.message.reply_text(response, parse_mode="HTML")
 
         except Exception as e:
             LOGGER.error(f"Error creating tasks: {str(e)}")
@@ -456,11 +461,8 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         query = update.callback_query
         await query.answer()
 
-        project_key = query.data.split("|")[1]
-        context.user_data["project_key"] = project_key
-
-        # Get epics for the project
-        epics = self.advanced_task_creation.jira_repo.get_epics(project_key)
+        epic_key = query.data.split("|")[1]
+        context.user_data["epic_key"] = epic_key
 
         # Create keyboard with epic options
         keyboard = []
@@ -480,16 +482,6 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 ),
             ],
         )
-
-        if epics:
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        "Select Epic for New Story",
-                        callback_data="select_epic",
-                    ),
-                ],
-            )
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -543,6 +535,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             stories = self.advanced_task_creation.jira_repo.get_stories_by_project(
                 project_key,
                 epic_key,
+                status='"In Progress", "To Do", "Backlog", "Selected for Development"',
             )
 
             if not stories:
@@ -557,13 +550,13 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
             for story in stories:
                 button = InlineKeyboardButton(
-                    f"{story.key}: {story.fields.summary[:40]}...",
+                    f"{story.fields.summary}",
                     callback_data=f"story|{story.key}",
                 )
                 current_row.append(button)
 
                 # When we have 3 buttons or it's the last story, add the row
-                if len(current_row) == 3 or story == stories[-1]:
+                if len(current_row) == 2 or story == stories[-1]:
                     keyboard.append(current_row)
                     current_row = []
 
@@ -613,6 +606,73 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         )
         return self.WAIT_FOR_DESCRIPTION
 
+    async def process_text_description(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Process text description input from user.
+
+        Args:
+            update: The update containing the user's message.
+            context: The callback context.
+
+        Returns:
+            The next conversation state.
+        """
+        text = update.message.text
+        return await self.process_description(update, context, text)
+
+    async def handle_epic_selection(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Handle epic selection for attaching to a story.
+
+        Args:
+            update: The update containing the callback query.
+            context: The callback context.
+
+        Returns:
+            The next conversation state.
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        project_key = context.user_data["project_key"]
+        epics = self.advanced_task_creation.jira_repo.get_epics(project_key)
+        
+        # Create keyboard with epic options - 2 per row
+        keyboard = []
+        current_row = []
+        
+        for epic in epics:
+            button = InlineKeyboardButton(
+                f"{epic.key}: {epic.fields.summary[:30]}...",
+                callback_data=f"epic_select|{epic.key}",
+            )
+            current_row.append(button)
+            
+            # When we have 2 buttons or it's the last epic, add the row
+            if len(current_row) == 2 or epic == epics[-1]:
+                keyboard.append(current_row)
+                current_row = []
+        
+        # Add a "None" option
+        keyboard.append([
+            InlineKeyboardButton("No Epic", callback_data="epic_select|none"),
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "Select an epic to attach to your new story:",
+            reply_markup=reply_markup,
+        )
+        
+        return self.SELECT_EPIC
+
     def get_handler(self):
         """Return the ConversationHandler for this flow."""
         return ConversationHandler(
@@ -634,7 +694,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                         pattern="^task_type\\|",
                     ),
                     CallbackQueryHandler(
-                        self.select_epic,
+                        self.handle_epic_selection,
                         pattern="^select_epic$",
                     ),
                 ],
@@ -647,7 +707,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 self.WAIT_FOR_DESCRIPTION: [
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
-                        self.process_description,
+                        self.process_text_description,
                     ),
                     MessageHandler(filters.VOICE, self.process_voice_message),
                 ],

@@ -71,3 +71,12 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     def create_task(self, task_data: TaskData) -> Issue:
         pass
+
+    @abstractmethod
+    def update_issue(self, task_data: TaskData) -> Issue:
+        pass
+
+    @abstractmethod
+    def get_issue(self, task_id: str) -> Optional[Issue]:
+        pass
+
