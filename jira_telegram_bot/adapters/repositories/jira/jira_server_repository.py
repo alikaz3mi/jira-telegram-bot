@@ -192,12 +192,15 @@ class JiraRepository(TaskManagerRepositoryInterface):
         project_key: str,
         epic_link: str = None,
         status: str = None,
+        filters: str = None,
     ) -> List[Issue]:
         query = f'project = "{project_key}" AND issuetype = Story'
         if status:
             query += f" AND status in ({status})"
         if epic_link:
             query += f' AND "Epic Link" = {epic_link}'
+        if filters:
+            query += f" AND {filters}"
         return self.search_for_issues(query)
 
     def build_issue_fields(self, task_data: TaskData) -> dict:

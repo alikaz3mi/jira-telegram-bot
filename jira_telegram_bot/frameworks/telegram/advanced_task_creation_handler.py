@@ -536,6 +536,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 project_key,
                 epic_key,
                 status='"In Progress", "To Do", "Backlog", "Selected for Development"',
+                filters='description !~ "acceptance criteria" OR description  is EMPTY'
             )
 
             if not stories:
@@ -569,6 +570,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 "Select the story to add subtasks to:",
                 reply_markup=reply_markup,
             )
+            
             return self.SELECT_STORY
 
         return ConversationHandler.END
@@ -585,6 +587,14 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         story_key = query.data.split("|")[1]
         context.user_data["parent_story_key"] = story_key
         context.user_data["task_type"] = "subtask"
+        # get story summary with story key from query.message.reply_markup.inline_keyboard
+        story_summary = [
+            button.text
+            for row in query.message.reply_markup.inline_keyboard
+            for button in row
+            if button.callback_data == f"story|{story_key}"
+        ][0]
+        
 
         # Show available departments and proceed to description
         project_info = context.user_data["project_info"]
@@ -596,7 +606,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         )
 
         await query.edit_message_text(
-            f"📋 *Adding Subtasks to {story_key}*\n\n"
+            f"📋 *Adding Subtasks to {story_key}: {story_summary}*\n\n"
             f"*Available Departments:*\n{dept_info}\n\n"
             "Please describe the subtasks needed. You can:\n"
             "1️⃣ Type a detailed description\n"
@@ -649,7 +659,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
         for epic in epics:
             button = InlineKeyboardButton(
-                f"{epic.key}: {epic.fields.summary[:30]}...",
+                f"{epic.key}: {epic.fields.summary}...",
                 callback_data=f"epic_select|{epic.key}",
             )
             current_row.append(button)

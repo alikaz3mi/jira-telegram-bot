@@ -358,6 +358,7 @@ Tone & Style:
 - Avoid passive voice
 - Generate the result in google doc format
 - Use markdown for formatting
+- Generate the story in fluent Farsi. 
 
 {format_instructions}
 """
