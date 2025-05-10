@@ -10,7 +10,7 @@
 *.mp3
 *.oga
 cron.log
-extract.py
+extract*.py
 
 __pycache__
 *//__pycache__

@@ -12,16 +12,14 @@ from jira_telegram_bot.use_cases.interface.speech_processor_interface import (
     SpeechProcessorInterface,
 )
 
-# from pydub import AudioSegment
-
 
 class SpeechProcessor(SpeechProcessorInterface):
-    """Adapter for speech processing using OpenAI's GPT-4 model."""
+    """Adapter for speech processing using OpenAI's GPT-4o model."""
 
     def __init__(self):
         self.api_key = OPENAI_SETTINGS.token
         self.client = AsyncOpenAI(api_key=self.api_key)
-        self.model = "whisper-1"  # Updated to use Whisper model
+        self.model = "gpt-4o-transcribe" 
 
     async def convert_audio_format(
         self,
@@ -29,24 +27,30 @@ class SpeechProcessor(SpeechProcessorInterface):
         target_format: str = "mp3",
     ) -> str:
         pass
-        # """Convert audio to a format suitable for OpenAI's API."""
-        # try:
-        #     output_path = f"{input_path}.{target_format}"
-        #     audio = AudioSegment.from_file(input_path)
-        #     audio.export(output_path, format=target_format)
-        #     return output_path
-        # except Exception as e:
-        #     logger.error(f"Error converting audio format: {e}")
-        #     raise
 
     async def transcribe_audio(
         self,
         audio_path: str,
         language: Optional[str] = None,
     ) -> str:
-        """
-        Transcribe audio using OpenAI's Whisper model.
-        Automatically handles Persian and English.
+        """Transcribe audio to text using OpenAI's API.
+
+        Parameters
+        ----------
+        audio_path : str
+            Path to the audio file for transcription
+        language : Optional[str], optional
+            Language code to optimize transcription, by default None
+
+        Returns
+        -------
+        str
+            Transcribed text from the audio
+
+        Raises
+        ------
+        RuntimeError
+            If the speech recognition service encounters an error
         """
         try:
             with open(audio_path, "rb") as audio_file:
@@ -58,42 +62,44 @@ class SpeechProcessor(SpeechProcessorInterface):
                     prompt="This is a tech conversation potentially containing programming terms, API names, and technical concepts.",
                 )
                 return response
-
         except Exception as e:
             logger.error(f"Error transcribing audio with Whisper: {e}")
             raise RuntimeError(f"Error with speech recognition service: {e}")
 
     async def process_voice_message(self, voice_file_path: str) -> TranscriptionResult:
+        """Process a voice message file and return structured transcription results.
+
+        Parameters
+        ----------
+        voice_file_path : str
+            Path to the voice message file
+
+        Returns
+        -------
+        TranscriptionResult
+            Entity containing transcription text, language detection results,
+            translation if needed, and confidence score
+
+        Raises
+        ------
+        Exception
+            If any processing error occurs during transcription
         """
-        Process a voice message file and return a TranscriptionResult entity.
-        """
+        mp3_path = voice_file_path
         try:
-            # Convert to MP3 for OpenAI API
-            mp3_path = voice_file_path  # await self.convert_audio_format(voice_file_path, "mp3")
-
-            # First try without language specification
             text = await self.transcribe_audio(mp3_path)
-
-            # Check if it's Persian
             is_persian = self.is_persian(text)
-            confidence = 0.95  # Default high confidence for GPT-4
+            confidence = 0.95
 
-            if is_persian:
-                # Translate to English if Persian
-                translation = await self.translate_to_english(text)
-            else:
-                translation = None
+            translation = await self.translate_to_english(text) if is_persian else None
 
-            # Cleanup temporary files
             os.remove(mp3_path)
-
             return TranscriptionResult(
                 text=text,
                 is_persian=is_persian,
                 translation=translation,
                 confidence=confidence,
             )
-
         except Exception as e:
             logger.error(f"Error processing voice message: {e}")
             if os.path.exists(mp3_path):
@@ -101,16 +107,28 @@ class SpeechProcessor(SpeechProcessorInterface):
             raise
 
     async def translate_to_english(self, text: str) -> str:
-        """
-        Translate Persian text to English for processing.
-        Uses GPT-4 for high-quality technical translation.
+        """Translate Persian text to English using GPT-4o.
+
+        Parameters
+        ----------
+        text : str
+            Persian text to translate
+
+        Returns
+        -------
+        str
+            Translated English text, or the original if translation failed
+
+        Notes
+        -----
+        Preserves technical terms, API names, and programming concepts
         """
         if not self.is_persian(text):
             return text
 
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -128,13 +146,21 @@ class SpeechProcessor(SpeechProcessorInterface):
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"Error translating text: {e}")
-            return text  # Return original text if translation fails
+            return text
 
     @staticmethod
     def is_persian(text: str) -> bool:
-        """
-        Check if the text contains Persian characters.
-        Returns True if more than 30% of characters are Persian.
+        """Determine if text is primarily Persian.
+
+        Parameters
+        ----------
+        text : str
+            Text to analyze for Persian characters
+
+        Returns
+        -------
+        bool
+            True if more than 30% of characters are Persian, False otherwise
         """
         persian_chars = len([c for c in text if "\u0600" <= c <= "\u06FF"])
         return persian_chars > len(text) * 0.3

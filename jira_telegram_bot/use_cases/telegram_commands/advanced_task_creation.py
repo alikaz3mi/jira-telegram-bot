@@ -78,7 +78,6 @@ class AdvancedTaskCreation:
             task_type=task_type,
         )
 
-        # Create all tasks in Jira
         created_tasks = []
 
         if task_type == "story":
@@ -92,7 +91,7 @@ class AdvancedTaskCreation:
                     story_points=story["story_points"],
                     task_type="Story",
                     priority=story["priority"],
-                    epic_link=epic_key,  # Link to epic if provided
+                    epic_link=epic_key, 
                 )
                 story_issue = self.jira_repo.create_task(story_data)
                 created_tasks.append(story_issue)
@@ -117,7 +116,6 @@ class AdvancedTaskCreation:
                         created_tasks.append(subtask_issue)
 
         else:  # task_type == "subtask"
-            # Create subtasks directly under the parent story
             if not parent_story_key:
                 raise ValueError("Parent story key is required for creating subtasks")
 
