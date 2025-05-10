@@ -9,16 +9,15 @@ from typing import Optional
 from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
 from langchain_core.prompts import PromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import GEMINI_SETTINGS as gemini_connection_settings
-from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+from jira_telegram_bot.use_cases.interfaces.llm_interface import LLMInterface
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
-from jira_telegram_bot.use_cases.interface.user_config_interface import (
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
 
@@ -30,15 +29,19 @@ class AdvancedTaskCreation:
         self,
         jira_repo: TaskManagerRepositoryInterface,
         user_config: UserConfigInterface,
+        llm_service: LLMInterface,
     ):
+        """Initialize the advanced task creation use case.
+        
+        Args:
+            jira_repo: Repository for interacting with the task management system
+            user_config: Repository for accessing user configuration
+            llm_service: Service for language model interactions
+        """
         self.jira_repo = jira_repo
         self.user_config = user_config
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            temperature=0.2,
-            google_api_key=gemini_connection_settings.token,
-            convert_system_message_to_human=True,
-        )
+        self.llm = llm_service.get_llm()
+        self.llm_service = llm_service
 
     async def create_tasks(
         self,
@@ -809,18 +812,29 @@ Your Task:
 
 if __name__ == "__main__":
     import asyncio
-    from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
-        JiraRepository,
-    )
-    from jira_telegram_bot.adapters.user_config import UserConfig
+    import importlib.util
+    import sys
     from jira_telegram_bot.settings import JIRA_SETTINGS
-
-    jira_repo = JiraRepository(
-        settings=JIRA_SETTINGS,
-    )
+    
+    # Dynamically import adapters only in __main__ section to avoid dependency violations
+    # This is an example of the Dependency Inversion Principle in action
+    def import_class(module_path, class_name):
+        spec = importlib.util.find_spec(module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return getattr(module, class_name)
+    
+    JiraRepository = import_class("jira_telegram_bot.adapters.repositories.jira.jira_server_repository", "JiraRepository")
+    UserConfig = import_class("jira_telegram_bot.adapters.user_config", "UserConfig")
+    GeminiGateway = import_class("jira_telegram_bot.adapters.ai_models.gemini_gateway", "GeminiGateway")
+    
+    jira_repo = JiraRepository(settings=JIRA_SETTINGS)
+    user_config = UserConfig()
+    llm_service = GeminiGateway()
     task_creator = AdvancedTaskCreation(
         jira_repo=jira_repo,
-        user_config=UserConfig(),
+        user_config=user_config,
+        llm_service=llm_service,
     )
     description = """The task is to connect to the widget through a JavaScript snippet.
     This story point belongs to the front-end department.

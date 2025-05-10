@@ -8,8 +8,8 @@ from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.ext import ConversationHandler
 
-from jira_telegram_bot.adapters.services.telegram.authentication import check_user_allowed
-from jira_telegram_bot.use_cases.interface.user_config_interface import (
+from jira_telegram_bot.use_cases.interfaces.authentication_interface import AuthenticationInterface
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
 
@@ -29,18 +29,29 @@ class UserSettingsConversation:
         self,
         user_config_repo: UserConfigInterface,
         admin_usernames: List[str],
+        authentication_service: AuthenticationInterface = None,
     ):
         """
-        :param user_config_repo: your user config repository to load/save user configs
-        :param admin_usernames: list of telegram usernames with admin privileges
+        Initialize the UserSettingsConversation.
+        
+        Args:
+            user_config_repo: User config repository to load/save user configs
+            admin_usernames: List of telegram usernames with admin privileges
+            authentication_service: Service to check user authentication
         """
         self.user_config_repo = user_config_repo
         self.admin_usernames = set(admin_usernames)
+        self.authentication_service = authentication_service
 
     def build_main_menu(self, is_admin: bool) -> InlineKeyboardMarkup:
         """
-        If user is admin => show 3 buttons
-        If not => show only 'modify my settings'
+        Build main menu keyboard based on user privileges.
+        
+        Args:
+            is_admin: Whether the user has admin privileges
+            
+        Returns:
+            Inline keyboard markup with appropriate buttons
         """
         keyboard = []
         row = [
@@ -65,12 +76,21 @@ class UserSettingsConversation:
 
     async def start(self, update: Update, context: CallbackContext) -> int:
         """
-        /setting entry point
+        Entry point for settings command.
+        
+        Args:
+            update: Telegram update object
+            context: Callback context
+            
+        Returns:
+            Next conversation state
         """
-        if not await check_user_allowed(update):
-            await update.message.reply_text("You are not allowed to use settings.")
-            return ConversationHandler.END
-
+        # Use authentication service if provided, otherwise allow access
+        if self.authentication_service:
+            if not await self.authentication_service.is_user_allowed(update):
+                await update.message.reply_text("You are not allowed to use settings.")
+                return ConversationHandler.END
+        
         context.user_data.clear()
 
         is_admin = update.message.from_user.username in self.admin_usernames

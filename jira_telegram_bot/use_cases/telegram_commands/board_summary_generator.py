@@ -12,9 +12,9 @@ from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.adapters.services.telegram.authentication import check_user_allowed
+from jira_telegram_bot.use_cases.interfaces.authentication_interface import AuthenticationInterface
 from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import TaskProcessor
-from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
 
@@ -46,9 +46,11 @@ class BoardSummaryGenerator:
         self,
         jira_repository: TaskManagerRepositoryInterface,
         summary_generator: TaskProcessor,
+        authentication_service: AuthenticationInterface,
     ):
         self.jira_repository = jira_repository
         self.summary_generator = summary_generator
+        self.authentication_service = authentication_service
 
     def build_keyboard(
         self,
@@ -74,7 +76,7 @@ class BoardSummaryGenerator:
         return InlineKeyboardMarkup(keyboard)
 
     async def start(self, update: Update, context: CallbackContext) -> int:
-        if not await check_user_allowed(update):
+        if not await self.authentication_service.is_user_allowed(update):
             return ConversationHandler.END
 
         context.user_data.clear()

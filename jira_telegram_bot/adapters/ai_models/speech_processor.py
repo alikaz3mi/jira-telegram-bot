@@ -3,16 +3,15 @@ from __future__ import annotations
 import os
 from typing import Optional
 
+import openai
 from loguru import logger
-from openai import AsyncOpenAI
+from pydub import AudioSegment
 
 from jira_telegram_bot.entities.speech import TranscriptionResult
 from jira_telegram_bot.settings import OPENAI_SETTINGS
-from jira_telegram_bot.use_cases.interface.speech_processor_interface import (
+from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
 )
-
-# from pydub import AudioSegment
 
 
 class SpeechProcessor(SpeechProcessorInterface):

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from telegram.ext import CommandHandler
-from telegram.ext import ConversationHandler
-from telegram.ext import filters
-from telegram.ext import MessageHandler
 
-from jira_telegram_bot.use_cases.interface.task_handler_interface import (
+from telegram.ext import (
+    CommandHandler, ConversationHandler, filters, MessageHandler
+)
+
+from jira_telegram_bot.use_cases.interfaces.task_handler_interface import (
     TaskHandlerInterface,
 )
 from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus

@@ -1,18 +1,22 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import Depends
-from fastapi import Request
+import json
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+
+from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
+    TaskManagerRepositoryInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.telegram_gateway_interface import (
+    TelegramGatewayInterface,
+)
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
-from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
-    TaskManagerRepositoryInterface,
-)
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import (
-    TelegramGatewayInterface,
-)
 from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 from jira_telegram_bot.utils.data_store import get_issue_key_from_channel_post
 from jira_telegram_bot.utils.data_store import save_comment

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-from typing import Dict
+from typing import Any, Dict
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import (
+from jira_telegram_bot.use_cases.interfaces.telegram_gateway_interface import (
     TelegramGatewayInterface,
 )
 from jira_telegram_bot.utils.data_store import get_mapping_by_issue_key

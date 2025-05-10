@@ -16,13 +16,13 @@ from telegram.ext import filters
 from telegram.ext import MessageHandler
 
 from jira_telegram_bot.adapters.ai_models.openai_model import OpenAIGateway
-from jira_telegram_bot.use_cases.interface.task_handler_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_handler_interface import (
     TaskHandlerInterface,
 )
-from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
-from jira_telegram_bot.use_cases.interface.user_config_interface import (
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
 

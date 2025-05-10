@@ -17,7 +17,7 @@ from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.entities.field_config import FieldConfig
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.use_cases.create_easy_task import JiraEasyTaskCreation
-from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
 from jira_telegram_bot import DEFAULT_PATH

@@ -10,6 +10,7 @@ from telegram.warnings import PTBUserWarning
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
 from jira_telegram_bot.adapters.ai_models.speech_processor import SpeechProcessor
+from jira_telegram_bot.adapters.services.telegram.authentication import TelegramAuthentication
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.frameworks.telegram.advanced_task_creation_handler import (
     AdvancedTaskCreationHandler,
@@ -32,6 +33,7 @@ from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
 )
 from jira_telegram_bot.settings import OPENAI_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.use_cases.interfaces.authentication_interface import AuthenticationInterface
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
 from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import create_llm_chain
 from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import TaskProcessor
@@ -110,6 +112,7 @@ def main():
     jira_repo = JiraRepository()
     user_config_instance = UserConfig()
     speech_processor = SpeechProcessor()
+    authentication_service = TelegramAuthentication()
 
     task_creation_use_case = JiraTaskCreation(jira_repo, user_config_instance)
     task_status_use_case = TaskStatus(jira_repo.jira)
@@ -117,6 +120,7 @@ def main():
     user_settings_use_case = UserSettingsConversation(
         user_config_instance,
         ["alikaz3mi"],
+        authentication_service,  # Inject authentication service
     )
     task_get_users_time_use_case = TaskGetUsersTime(
         jira_repo,
@@ -125,6 +129,7 @@ def main():
     board_summary_generator_use_case = BoardSummaryGenerator(
         jira_repo,
         summary_generator,
+        authentication_service,
     )
     advanced_task_creation_use_case = AdvancedTaskCreation(
         jira_repo,

@@ -1,26 +1,26 @@
-# jira_telegram_bot/adapters/telegram_gateway.py
 from __future__ import annotations
 
-from io import BytesIO
 from typing import Optional, Any, List
-
 import aiohttp
+from io import BytesIO
+
+
 import requests
 
-from jira_telegram_bot import LOGGER
-from jira_telegram_bot.settings import TELEGRAM_WEBHOOK_SETTINGS, TELEGRAM_SETTINGS
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import (
+
+from jira_telegram_bot.use_cases.interfaces.telegram_gateway_interface import (
     TelegramGatewayInterface,
 )
-
+from jira_telegram_bot.settings.telegram_settings import TelegramWebhookConnectionSettings, TelegramConnectionSettings
+from jira_telegram_bot import LOGGER
 
 class TelegramGateway(TelegramGatewayInterface):
     """
     Concrete adapter to call the actual Telegram Bot API.
     """
 
-    def __init__(self):
-        self.token = TELEGRAM_WEBHOOK_SETTINGS.TOKEN
+    def __init__(self, setting: TelegramWebhookConnectionSettings):
+        self.token = setting.TOKEN
         self.base_url = f"https://api.telegram.org/bot{self.token}"
 
     def send_message(
@@ -69,6 +69,7 @@ async def fetch_and_store_media(
     session: aiohttp.ClientSession,
     storage_list: List,
     filename: str,
+    settings: TelegramConnectionSettings,
 ):
     """Fetch media from Telegram and store it in the provided storage list."""
     media_file = await media.get_file()

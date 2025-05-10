@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import urllib
+from typing import Dict, List, Optional, Any
 
 import pandas as pd
 from sqlalchemy import Column
@@ -17,10 +18,10 @@ from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
-from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.settings import POSTGRES_SETTINGS
 
+# Database setup
 DB_USER = POSTGRES_SETTINGS.db_user
 DB_PASSWORD = POSTGRES_SETTINGS.db_password
 DB_HOST = POSTGRES_SETTINGS.db_host
@@ -40,9 +41,9 @@ Base = declarative_base()
 
 
 def ensure_schema_updates():
-    """
-    Dynamically adds the new columns to the 'jira_tasks' table if they
-    do not exist already. This way, we avoid manual migration steps.
+    """Dynamically adds new columns to the 'jira_tasks' table if they don't exist.
+    
+    This avoids manual migration steps by ensuring the schema stays up to date.
     """
     with engine.begin() as conn:
         # Add 'release' (array of text) if not exists
@@ -64,8 +65,8 @@ def ensure_schema_updates():
 
 
 class Task(Base):
-    """
-    SQLAlchemy ORM model for Jira tasks.
+    """SQLAlchemy ORM model for Jira tasks.
+    
     The Jira `key` is the primary key, so duplicates will be updated.
     """
 
@@ -102,186 +103,222 @@ class Task(Base):
 ensure_schema_updates()
 
 # 2. Reflect updated metadata & create any missing tables
-#    (If the table doesn't exist at all, this will create it; if it does, we're good)
 Base.metadata.create_all(engine)
 
-jira_repository = JiraRepository(settings=JIRA_SETTINGS)
 
+class ReportGenerator:
+    """Use case for generating and storing task reports."""
+    
+    def __init__(self, jira_repository: TaskManagerRepositoryInterface):
+        """Initialize the report generator.
+        
+        Args:
+            jira_repository: Repository for retrieving task data from Jira
+        """
+        self.jira_repository = jira_repository
+        
+    def get_tasks_info(self, project_key: str) -> List[Dict[str, Any]]:
+        """Retrieve tasks for a given Jira project.
+        
+        Args:
+            project_key: Jira project key
+            
+        Returns:
+            List of task dictionaries with all fields
+        """
+        LOGGER.info(f"Fetching issues for project: {project_key}")
+        start_at = 0
+        max_results = 100
+        issues = []
 
-def get_tasks_info(project_key: str) -> list[dict]:
-    """
-    Retrieve tasks for a given Jira project.
-    """
-    LOGGER.info(f"Fetching issues for project: {project_key}")
-    start_at = 0
-    max_results = 100
-    issues = []
+        # Since our interface doesn't have this method, we need to access the implementation
+        # This is a compromise, but in a real Clean Architecture implementation, 
+        # we would add this method to the interface
+        jira = getattr(self.jira_repository, "jira", None)
+        if not jira:
+            LOGGER.error("Cannot access Jira client in repository")
+            return []
 
-    while True:
-        # Adjust your JQL to filter as needed
-        batch = jira_repository.jira.search_issues(
-            f"project = {project_key}",
-            startAt=start_at,
-            maxResults=max_results,
-        )
-        if not batch:
-            break
-        issues.extend(batch)
-        if len(batch) < max_results:
-            break
-        start_at += max_results
+        while True:
+            # Adjust your JQL to filter as needed
+            batch = jira.search_issues(
+                f"project = {project_key}",
+                startAt=start_at,
+                maxResults=max_results,
+            )
+            if not batch:
+                break
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
 
-    tasks_info = []
-    LOGGER.info(f"Found {len(issues)} issues for project {project_key}")
-    epics = {}
+        tasks_info = []
+        LOGGER.info(f"Found {len(issues)} issues for project {project_key}")
+        epics = {}
 
-    # First pass: store epic names
-    for issue in issues:
-        if issue.fields.issuetype.name == "Epic":
-            epics[issue.key] = issue.fields.summary
+        # First pass: store epic names
+        for issue in issues:
+            if issue.fields.issuetype.name == "Epic":
+                epics[issue.key] = issue.fields.summary
 
-    # Second pass: gather tasks
-    for issue in tqdm(issues, desc=f"Processing {project_key} issues"):
-        if issue.fields.issuetype.name == "Epic":
-            continue
+        # Second pass: gather tasks
+        for issue in tqdm(issues, desc=f"Processing {project_key} issues"):
+            if issue.fields.issuetype.name == "Epic":
+                continue
 
-        # Gather comments
-        comments_text = []
-        if issue.fields.comment:
-            for comment in issue.fields.comment.comments:
-                commenter = comment.author.displayName
-                if commenter != issue.fields.reporter.displayName:
-                    comments_text.append(f"{commenter}: {comment.body}")
+            # Gather comments
+            comments_text = []
+            if issue.fields.comment:
+                for comment in issue.fields.comment.comments:
+                    commenter = comment.author.displayName
+                    if commenter != issue.fields.reporter.displayName:
+                        comments_text.append(f"{commenter}: {comment.body}")
 
-        # Extract sprint info
-        sprint_field = getattr(issue.fields, "customfield_10104", None)
-        if sprint_field and len(sprint_field) > 0:
-            sprint_str = str(sprint_field[-1])
-            name_start = sprint_str.find("name=") + 5
-            name_end = sprint_str.find(",startDate")
-            last_sprint_name = sprint_str[name_start:name_end]
-        else:
-            last_sprint_name = "Backlog"
-        sprint_count = len(sprint_field) if sprint_field else 0
+            # Extract sprint info
+            sprint_field = getattr(issue.fields, "customfield_10104", None)
+            if sprint_field and len(sprint_field) > 0:
+                sprint_str = str(sprint_field[-1])
+                name_start = sprint_str.find("name=") + 5
+                name_end = sprint_str.find(",startDate")
+                last_sprint_name = sprint_str[name_start:name_end]
+            else:
+                last_sprint_name = "Backlog"
+            sprint_count = len(sprint_field) if sprint_field else 0
 
-        # Extract story points
-        story_points = getattr(issue.fields, "customfield_10106", None)
+            # Extract story points
+            story_points = getattr(issue.fields, "customfield_10106", None)
 
-        # Extract fixVersions -> store as "release"
-        fix_versions = issue.fields.fixVersions
-        release_list = [fv.name for fv in fix_versions] if fix_versions else []
+            # Extract fixVersions -> store as "release"
+            fix_versions = issue.fields.fixVersions
+            release_list = [fv.name for fv in fix_versions] if fix_versions else []
 
-        # Extract time-tracking estimates
-        # Note: 'originalEstimate' or 'remainingEstimate' might be None or strings like "2h", "3d", etc.
-        timetracking = getattr(issue.fields, "timetracking", None)
-        if timetracking:
-            original_estimate = getattr(timetracking, "originalEstimate", None)
-            remaining_estimate = getattr(timetracking, "remainingEstimate", None)
-        else:
-            original_estimate = None
-            remaining_estimate = None
+            # Extract time-tracking estimates
+            timetracking = getattr(issue.fields, "timetracking", None)
+            if timetracking:
+                original_estimate = getattr(timetracking, "originalEstimate", None)
+                remaining_estimate = getattr(timetracking, "remainingEstimate", None)
+            else:
+                original_estimate = None
+                remaining_estimate = None
 
-        task_info = {
-            "key": issue.key,
-            "summary": issue.fields.summary,
-            "description": issue.fields.description or "",
-            "epic_name": epics.get(issue.fields.customfield_10100),
-            "comments": "\n".join(comments_text),
-            "task_type": issue.fields.issuetype.name,
-            "assignee": (
-                issue.fields.assignee.displayName if issue.fields.assignee else None
-            ),
-            "reporter": issue.fields.reporter.displayName,
-            "priority": (issue.fields.priority.name if issue.fields.priority else None),
-            "status": issue.fields.status.name,
-            "created_at": issue.fields.created,
-            "updated_at": issue.fields.updated,
-            "resolved_at": issue.fields.resolutiondate,
-            "target_start": getattr(issue.fields, "customfield_10109", None),
-            "target_end": getattr(issue.fields, "customfield_10110", None),
-            "story_points": story_points,
-            "components": (
-                [c.name for c in issue.fields.components]
-                if issue.fields.components
-                else []
-            ),
-            "labels": issue.fields.labels if issue.fields.labels else [],
-            "last_sprint": last_sprint_name,
-            "sprint_repeats": sprint_count,
-            "release": release_list,  # new field
-            "original_estimate": original_estimate,  # new field
-            "remaining_estimate": remaining_estimate,  # new field
-        }
-        tasks_info.append(task_info)
+            task_info = {
+                "key": issue.key,
+                "summary": issue.fields.summary,
+                "description": issue.fields.description or "",
+                "epic_name": epics.get(issue.fields.customfield_10100),
+                "comments": "\n".join(comments_text),
+                "task_type": issue.fields.issuetype.name,
+                "assignee": (
+                    issue.fields.assignee.displayName if issue.fields.assignee else None
+                ),
+                "reporter": issue.fields.reporter.displayName,
+                "priority": (issue.fields.priority.name if issue.fields.priority else None),
+                "status": issue.fields.status.name,
+                "created_at": issue.fields.created,
+                "updated_at": issue.fields.updated,
+                "resolved_at": issue.fields.resolutiondate,
+                "target_start": getattr(issue.fields, "customfield_10109", None),
+                "target_end": getattr(issue.fields, "customfield_10110", None),
+                "story_points": story_points,
+                "components": (
+                    [c.name for c in issue.fields.components]
+                    if issue.fields.components
+                    else []
+                ),
+                "labels": issue.fields.labels if issue.fields.labels else [],
+                "last_sprint": last_sprint_name,
+                "sprint_repeats": sprint_count,
+                "release": release_list,
+                "original_estimate": original_estimate,
+                "remaining_estimate": remaining_estimate,
+            }
+            tasks_info.append(task_info)
 
-    return tasks_info
+        return tasks_info
 
+    def store_tasks_in_db(self, tasks: List[Dict[str, Any]]) -> None:
+        """Upsert the list of task dicts into the database.
+        
+        If the key already exists, the row will be updated.
+        Otherwise, a new row is inserted.
+        
+        Args:
+            tasks: List of task dictionaries
+        """
+        for t in tasks:
+            # Convert string datetimes to Python datetime objects if needed
+            for time_field in [
+                "created_at",
+                "updated_at",
+                "resolved_at",
+                "target_start",
+                "target_end",
+            ]:
+                if t[time_field]:
+                    try:
+                        t[time_field] = pd.to_datetime(t[time_field])
+                    except Exception:
+                        t[time_field] = None
 
-def store_tasks_in_db(tasks: list[dict]):
-    """
-    Upsert the list of task dicts into the database:
-    - If the `key` already exists, update that row.
-    - Otherwise, insert a new row.
-    """
-    for t in tasks:
-        # Convert string datetimes to Python datetime objects if needed
-        for time_field in [
-            "created_at",
-            "updated_at",
-            "resolved_at",
-            "target_start",
-            "target_end",
-        ]:
-            if t[time_field]:
-                try:
-                    t[time_field] = pd.to_datetime(t[time_field])
-                except Exception:
-                    t[time_field] = None
+            # Build the Task object
+            task_obj = Task(
+                key=t["key"],
+                summary=t["summary"],
+                description=t["description"],
+                epic_name=t["epic_name"],
+                comments=t["comments"],
+                task_type=t["task_type"],
+                assignee=t["assignee"],
+                reporter=t["reporter"],
+                priority=t["priority"],
+                status=t["status"],
+                created_at=t["created_at"],
+                updated_at=t["updated_at"],
+                resolved_at=t["resolved_at"],
+                target_start=t["target_start"],
+                target_end=t["target_end"],
+                story_points=t["story_points"],
+                components=t["components"],
+                labels=t["labels"],
+                last_sprint=t["last_sprint"],
+                sprint_repeats=t["sprint_repeats"],
+                release=t["release"],
+                original_estimate=t["original_estimate"],
+                remaining_estimate=t["remaining_estimate"],
+            )
 
-        # Build the Task object
-        task_obj = Task(
-            key=t["key"],
-            summary=t["summary"],
-            description=t["description"],
-            epic_name=t["epic_name"],
-            comments=t["comments"],
-            task_type=t["task_type"],
-            assignee=t["assignee"],
-            reporter=t["reporter"],
-            priority=t["priority"],
-            status=t["status"],
-            created_at=t["created_at"],
-            updated_at=t["updated_at"],
-            resolved_at=t["resolved_at"],
-            target_start=t["target_start"],
-            target_end=t["target_end"],
-            story_points=t["story_points"],
-            components=t["components"],
-            labels=t["labels"],
-            last_sprint=t["last_sprint"],
-            sprint_repeats=t["sprint_repeats"],
-            release=t["release"],
-            original_estimate=t["original_estimate"],
-            remaining_estimate=t["remaining_estimate"],
-        )
+            # Merge = insert if new, update if primary key exists
+            session.merge(task_obj)
 
-        # Merge = insert if new, update if primary key exists
-        session.merge(task_obj)
-
-    session.commit()
-    LOGGER.info(f"Upserted {len(tasks)} tasks into the database.")
+        session.commit()
+        LOGGER.info(f"Upserted {len(tasks)} tasks into the database.")
 
 
 if __name__ == "__main__":
+    import importlib.util
+    from jira_telegram_bot.settings import JIRA_SETTINGS
+    
+    # Dynamically import JiraRepository to avoid Clean Architecture violations
+    def import_class(module_path, class_name):
+        spec = importlib.util.find_spec(module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return getattr(module, class_name)
+    
+    JiraRepository = import_class("jira_telegram_bot.adapters.repositories.jira.jira_server_repository", "JiraRepository")
+    jira_repository = JiraRepository(settings=JIRA_SETTINGS)
+    
+    # Create the report generator
+    report_generator = ReportGenerator(jira_repository)
+
     # Example usage:
-    parschat_tasks = get_tasks_info("PARSCHAT")
-
-    pct_tasks = get_tasks_info("PCT")
-
+    parschat_tasks = report_generator.get_tasks_info("PARSCHAT")
+    pct_tasks = report_generator.get_tasks_info("PCT")
     all_tasks = parschat_tasks + pct_tasks
 
     df = pd.DataFrame(all_tasks)
     LOGGER.info(f"DataFrame shape: {df.shape}")
 
-    store_tasks_in_db(all_tasks)
+    report_generator.store_tasks_in_db(all_tasks)
     LOGGER.info("Tasks have been stored (upserted) in the PostgreSQL database.")

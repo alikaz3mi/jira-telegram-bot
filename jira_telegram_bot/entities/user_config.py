@@ -5,13 +5,26 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from jira_telegram_bot.entities.constants import (
+    DEFAULT_DEADLINE_OPTIONS,
+    DEFAULT_STORY_POINTS,
+    DEFAULT_SUBTASK_POINTS,
+    LabelCategory,
+    TaskPriority,
+    TeamComponent,
+)
+
 
 class FieldConfig(BaseModel):
+    """Configuration for a field in user preferences."""
+    
     set_field: bool = True
     values: Optional[List[str]] = None
 
 
 class UserConfig(BaseModel):
+    """User configuration entity for personalizing Jira interactions."""
+    
     telegram_username: str
     telegram_user_chat_id: int
     jira_username: str
@@ -26,44 +39,29 @@ class UserConfig(BaseModel):
     assignee: FieldConfig = FieldConfig()
     priority: FieldConfig = FieldConfig(
         set_field=True,
-        values=["Highest", "High", "Medium", "Low", "Lowest"],
+        values=[priority.value for priority in TaskPriority],
     )
     deadline: FieldConfig = FieldConfig(
         set_field=True,
-        values=[
-            "0",
-            "1",
-            "2",
-            "3",
-            "5",
-            "8",
-            "13",
-            "21",
-            "30",
-        ],  # Default deadline options in days
+        values=DEFAULT_DEADLINE_OPTIONS,
     )
     labels: FieldConfig = FieldConfig(
         set_field=True,
-        values=[
-            "Must-have",
-            "Should-Have",
-            "Could-Have",
-            "Won't-Have",
-        ],  # Common default labels
+        values=[label.value for label in LabelCategory],
     )
 
     # Advanced task creation settings
     advanced_task: FieldConfig = FieldConfig(
         set_field=True,
-        values=["AI", "Backend", "Frontend", "DevOps", "UI/UX"],  # Default components
+        values=[component.value for component in TeamComponent],
     )
     story_splitting: FieldConfig = FieldConfig(
         set_field=True,
-        values=["2", "3", "5", "8", "13"],  # Default story point options
+        values=DEFAULT_STORY_POINTS,
     )
     task_decomposition: FieldConfig = FieldConfig(
         set_field=True,
-        values=["0.5", "1", "2", "3", "5", "8"],  # Default subtask point options
+        values=DEFAULT_SUBTASK_POINTS,
     )
     voice_input: FieldConfig = FieldConfig(set_field=True)
     auto_assign: FieldConfig = FieldConfig(set_field=True)

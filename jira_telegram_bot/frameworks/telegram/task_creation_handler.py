@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import logging
+
+from telegram import ReplyKeyboardMarkup
+from telegram import ReplyKeyboardRemove
+from telegram import Update
+from telegram.ext import CallbackContext
 from telegram.ext import CallbackQueryHandler
 from telegram.ext import CommandHandler
 from telegram.ext import ConversationHandler
@@ -7,7 +13,7 @@ from telegram.ext import filters
 from telegram.ext import MessageHandler
 
 from jira_telegram_bot.use_cases.telegram_commands.create_task import JiraTaskCreation
-from jira_telegram_bot.use_cases.interface.task_handler_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_handler_interface import (
     TaskHandlerInterface,
 )
 

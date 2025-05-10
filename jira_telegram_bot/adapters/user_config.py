@@ -8,11 +8,9 @@ from pydantic import ValidationError
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.user_config import UserConfig as UserConfigEntity
-from jira_telegram_bot.use_cases.interface.user_config_interface import (
-    UserConfigInterface,
-)
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
 
-USER_CONFIG_PATH = f"{DEFAULT_PATH}/jira_telegram_bot/settings/user_config.json"
+USER_CONFIG_PATH = f'{DEFAULT_PATH}/jira_telegram_bot/settings/user_config.json'
 
 
 class UserConfig(UserConfigInterface):
