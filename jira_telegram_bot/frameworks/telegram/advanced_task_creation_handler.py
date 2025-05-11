@@ -17,10 +17,10 @@ from telegram.ext import MessageHandler
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.speech import TranscriptionResult
-from jira_telegram_bot.use_cases.interface.speech_processor_interface import (
+from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
 )
-from jira_telegram_bot.use_cases.interface.task_handler_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_handler_interface import (
     TaskHandlerInterface,
 )
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import (

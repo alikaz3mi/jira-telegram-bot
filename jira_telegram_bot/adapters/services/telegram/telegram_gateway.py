@@ -9,12 +9,12 @@ import requests
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import TELEGRAM_WEBHOOK_SETTINGS, TELEGRAM_SETTINGS
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import (
-    TelegramGatewayInterface,
+from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
+    NotificationGatewayInterface,
 )
 
 
-class TelegramGateway(TelegramGatewayInterface):
+class NotificationGateway(NotificationGatewayInterface):
     """
     Concrete adapter to call the actual Telegram Bot API.
     """

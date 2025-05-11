@@ -150,13 +150,13 @@ from __future__ import annotations
 from lagom import Container
 from lagom.integrations.fast_api import FastApiIntegration
 from jira_telegram_bot.adapters.jira_server_repository import JiraRepository
-from jira_telegram_bot.adapters.openai_gateway import OpenAIGateway
-from jira_telegram_bot.adapters.telegram_gateway import TelegramGateway
+from jira_telegram_bot.adapters.openai_gateway import LLMGateway
+from jira_telegram_bot.adapters.telegram_gateway import NotificationGateway
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
-from jira_telegram_bot.use_cases.interface.openai_gateway_interface import OpenAIGatewayInterface
+from jira_telegram_bot.use_cases.interface.openai_gateway_interface import LLMGatewayInterface
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import NotificationGatewayInterface
 from jira_telegram_bot.use_cases.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 
 Global Initiations:
@@ -395,7 +395,7 @@ from typing import Any
 from typing import Dict
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import NotificationGatewayInterface
 from jira_telegram_bot.utils.data_store import get_mapping_by_issue_key
 
 Global Initiations:
@@ -427,7 +427,7 @@ __main__ Section:
 
 Classes and Methods:
 Class: HandleJiraWebhookUseCase
-  __init__ (self: Any, telegram_gateway: TelegramGatewayInterface) -> None
+  __init__ (self: Any, telegram_gateway: NotificationGatewayInterface) -> None
   run (self: Any, webhook_body: Dict[str, Any]) -> Dict[str, str]
   _handle_issue_created (self: Any, issue_data: Any, webhook_body: Any, channel_chat_id: Any, group_chat_id: Any, reply_message_id: Any) -> None
   _handle_issue_generic (self: Any, issue_data: Any, webhook_body: Any, channel_chat_id: Any, group_chat_id: Any, reply_message_id: Any) -> None
@@ -1175,7 +1175,7 @@ from typing import Dict
 from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
 from langchain.prompts import PromptTemplate
-from jira_telegram_bot.use_cases.interface.openai_gateway_interface import OpenAIGatewayInterface
+from jira_telegram_bot.use_cases.interface.openai_gateway_interface import LLMGatewayInterface
 
 Global Initiations:
 schema = [ResponseSchema(name='task_info', description='A JSON object containing summary, task_type, label, and description fields.', type='json')]
@@ -1192,7 +1192,7 @@ __main__ Section:
 
 Classes and Methods:
 Class: ParseJiraPromptUseCase
-  __init__ (self: Any, openai_gateway: OpenAIGatewayInterface) -> None
+  __init__ (self: Any, openai_gateway: LLMGatewayInterface) -> None
   run (self: Any, content: str) -> Dict[str, str]
 
 
@@ -1234,7 +1234,7 @@ __main__ Section:
 
 
 Classes and Methods:
-Class: OpenAIGatewayInterface
+Class: LLMGatewayInterface
   get_llm (self: Any) -> ChatOpenAI
 
 
@@ -1402,7 +1402,7 @@ __main__ Section:
 
 
 Classes and Methods:
-Class: TelegramGatewayInterface
+Class: NotificationGatewayInterface
   send_message (self: Any, chat_id: int, text: str, reply_message_id: Optional[int], parse_mode: str) -> None
 
 
@@ -1628,7 +1628,7 @@ Imports:
 from __future__ import annotations
 from langchain_openai import ChatOpenAI
 from jira_telegram_bot.settings import OPENAI_SETTINGS
-from jira_telegram_bot.use_cases.interface.openai_gateway_interface import OpenAIGatewayInterface
+from jira_telegram_bot.use_cases.interface.openai_gateway_interface import LLMGatewayInterface
 
 Global Initiations:
 llm = ChatOpenAI(model_name='gpt-4o-mini', openai_api_key=self.api_key, temperature=self.temperature)
@@ -1637,7 +1637,7 @@ __main__ Section:
 
 
 Classes and Methods:
-Class: OpenAIGateway
+Class: LLMGateway
   __init__ (self: Any) -> None
   get_llm (self: Any) -> ChatOpenAI
 
@@ -1652,7 +1652,7 @@ from typing import Optional
 import requests
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import TELEGRAM_WEBHOOK_SETTINGS
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import NotificationGatewayInterface
 
 Global Initiations:
 url = f'{self.base_url}/sendMessage'
@@ -1663,7 +1663,7 @@ __main__ Section:
 
 
 Classes and Methods:
-Class: TelegramGateway
+Class: NotificationGateway
   __init__ (self: Any) -> None
   send_message (self: Any, chat_id: int, text: str, reply_message_id: Optional[int], parse_mode: str) -> None
 
@@ -1998,7 +1998,7 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import TelegramGatewayInterface
+from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import NotificationGatewayInterface
 from jira_telegram_bot.use_cases.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 from jira_telegram_bot.utils.data_store import get_issue_key_from_channel_post
 from jira_telegram_bot.utils.data_store import save_comment
@@ -2193,7 +2193,7 @@ from telegram.ext import CommandHandler, ConversationHandler, CallbackQueryHandl
 from jira_telegram_bot.use_cases.interface.user_config_interface import UserConfigInterface
 from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interface.task_handler_interface import TaskHandlerInterface
-from jira_telegram_bot.adapters.openai_gateway import OpenAIGateway
+from jira_telegram_bot.adapters.openai_gateway import LLMGateway
 from langchain import LLMChain
 from langchain.prompts import PromptTemplate
 
@@ -2236,7 +2236,7 @@ __main__ Section:
 
 Classes and Methods:
 Class: VoiceReportHandler
-  __init__ (self: Any, user_config_repo: UserConfigInterface, jira_repo: TaskManagerRepositoryInterface, openai_gateway: OpenAIGateway) -> None
+  __init__ (self: Any, user_config_repo: UserConfigInterface, jira_repo: TaskManagerRepositoryInterface, openai_gateway: LLMGateway) -> None
   get_handler (self: Any) -> None
   start (self: Any, update: Update, context: CallbackContext) -> int
   select_project_callback (self: Any, update: Update, context: CallbackContext) -> int

@@ -8,7 +8,7 @@ from openai import AsyncOpenAI
 
 from jira_telegram_bot.entities.speech import TranscriptionResult
 from jira_telegram_bot.settings import OPENAI_SETTINGS
-from jira_telegram_bot.use_cases.interface.speech_processor_interface import (
+from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
 )
 

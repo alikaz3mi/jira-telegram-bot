@@ -6,7 +6,7 @@ from abc import abstractmethod
 from langchain_openai import ChatOpenAI
 
 
-class OpenAIGatewayInterface(ABC):
+class LLMGatewayInterface(ABC):
     @abstractmethod
     def get_llm(self) -> ChatOpenAI:
         """Return a ChatOpenAI client or a similar LLM wrapper."""

@@ -15,7 +15,7 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
-from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
 

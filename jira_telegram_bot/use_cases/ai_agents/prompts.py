@@ -6,7 +6,7 @@ COMPONENT_TASK_TEMPLATES = {
     "frontend": """
     Component: Frontend Development
     Consider:
-    - User interface components needed
+    - User interfaces components needed
     - State management requirements
     - API integration points
     - Responsive design requirements

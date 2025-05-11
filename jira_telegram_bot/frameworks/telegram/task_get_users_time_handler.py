@@ -5,7 +5,7 @@ from telegram.ext import ConversationHandler
 from telegram.ext import filters
 from telegram.ext import MessageHandler
 
-from jira_telegram_bot.use_cases.interface.task_handler_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_handler_interface import (
     TaskHandlerInterface,
 )
 from jira_telegram_bot.use_cases.telegram_commands.task_get_users_time import TaskGetUsersTime

@@ -5,8 +5,8 @@ from typing import Dict
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.use_cases.interface.telegram_gateway_interface import (
-    TelegramGatewayInterface,
+from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
+    NotificationGatewayInterface,
 )
 from jira_telegram_bot.utils.data_store import get_mapping_by_issue_key
 
@@ -18,7 +18,7 @@ class HandleJiraWebhookUseCase:
     relevant notifications to Telegram if needed.
     """
 
-    def __init__(self, telegram_gateway: TelegramGatewayInterface):
+    def __init__(self, telegram_gateway: NotificationGatewayInterface):
         self._telegram_gateway = telegram_gateway
 
     def run(self, webhook_body: Dict[str, Any]) -> Dict[str, str]:

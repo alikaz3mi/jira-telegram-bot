@@ -9,7 +9,7 @@ from telegram.ext import CallbackContext
 from telegram.ext import ConversationHandler
 
 from jira_telegram_bot.adapters.services.telegram.authentication import check_user_allowed
-from jira_telegram_bot.use_cases.interface.user_config_interface import (
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
 

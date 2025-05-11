@@ -6,8 +6,8 @@ from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
 from langchain.prompts import PromptTemplate
 
-from jira_telegram_bot.use_cases.interface.openai_gateway_interface import (
-    OpenAIGatewayInterface,
+from jira_telegram_bot.use_cases.interfaces.llm_gateway_interface import (
+    LLMGatewayInterface,
 )
 
 
@@ -17,7 +17,7 @@ class ParseJiraPromptUseCase:
     via an LLM (OpenAI).
     """
 
-    def __init__(self, openai_gateway: OpenAIGatewayInterface):
+    def __init__(self, openai_gateway: LLMGatewayInterface):
         self._openai_gateway = openai_gateway
 
     def run(self, content: str) -> Dict[str, str]:

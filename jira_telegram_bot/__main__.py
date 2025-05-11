@@ -9,7 +9,7 @@ from telegram.warnings import PTBUserWarning
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
-from jira_telegram_bot.adapters.ai_models.speech_processor import SpeechProcessor
+from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.frameworks.telegram.advanced_task_creation_handler import (
     AdvancedTaskCreationHandler,
@@ -126,10 +126,7 @@ def main():
         jira_repo,
         summary_generator,
     )
-    advanced_task_creation_use_case = AdvancedTaskCreation(
-        jira_repo,
-        user_config_instance,
-    )
+    advanced_task_creation_use_case = AdvancedTaskCreation(jira_repo, user_config_instance)
 
     task_creation_handler = TaskCreationHandler(task_creation_use_case)
     task_status_handler = TaskStatusHandler(task_status_use_case)

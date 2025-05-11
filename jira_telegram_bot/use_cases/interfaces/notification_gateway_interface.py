@@ -5,7 +5,7 @@ from abc import abstractmethod
 from typing import Optional
 
 
-class TelegramGatewayInterface(ABC):
+class NotificationGatewayInterface(ABC):
     @abstractmethod
     def send_message(
         self,

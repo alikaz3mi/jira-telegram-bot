@@ -9,10 +9,10 @@ from langchain import PromptTemplate
 from langchain_openai import ChatOpenAI
 
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.use_cases.interface.summary_generator_interface import (
+from jira_telegram_bot.use_cases.interfaces.summary_generator_interface import (
     ISummaryGenerator,
 )
-from jira_telegram_bot.use_cases.interface.task_grouper_interface import ITaskGrouper
+from jira_telegram_bot.use_cases.interfaces.task_grouper_interface import ITaskGrouper
 
 
 class TaskGrouper(ITaskGrouper):

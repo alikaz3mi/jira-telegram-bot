@@ -305,9 +305,9 @@ async def process_command(
     jira_username: str,
 ) -> Dict[str, Any]:
     """Process command messages in group chat."""
+    data_store = telegram_post_data_store.load_data_store()
+    store_entry = telegram_post_data_store.find_channel_post_by_issue(data_store, issue_key)
     if "/done" in text.lower():
-        data_store = telegram_post_data_store.load_data_store()
-        store_entry = telegram_post_data_store.find_channel_post_by_issue(issue_key)
         if (
             store_entry
             and store_entry.get("metadata", {}).get("creator_username") == message_from

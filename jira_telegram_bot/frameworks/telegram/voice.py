@@ -15,14 +15,14 @@ from telegram.ext import ConversationHandler
 from telegram.ext import filters
 from telegram.ext import MessageHandler
 
-from jira_telegram_bot.adapters.ai_models.openai_model import OpenAIGateway
-from jira_telegram_bot.use_cases.interface.task_handler_interface import (
+from jira_telegram_bot.adapters.ai_models.llm_models.openai_model import LLMGateway
+from jira_telegram_bot.use_cases.interfaces.task_handler_interface import (
     TaskHandlerInterface,
 )
-from jira_telegram_bot.use_cases.interface.task_manager_repository_interface import (
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
-from jira_telegram_bot.use_cases.interface.user_config_interface import (
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
 
@@ -53,7 +53,7 @@ class VoiceReportHandler(TaskHandlerInterface):
         self,
         user_config_repo: UserConfigInterface,
         jira_repo: TaskManagerRepositoryInterface,
-        openai_gateway: OpenAIGateway,
+        openai_gateway: LLMGateway,
     ) -> None:
         """
         :param user_config_repo: to fetch the user’s default project/Jira user name

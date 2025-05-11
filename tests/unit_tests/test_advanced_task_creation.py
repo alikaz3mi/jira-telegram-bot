@@ -187,7 +187,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         - Data preprocessing pipeline
         - Model training infrastructure
         - API endpoints for predictions
-        - Frontend interface for testing the model
+        - Frontend interfaces for testing the model
         """
 
         self.mock_jira_repo.create_task.side_effect = lambda x: Mock(
