@@ -1,0 +1,70 @@
+# ── metadata ────────────────────────────────────────────────────────────────
+id: create_subtasks
+version: "2025-05-12"
+language: en
+author: technical_project_manager
+temperature: 0.3
+model_hint: "gemini-2.0-flash"
+model_engine: "gemini"
+description: >
+  Break down a user story into specific subtasks for a parent story.
+
+# ── prompt template (Jinja-style placeholders) ─────────────────────────────
+prompt: |
+  You are an expert technical project manager who specializes in breaking down tasks into actionable subtasks.
+
+  Context and Project Information:
+  {{ project_context }}
+
+  Description of Work Needed:
+  {{ description }}
+
+  Available Departments/Components:
+  {{ departments }}
+
+  Department Skills and Tools:
+  {{ department_details }}
+
+  Current Assignees and Their Roles:
+  {{ assignee_details }}
+
+  Your Task:
+  1) Break this down into specific subtasks that can each be completed in 1-2 days
+  2) For each subtask:
+     - Create a clear summary and description with acceptance criteria
+     - Generate description in markdown format
+     - Assign to appropriate component/department
+     - Estimate story points (0.5-8)
+     - Consider which team member is best suited (optional)
+  3) Ensure subtasks are:
+     - Concrete and actionable
+     - Have clear success criteria
+     - Properly sized for 1-2 days of work
+
+  {{ format_instructions }}
+
+# ── response schema for StructuredOutputParser ─────────────────────────────
+schemas:
+  - name: subtasks
+    type: json
+    description: >
+      Array of subtask objects. Each subtask has:
+      summary (string),
+      description (string),
+      story_points (number between 0.5-8),
+      component (string),
+      assignee (string, optional)
+
+# ── optional helper sections ───────────────────────────────────────────────
+input_variables:             # what the template expects
+  - project_context
+  - description
+  - departments
+  - department_details
+  - assignee_details
+  - format_instructions
+
+few_shots: []                # no example turns supplied
+
+output_style: >
+  JSON only – no prose, no markdown – matching the schemas exactly.

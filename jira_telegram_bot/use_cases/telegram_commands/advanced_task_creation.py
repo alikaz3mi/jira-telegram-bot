@@ -11,6 +11,12 @@ from jira import Issue
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.entities.task import UserStory
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AiServiceProtocol
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import PromptCatalogProtocol
+from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
+from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import StoryDecompositionInterface
+from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import SubtaskCreationInterface
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
@@ -26,9 +32,19 @@ class AdvancedTaskCreation:
         self,
         task_manager_repository: TaskManagerRepositoryInterface,
         user_config: UserConfigInterface,
+        ai_service: AiServiceProtocol,
+        prompt_catalog: PromptCatalogProtocol,
+        story_generator: StoryGenerator,
+        story_decomposition_service: StoryDecompositionInterface = None,
+        subtask_creation_service: SubtaskCreationInterface = None,
     ):
         self.task_manager_repository = task_manager_repository
         self.user_config = user_config
+        self.ai_service = ai_service
+        self.prompt_catalog = prompt_catalog
+        self.story_generator = story_generator
+        self.story_decomposition_service = story_decomposition_service
+        self.subtask_creation_service = subtask_creation_service
 
     async def create_tasks(
         self,
@@ -308,70 +324,6 @@ class AdvancedTaskCreation:
         if "personas" in project_info:
             primary_persona = next(iter(project_info["personas"]), "User")
 
-        # Define the schema for the structured output
-        schema = [
-            ResponseSchema(
-                name="user_story",
-                description="""Dictionary containing:
-                summary (string): A concise title for the story,
-                description (string): Full user story with narrative, acceptance criteria, and definition of done,
-                component (string): Primary team/department responsible,
-                story_points (number): Estimated story points (1-13),
-                priority (string): High, Medium, or Low""",
-                type="json",
-            ),
-        ]
-
-        parser = StructuredOutputParser.from_response_schemas(schema)
-        format_instructions = parser.get_format_instructions()
-
-        # Create the prompt template for the user story
-        template = """You are an experienced Agile Product Owner.
-
-Context:
-
-Product/Feature Area: {product_area}
-
-Business Goal / OKR: {business_goal}
-
-Primary Persona: {primary_persona}
-
-Dependencies / Constraints: {dependencies}
-
-Description of work: {description}
-
-{epic_context}
-
-{parent_story_context}
-
-Instructions:
-
-Write one INVEST-compliant user story in the format:
-'As a <persona role>, I want <capability> so that <benefit/value>.'
-
-Add a concise narrative (≤ 3 sentences) that explains why this story matters to the business goal.
-
-Provide Acceptance Criteria using Gherkin-style "Given / When / Then" bullets (≥ 3 distinct criteria, covering happy-path and one edge case).
-
-List Non-functional Requirements that could cause the story to fail if ignored (e.g., performance, security, accessibility).
-
-Suggest Sizing hints (story-points or T-shirt size) with a short rationale.
-
-Suggest Risks & Open Questions the team should discuss during refinement.
-
-End with a Definition of Done checklist that references code, tests, documentation, and release validation.
-
-Tone & Style:
-- Clear, testable, and free of jargon
-- Bullet points where possible
-- Avoid passive voice
-- Generate the result in google doc format
-- Use markdown for formatting
-- Generate the story in fluent Farsi.
-
-{format_instructions}
-"""
-
         # Format the epic context if available
         epic_context_text = ""
         if epic_context:
@@ -388,46 +340,55 @@ Story Key: {parent_story_context.get('key', '')}
 Story Summary: {parent_story_context.get('summary', '')}
 Story Description: {parent_story_context.get('description', '')}"""
 
-        prompt = PromptTemplate(
-            template=template,
-            input_variables=[
-                "product_area",
-                "business_goal",
-                "primary_persona",
-                "dependencies",
-                "description",
-                "epic_context",
-                "parent_story_context",
-            ],
-            partial_variables={"format_instructions": format_instructions},
-        )
-
         # Extract dependencies from description or use default
-        # This would ideally use NLP to identify dependencies in the text
         dependencies = "Integration with existing systems required"
-
-        # Get the response from LLM
-        llm_response = self.llm.invoke(
-            prompt.format(
+        
+        try:
+            # Use the story generator service to create a structured user story
+            project_key = list(project_info.get("departments", {}).keys())[0] if project_info.get("departments") else ""
+            user_story = await self.story_generator.generate(
+                raw_text=description,
+                project=project_key,
                 product_area=product_area,
                 business_goal=business_goal,
                 primary_persona=primary_persona,
                 dependencies=dependencies,
-                description=description,
                 epic_context=epic_context_text,
                 parent_story_context=parent_context_text,
-            ),
-        )
-
-        # Extract the content as a string
-        content = llm_response.content
-
-        try:
-            # Parse the structured output
-            parsed_data = parser.parse(content)
-            return parsed_data["user_story"]
+            )
+            
+            # Convert the UserStory object to a dictionary format expected by the rest of the code
+            return {
+                "summary": user_story.summary,
+                "description": user_story.description,
+                "component": user_story.components[0] if user_story.components else "",
+                "story_points": user_story.story_points,
+                "priority": user_story.priority,
+            }
         except Exception as e:
-            # Fallback in case of parsing error
+            LOGGER.error(f"Error generating user story: {str(e)}")
+            # Fallback in case of error
+            return {
+                "summary": "User story based on description",
+                "description": f"""As a user, I want the described functionality so that I can achieve my goals.
+
+{description}
+
+**Acceptance Criteria:**
+- Given the system is set up, when the functionality is used, then it works as expected.
+- Given an error occurs, when the user interacts with the system, then appropriate feedback is provided.
+- Given the user completes their task, when they review their work, then they can see the results.
+
+**Definition of Done:**
+- Code is written and tested
+- Documentation is updated
+- Changes are reviewed and approved""",
+                "component": list(project_info["departments"].keys())[0],
+                "story_points": 5,
+                "priority": "Medium",
+            }
+        except Exception:
+            # Fallback in case of error
             return {
                 "summary": "User story based on description",
                 "description": f"""As a user, I want the described functionality so that I can achieve my goals.
@@ -539,7 +500,7 @@ Story Description: {parent_story_context.get('description', '')}"""
 **Enhanced User Story:**
 {new_content}"""
 
-    def _parse_task_description(
+    async def _parse_task_description(
         self,
         description: str,
         project_info: Dict[str, Any],
@@ -568,181 +529,124 @@ Story Description: {parent_story_context.get('description', '')}"""
             assignee_details.append(
                 f"{assignee['username']} ({assignee['role']}) - {assignee['department']}",
             )
-
-        # Define schema based on task type
-        if task_type == "story":
-            schema = [
-                ResponseSchema(
-                    name="stories",
-                    description="""Array of story objects. Each story has:
-                    summary (string),
-                    description (string),
-                    story_points (number between 1-13),
-                    priority (string: High, Medium, Low),
-                    component_tasks (array of component task objects)""",
-                    type="json",
-                ),
-            ]
-        else:  # subtask
-            schema = [
-                ResponseSchema(
-                    name="subtasks",
-                    description="""Array of subtask objects. Each subtask has:
-                    summary (string),
-                    description (string),
-                    story_points (number between 0.5-8),
-                    component (string),
-                    assignee (string, optional)""",
-                    type="json",
-                ),
-            ]
-
-        parser = StructuredOutputParser.from_response_schemas(schema)
-        format_instructions = parser.get_format_instructions()
-
-        # Create the prompt template
-        if task_type == "story":
-            template = """You are an expert technical project manager with deep experience in breaking down complex projects into actionable tasks.
-
-Context and Project Information:
-{project_context}
-
-Description of Work Needed:
-{description}
-
-Available Departments/Components:
-{departments}
-
-Department Skills and Tools:
-{department_details}
-
-Current Assignees and Their Roles:
-{assignee_details}
-
-Your Task:
-1) Break this down into coherent user stories that deliver complete features or capabilities
-2) For each story:
-   - Write a clear summary and description
-    - Generate description in markdown format
-   - Identify which components/departments need to be involved
-   - For each component involved, create specific subtasks
-   - Each subtask should be achievable in 1-2 days
-3) Follow these principles:
-   - User stories should be independent and deliver value
-   - Tasks should have clear acceptance criteria
-   - Story points follow modified fibonacci (1,2,3,5,8,13)
-   - Subtask points range from 0.5 to 8
-   - Consider dependencies between components
-   - Assign tasks based on skill level (junior, mid-level, senior)
-
-{format_instructions}"""
-        else:  # subtask
-            template = """You are an expert technical project manager who specializes in breaking down tasks into actionable subtasks.
-
-Context and Project Information:
-{project_context}
-
-Description of Work Needed:
-{description}
-
-Available Departments/Components:
-{departments}
-
-Department Skills and Tools:
-{department_details}
-
-Current Assignees and Their Roles:
-{assignee_details}
-
-Your Task:
-1) Break this down into specific subtasks that can each be completed in 1-2 days
-2) For each subtask:
-   - Create a clear summary and description with acceptance criteria
-   - Generate description in markdown format
-   - Assign to appropriate component/department
-   - Estimate story points (0.5-8)
-   - Consider which team member is best suited (optional)
-3) Ensure subtasks are:
-   - Concrete and actionable
-   - Have clear success criteria
-   - Properly sized for 1-2 days of work
-
-{format_instructions}"""
-
-        prompt = PromptTemplate(
-            template=template,
-            input_variables=[
-                "project_context",
-                "description",
-                "departments",
-                "department_details",
-                "assignee_details",
-            ],
-            partial_variables={"format_instructions": format_instructions},
-        )
-
-        # Get the response from LLM
-        llm_response = self.llm.invoke(
-            prompt.format(
-                project_context=project_info["project_info"]["description"],
-                description=description,
-                departments=", ".join(project_info["departments"].keys()),
-                department_details="\n\n".join(dept_details),
-                assignee_details="\n".join(assignee_details),
-            ),
-        )
-
-        # Extract the content as a string
-        content = llm_response.content
-
+            
         try:
-            # Parse the structured output
-            parsed_data = parser.parse(content)
-
-            # Assign tasks based on skill levels for stories
-            if task_type == "story" and "stories" in parsed_data:
-                parsed_data = self._assign_tasks(parsed_data, project_info)
-
-            return parsed_data
-        except Exception as e:
-            LOGGER.error(f"Error parsing task description: {e}")
-            # Fallback in case of parsing error
+            # Prepare common inputs
+            project_context = project_info["project_info"]["description"]
+            departments = ", ".join(project_info["departments"].keys())
+            department_details_str = "\n\n".join(dept_details)
+            assignee_details_str = "\n".join(assignee_details)
+            
+            # Use the appropriate service based on task type
             if task_type == "story":
-                return {
-                    "stories": [
-                        {
-                            "summary": "Unable to parse description",
+                if self.story_decomposition_service:
+                    result = await self.story_decomposition_service.decompose_story(
+                        project_context=project_context,
+                        description=description,
+                        departments=departments,
+                        department_details=department_details_str,
+                        assignee_details=assignee_details_str,
+                    )
+                else:
+                    # Fallback to direct AI service if no decomposition service is provided
+                    prompt_spec = await self.prompt_catalog.get_prompt("decompose_user_story")
+                    result = await self.ai_service.run(
+                        prompt=prompt_spec,
+                        inputs={
+                            "project_context": project_context,
                             "description": description,
-                            "story_points": 3,
-                            "priority": "Medium",
-                            "component_tasks": [
-                                {
-                                    "component": list(
-                                        project_info["departments"].keys(),
-                                    )[0],
-                                    "subtasks": [
-                                        {
-                                            "summary": "Investigate requirements",
-                                            "description": description,
-                                            "story_points": 3,
-                                        },
-                                    ],
-                                },
-                            ],
+                            "departments": departments,
+                            "department_details": department_details_str,
+                            "assignee_details": assignee_details_str,
                         },
-                    ],
-                }
-            else:
-                return {
-                    "subtasks": [
-                        {
-                            "summary": "Investigate requirements",
+                        cleanse_llm_text=True,
+                    )
+            else:  # task_type == "subtask"
+                if self.subtask_creation_service:
+                    result = await self.subtask_creation_service.create_subtasks(
+                        project_context=project_context,
+                        description=description,
+                        departments=departments,
+                        department_details=department_details_str,
+                        assignee_details=assignee_details_str,
+                    )
+                else:
+                    # Fallback to direct AI service if no subtask creation service is provided
+                    prompt_spec = await self.prompt_catalog.get_prompt("create_subtasks")
+                    result = await self.ai_service.run(
+                        prompt=prompt_spec,
+                        inputs={
+                            "project_context": project_context,
                             "description": description,
-                            "story_points": 3,
-                            "component": list(project_info["departments"].keys())[0],
+                            "departments": departments,
+                            "department_details": department_details_str,
+                            "assignee_details": assignee_details_str,
                         },
-                    ],
-                }
+                        cleanse_llm_text=True,
+                    )
+            
+            # Assign tasks based on skill levels for stories
+            if task_type == "story" and "stories" in result:
+                result = self._assign_tasks(result, project_info)
+                
+            return result
+        except Exception as e:
+            LOGGER.error(f"Error parsing task description: {str(e)}")
+            # Provide fallback result based on task type
+            return self._generate_fallback_result(task_type, description, project_info)
+            
+    def _generate_fallback_result(
+        self,
+        task_type: str,
+        description: str,
+        project_info: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Generate a fallback result when task parsing fails.
+        
+        Args:
+            task_type: Either "story" or "subtask"
+            description: The detailed task description
+            project_info: Project configuration information
+            
+        Returns:
+            Dictionary containing basic task data structure
+        """
+        default_component = list(project_info["departments"].keys())[0]
+        
+        if task_type == "story":
+            return {
+                "stories": [
+                    {
+                        "summary": "Unable to parse description",
+                        "description": description,
+                        "story_points": 3,
+                        "priority": "Medium",
+                        "component_tasks": [
+                            {
+                                "component": default_component,
+                                "subtasks": [
+                                    {
+                                        "summary": "Investigate requirements",
+                                        "description": description,
+                                        "story_points": 3,
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            }
+        else:  # task_type == "subtask"
+            return {
+                "subtasks": [
+                    {
+                        "summary": "Investigate requirements",
+                        "description": description,
+                        "story_points": 3,
+                        "component": default_component,
+                    },
+                ],
+            }
 
     def _assign_tasks(
         self,
@@ -830,46 +734,4 @@ Your Task:
         return comp_tasks
 
 
-if __name__ == "__main__":
-    import asyncio
-    from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
-        JiraRepository,
-    )
-    from jira_telegram_bot.adapters.user_config import UserConfig
-    from jira_telegram_bot.settings import JIRA_SETTINGS
-
-    jira_repo = JiraRepository(
-        settings=JIRA_SETTINGS,
-    )
-    task_creator = AdvancedTaskCreation(
-        task_manager_repository=jira_repo,
-        user_config=UserConfig(),
-    )
-    story_description = """The task is to connect to the widget through a JavaScript snippet.
-    This story point belongs to the front-end department.
-    It is estimated to take 16 hours to prepare this task, which includes changes to the service connection
-    page with the ability to add a new section for connecting to the widget service.
-    On this page, I need to modify the built JavaScript snippet for the user who enters the chat page,
-    the plugin page. On the panel page, I should be able to copy the necessary code for his web clock
-    and place it in his web clock."""
-
-    # Example of using the new create_structured_user_story method
-    result = asyncio.run(
-        task_creator.create_structured_user_story(
-            description=story_description,
-            project_key="PARSCHAT",
-            epic_key="PARSCHAT-15",
-        ),
-    )
-    print(result.description)
-
-    # # Original example
-    # asyncio.run(
-    #     task_creator.create_tasks(
-    #         description=description,
-    #         project_key="PARSCHAT",
-    #         epic_key="PARSCHAT-15",
-    #         task_type="subtask",
-    #         parent_story_key="PARSCHAT-2296",  # Example parent key
-    #     ),
-    # )
+# Testing functionality should be moved to proper test files in the tests directory

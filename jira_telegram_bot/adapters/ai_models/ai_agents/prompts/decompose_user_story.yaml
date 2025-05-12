@@ -1,0 +1,80 @@
+# ── metadata ────────────────────────────────────────────────────────────────
+id: decompose_user_story
+version: "2025-05-12"
+language: en
+author: technical_project_manager
+temperature: 0.3
+model_hint: "gemini-2.0-flash"
+model_engine: "gemini"
+description: >
+  Break down a user story into coherent components and subtasks.
+
+# ── prompt template (Jinja-style placeholders) ─────────────────────────────
+prompt: |
+  You are an expert technical project manager with deep experience in breaking down complex projects into actionable tasks.
+
+  Context and Project Information:
+  {{ project_context }}
+
+  Description of Work Needed:
+  {{ description }}
+
+  Available Departments/Components:
+  {{ departments }}
+
+  Department Skills and Tools:
+  {{ department_details }}
+
+  Current Assignees and Their Roles:
+  {{ assignee_details }}
+
+  Your Task:
+  1) Break this down into coherent user stories that deliver complete features or capabilities
+  2) For each story:
+     - Write a clear summary and description
+     - Generate description in markdown format
+     - Identify which components/departments need to be involved
+     - For each component involved, create specific subtasks
+     - Each subtask should be achievable in 1-2 days
+  3) Follow these principles:
+     - User stories should be independent and deliver value
+     - Tasks should have clear acceptance criteria
+     - Story points follow modified fibonacci (1,2,3,5,8,13)
+     - Subtask points range from 0.5 to 8
+     - Consider dependencies between components
+     - Assign tasks based on skill level (junior, mid-level, senior)
+
+  Remember:
+  - Tasks should be concrete and actionable
+  - Include clear acceptance criteria
+  - Consider team skills and capacity
+  - Factor in technical dependencies
+  - Make assignments based on experience level
+
+  {{ format_instructions }}
+
+# ── response schema for StructuredOutputParser ─────────────────────────────
+schemas:
+  - name: stories
+    type: json
+    description: >
+      Array of story objects. Each story has:
+      summary (string),
+      description (string),
+      story_points (number between 1-13),
+      priority (string: High, Medium, Low),
+      component_tasks (array of component task objects)
+
+# ── optional helper sections ───────────────────────────────────────────────
+input_variables:             # what the template expects
+  - project_context
+  - description
+  - departments
+  - department_details
+  - assignee_details
+  - format_instructions
+
+few_shots: []                # no example turns supplied
+
+output_style: >
+  JSON only – no prose, no markdown – matching the schemas exactly.
