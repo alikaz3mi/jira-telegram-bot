@@ -5,52 +5,38 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+
 from jira import Issue
-
-
-from langchain.output_parsers import ResponseSchema
-from langchain.output_parsers import StructuredOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import GEMINI_SETTINGS as gemini_connection_settings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
-from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 
 
 class AdvancedTaskCreation:
     """Handles creation of multiple related tasks with subtasks through AI analysis."""
 
     def __init__(
-            self,
-            jira_repository: TaskManagerRepositoryInterface,
-            user_config: UserConfigInterface,
-            gemini_connection_setting: GeminiConnectionSetting = gemini_connection_settings,
+        self,
+        task_manager_repository: TaskManagerRepositoryInterface,
+        user_config: UserConfigInterface,
     ):
-        self.jira_repo = jira_repository
+        self.task_manager_repository = task_manager_repository
         self.user_config = user_config
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            temperature=0.2,
-            google_api_key=gemini_connection_setting.token,
-            convert_system_message_to_human=True,
-        )
 
     async def create_tasks(
-            self,
-            description: str,
-            project_key: str,
-            epic_key: Optional[str] = None,
-            parent_story_key: Optional[str] = None,
-            task_type: str = "story",  # "story" or "subtask"
+        self,
+        description: str,
+        project_key: str,
+        epic_key: Optional[str] = None,
+        parent_story_key: Optional[str] = None,
+        task_type: str = "story",  # "story" or "subtask"
     ) -> List[TaskData]:
         """Create multiple stories with their component-specific subtasks.
 
@@ -79,15 +65,20 @@ class AdvancedTaskCreation:
         if task_type == "story":
             await self.create_stories(created_tasks, epic_key, project_key, tasks_data)
         else:  # task_type == "subtask"
-            await self.create_subtasks_for_story(created_tasks, parent_story_key, project_key, tasks_data)
+            await self.create_subtasks_for_story(
+                created_tasks,
+                parent_story_key,
+                project_key,
+                tasks_data,
+            )
 
         return created_tasks
 
     @staticmethod
     async def _get_project_info(project_key: str):
         with open(
-                f"{DEFAULT_PATH}/jira_telegram_bot/settings/projects_info.json",
-                "r",
+            f"{DEFAULT_PATH}/jira_telegram_bot/settings/projects_info.json",
+            "r",
         ) as f:
             projects_info = json.load(f)
             project_info = projects_info.get(project_key)
@@ -95,7 +86,13 @@ class AdvancedTaskCreation:
             raise ValueError(f"No project info found for {project_key}")
         return project_info
 
-    async def create_subtasks_for_story(self, created_tasks, parent_story_key, project_key, tasks_data):
+    async def create_subtasks_for_story(
+        self,
+        created_tasks,
+        parent_story_key,
+        project_key,
+        tasks_data,
+    ):
         if not parent_story_key:
             raise ValueError("Parent story key is required for creating subtasks")
         for subtask in tasks_data["subtasks"]:
@@ -109,13 +106,19 @@ class AdvancedTaskCreation:
                 task_type="Sub-task",
                 parent_issue_key=parent_story_key,
             )
-            subtask_issue = self.jira_repo.create_task(subtask_data)
+            subtask_issue = self.task_manager_repository.create_task(subtask_data)
             LOGGER.info(
                 f"Subtask created: {subtask_issue.key} under parent story {parent_story_key}",
             )
             created_tasks.append(subtask_issue)
 
-    async def create_stories(self, created_tasks, epic_key, project_key, tasks_data) -> List[Issue]:
+    async def create_stories(
+        self,
+        created_tasks,
+        epic_key,
+        project_key,
+        tasks_data,
+    ) -> List[Issue]:
         for story in tasks_data["stories"]:
             story_data = TaskData(
                 project_key=project_key,
@@ -127,7 +130,7 @@ class AdvancedTaskCreation:
                 priority=story["priority"],
                 epic_link=epic_key,
             )
-            story_issue = self.jira_repo.create_task(story_data)
+            story_issue = self.task_manager_repository.create_task(story_data)
             created_tasks.append(story_issue)
 
             # Create subtasks for each component
@@ -143,7 +146,9 @@ class AdvancedTaskCreation:
                         task_type="Sub-task",
                         parent_issue_key=story_issue.key,
                     )
-                    subtask_issue = self.jira_repo.create_task(subtask_data)
+                    subtask_issue = self.task_manager_repository.create_task(
+                        subtask_data,
+                    )
                     LOGGER.info(
                         f"Subtask created: {subtask_issue.key} under parent story {story_issue.key}",
                     )
@@ -151,11 +156,11 @@ class AdvancedTaskCreation:
         return created_tasks
 
     async def create_structured_user_story(
-            self,
-            description: str,
-            project_key: str,
-            epic_key: Optional[str] = None,
-            parent_story_key: Optional[str] = None,
+        self,
+        description: str,
+        project_key: str,
+        epic_key: Optional[str] = None,
+        parent_story_key: Optional[str] = None,
     ) -> TaskData:
         """Create a well-structured user story following agile best practices.
 
@@ -181,7 +186,7 @@ class AdvancedTaskCreation:
         parent_story_context = {}
 
         if epic_key:
-            epic_issue = self.jira_repo.get_issue(epic_key)
+            epic_issue = self.task_manager_repository.get_issue(epic_key)
             if epic_issue:
                 epic_context = {
                     "key": epic_key,
@@ -190,7 +195,7 @@ class AdvancedTaskCreation:
                 }
 
         if parent_story_key:
-            parent_issue = self.jira_repo.get_issue(parent_story_key)
+            parent_issue = self.task_manager_repository.get_issue(parent_story_key)
             if parent_issue:
                 parent_story_context = {
                     "key": parent_story_key,
@@ -209,7 +214,7 @@ class AdvancedTaskCreation:
         # Create or update the task
         if parent_story_key:
             # Update existing story with enhanced content
-            parent_issue = self.jira_repo.get_issue(parent_story_key)
+            parent_issue = self.task_manager_repository.get_issue(parent_story_key)
 
             # Generate updated description that preserves original content
             original_description = parent_issue.fields.description or ""
@@ -233,7 +238,7 @@ class AdvancedTaskCreation:
             )
 
             # Update the existing story
-            self.jira_repo.update_issue_from_fields(
+            self.task_manager_repository.update_issue_from_fields(
                 parent_story_key,
                 issue_fields,
             )
@@ -259,18 +264,18 @@ class AdvancedTaskCreation:
             )
 
             # Create the new story
-            new_issue = self.jira_repo.create_task(story_data)
+            new_issue = self.task_manager_repository.create_task(story_data)
             LOGGER.info(
                 f"Created new story: {new_issue.key} with structured content",
             )
             return story_data
 
     async def _generate_structured_user_story(
-            self,
-            description: str,
-            project_info: Dict[str, Any],
-            epic_context: Dict[str, Any] = None,
-            parent_story_context: Dict[str, Any] = None,
+        self,
+        description: str,
+        project_info: Dict[str, Any],
+        epic_context: Dict[str, Any] = None,
+        parent_story_context: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """Generate structured user story content using AI.
 
@@ -362,7 +367,7 @@ Tone & Style:
 - Avoid passive voice
 - Generate the result in google doc format
 - Use markdown for formatting
-- Generate the story in fluent Farsi. 
+- Generate the story in fluent Farsi.
 
 {format_instructions}
 """
@@ -477,22 +482,22 @@ Story Description: {parent_story_context.get('description', '')}"""
                     next_section_idx = float("inf")
                     for next_section in possible_sections:
                         if (
-                                next_section != section
-                                and next_section in new_content[start_idx + len(section) :]
+                            next_section != section
+                            and next_section in new_content[start_idx + len(section) :]
                         ):
                             section_idx = (
-                                    new_content[start_idx + len(section) :].find(
-                                        next_section,
-                                    )
-                                    + start_idx
-                                    + len(section)
+                                new_content[start_idx + len(section) :].find(
+                                    next_section,
+                                )
+                                + start_idx
+                                + len(section)
                             )
                             next_section_idx = min(next_section_idx, section_idx)
 
                     if next_section_idx < float("inf"):
                         new_sections[section] = new_content[
-                                                start_idx:next_section_idx
-                                                ].strip()
+                            start_idx:next_section_idx
+                        ].strip()
                     else:
                         new_sections[section] = new_content[start_idx:].strip()
 
@@ -505,19 +510,19 @@ Story Description: {parent_story_context.get('description', '')}"""
                     next_section_idx = float("inf")
                     for next_section in possible_sections:
                         if (
-                                next_section != section
-                                and next_section in result[start_idx + len(section) :]
+                            next_section != section
+                            and next_section in result[start_idx + len(section) :]
                         ):
                             section_idx = (
-                                    result[start_idx + len(section) :].find(next_section)
-                                    + start_idx
-                                    + len(section)
+                                result[start_idx + len(section) :].find(next_section)
+                                + start_idx
+                                + len(section)
                             )
                             next_section_idx = min(next_section_idx, section_idx)
 
                     if next_section_idx < float("inf"):
                         result = (
-                                result[:start_idx] + content + result[next_section_idx:]
+                            result[:start_idx] + content + result[next_section_idx:]
                         )
                     else:
                         result = result[:start_idx] + content
@@ -535,10 +540,10 @@ Story Description: {parent_story_context.get('description', '')}"""
 {new_content}"""
 
     def _parse_task_description(
-            self,
-            description: str,
-            project_info: Dict[str, Any],
-            task_type: str,
+        self,
+        description: str,
+        project_info: Dict[str, Any],
+        task_type: str,
     ) -> Dict[str, Any]:
         """Analyze task description and return structured task data.
 
@@ -740,9 +745,9 @@ Your Task:
                 }
 
     def _assign_tasks(
-            self,
-            parsed_data: Dict[str, Any],
-            project_info: Dict[str, Any],
+        self,
+        parsed_data: Dict[str, Any],
+        project_info: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Assign tasks to team members based on skill levels and department.
 
@@ -783,16 +788,26 @@ Your Task:
                 juniors = [m for m in members if m["role"] == "Junior Developer"]
 
                 # Distribute tasks based on complexity (story points)
-                self._distribute_tasks_based_on_complexity(comp_tasks, juniors, leader, mid_levels, seniors)
+                self._distribute_tasks_based_on_complexity(
+                    comp_tasks,
+                    juniors,
+                    leader,
+                    mid_levels,
+                    seniors,
+                )
 
         return parsed_data
 
     @staticmethod
-    def _distribute_tasks_based_on_complexity(comp_tasks, juniors, leader, mid_levels, seniors) -> Dict[str, Any]:
+    def _distribute_tasks_based_on_complexity(
+        comp_tasks,
+        juniors,
+        leader,
+        mid_levels,
+        seniors,
+    ) -> Dict[str, Any]:
         for task in comp_tasks["subtasks"]:
-            if (
-                    task.get("assignee") is None
-            ):  # Only assign if not already assigned
+            if task.get("assignee") is None:  # Only assign if not already assigned
                 if task["story_points"] >= 5:  # Complex tasks
                     if seniors:
                         task["assignee"] = seniors[0]["username"]
@@ -826,7 +841,10 @@ if __name__ == "__main__":
     jira_repo = JiraRepository(
         settings=JIRA_SETTINGS,
     )
-    task_creator = AdvancedTaskCreation(jira_repository=jira_repo, user_config=UserConfig())
+    task_creator = AdvancedTaskCreation(
+        task_manager_repository=jira_repo,
+        user_config=UserConfig(),
+    )
     story_description = """The task is to connect to the widget through a JavaScript snippet.
     This story point belongs to the front-end department.
     It is estimated to take 16 hours to prepare this task, which includes changes to the service connection

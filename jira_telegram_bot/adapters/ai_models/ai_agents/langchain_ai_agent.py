@@ -1,32 +1,51 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
+from __future__ import annotations
+
+from typing import Any
+from typing import Dict
+
+from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
+from langchain.prompts import PromptTemplate
 
+from jira_telegram_bot.adapters.ai_models.utils import llm_result_correction_chain
 from jira_telegram_bot.entities.structured_prompt import StructuredPrompt
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
+    AiServiceProtocol,
+)
+from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
 
-from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AiService
 
-_MODEL_REGISTRY = {
-    "o3": ChatGoogleGenerativeAI(model_name="o3"),
-    "4o-mini": ChatGoogleGenerativeAI(model_name="4o-mini"),
-}
+class LangChainAiService(AiServiceProtocol):
+    def __init__(self, model_registry: LLMModelInterface):
+        self.model_registry = model_registry
 
-_DEFAULT_MODEL = _MODEL_REGISTRY["4o-mini"]
-
-class LangChainAiService(AiService):
-    def __init__(self, model_registery):
-    async def run(self, prompt: StructuredPrompt, inputs: dict) -> dict:
-        model = _MODEL_REGISTRY.get(prompt.model_hint, _DEFAULT_MODEL)
-
+    async def run(
+        self,
+        prompt: StructuredPrompt,
+        inputs: dict,
+        cleanse_llm_text: bool = False,
+    ) -> Dict[str, Any]:
+        # TODO: get a model with the least used RPM and RPD. Or, that has at least 10% of the max RPM and RPD
+        model = self.model_registry[prompt.model_hint, prompt.model_engine]
         parser = StructuredOutputParser.from_response_schemas(
-            list(prompt.schema["fields"])
+            [ResponseSchema(**schema) for schema in prompt.schemas],
         )
         tmpl = PromptTemplate(
             template=prompt.template,
-            input_variables=list(inputs.keys()),
+            input_variables=prompt.input_variables,
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
-        chain = tmpl | model | parser
-        return await chain.ainvoke(inputs)
+        chain = await self.create_chain(cleanse_llm_text, model, parser, tmpl)
+        return await chain.with_config(
+            configurable={"llm_temperature": prompt.temperature},
+        ).ainvoke(inputs)
+
+    @staticmethod
+    async def create_chain(cleanse_llm_text: bool, model, parser, tmpl: PromptTemplate):
+        if cleanse_llm_text:
+            chain = tmpl | model | llm_result_correction_chain | parser
+        else:
+            chain = tmpl | model | parser
+        return chain
 
     # TODO: register chains for re-usage and no re-creation

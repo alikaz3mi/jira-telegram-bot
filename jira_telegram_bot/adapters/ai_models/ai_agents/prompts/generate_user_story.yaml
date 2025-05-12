@@ -52,14 +52,14 @@ prompt: |
   - Avoid passive voice
   - Generate the result in google doc format
   - Use markdown for formatting
-  - Generate the story in fluent Farsi. 
+  - Generate the story in fluent Farsi.
 
   {{ format_instructions }}
 
 # ── response schema for StructuredOutputParser ─────────────────────────────
 schemas:
   - name: user_story
-    type: object
+    type: json
     description: >
       Dictionary containing:
         summary (string): A concise title for the story,

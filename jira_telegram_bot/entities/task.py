@@ -12,6 +12,22 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 
+class UserStory(BaseModel):
+    project_key: Optional[str] = Field(default=None)
+    summary: str = Field(default=None)
+    description: str = Field(default=None)
+    components: Optional[List[str]] = Field(default=None)
+    labels: Optional[List[str]] = Field(default=None)
+    task_type: Optional[str] = Field(default=None)
+    story_points: float = Field(default=None)
+    sprint_id: Optional[int] = Field(default=None)
+    sprint_name: Optional[str] = Field(default=None)
+    epic_link: Optional[str] = Field(default=None)
+    release: Optional[str] = Field(default=None)
+    assignee: Optional[str] = Field(default=None)
+    priority: Optional[str] = Field(default=None)
+
+
 class TaskData(BaseModel):
     project_key: Optional[str] = Field(default=None)
     summary: Optional[str] = Field(default=None)

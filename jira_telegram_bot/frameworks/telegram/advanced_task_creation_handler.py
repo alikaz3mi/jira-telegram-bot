@@ -51,7 +51,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
     async def start(self, update: Update, context: CallbackContext) -> int:
         """Start advanced task creation flow."""
         # Get projects from Jira
-        projects = self.advanced_task_creation.jira_repo.get_projects()
+        projects = self.advanced_task_creation.task_manager_repository.get_projects()
 
         # Create keyboard with project options - 3 per row
         keyboard = []
@@ -109,7 +109,9 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             context.user_data["project_info"] = projects_info[project_key]
 
             # Get epics for the project
-            epics = self.advanced_task_creation.jira_repo.get_epics(project_key)
+            epics = self.advanced_task_creation.task_manager_repository.get_epics(
+                project_key,
+            )
 
             # Create keyboard with epic options - 3 per row
             keyboard = []
@@ -532,11 +534,11 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
         elif selection == "subtask":
             # Get stories from the project related to the epic
-            stories = self.advanced_task_creation.jira_repo.get_stories_by_project(
+            stories = self.advanced_task_creation.task_manager_repository.get_stories_by_project(
                 project_key,
                 epic_key,
                 status='"In Progress", "To Do", "Backlog", "Selected for Development"',
-                filters='description !~ "acceptance criteria" OR description  is EMPTY'
+                filters='description !~ "acceptance criteria" OR description  is EMPTY',
             )
 
             if not stories:
@@ -570,7 +572,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 "Select the story to add subtasks to:",
                 reply_markup=reply_markup,
             )
-            
+
             return self.SELECT_STORY
 
         return ConversationHandler.END
@@ -594,7 +596,6 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             for button in row
             if button.callback_data == f"story|{story_key}"
         ][0]
-        
 
         # Show available departments and proceed to description
         project_info = context.user_data["project_info"]
@@ -651,7 +652,9 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         await query.answer()
 
         project_key = context.user_data["project_key"]
-        epics = self.advanced_task_creation.jira_repo.get_epics(project_key)
+        epics = self.advanced_task_creation.task_manager_repository.get_epics(
+            project_key,
+        )
 
         # Create keyboard with epic options - 2 per row
         keyboard = []
@@ -673,7 +676,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         keyboard.append(
             [
                 InlineKeyboardButton("No Epic", callback_data="epic_select|none"),
-            ]
+            ],
         )
 
         reply_markup = InlineKeyboardMarkup(keyboard)

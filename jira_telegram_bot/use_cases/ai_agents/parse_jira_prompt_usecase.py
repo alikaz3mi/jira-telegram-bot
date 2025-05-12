@@ -6,7 +6,7 @@ from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
 from langchain.prompts import PromptTemplate
 
-from jira_telegram_bot.use_cases.interfaces.llm_gateway_interface import (
+from jira_telegram_bot.use_cases.interfaces.llm_model_interface import (
     LLMGatewayInterface,
 )
 
