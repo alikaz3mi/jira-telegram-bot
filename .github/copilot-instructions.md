@@ -112,20 +112,9 @@ def example(name: str) -> str:
 
 Always write prompts in this template:
 
-```python
-class StructuredPromptSpec:
-    prompt: str = Field()
-    schemas: List[ResponseSchema] = Field()
-    format_instructions: str = Field(
-        description="The output of parser.get_format_instructions()"
-    )
-    template: PromptTemplate = Field(
-        description="Runnable used at the beginning of the chain."
-    )
-    parser: StructuredOutputParser = Field(
-        description="Runnable used at the end of the chain."
-    )
-```
+1. Create a yaml for the prompt. Similar to `jira_telegram_bot/adapters/ai_models/ai_agents/prompts/generate_user_story.yaml`
+2. 
+
 
 Then, when creating the chain in the related class in `ai_agents`, import it, and create the chain. I.e `chain = SamplePrompt.prompt | llm | SamplePrompt.parser`
 

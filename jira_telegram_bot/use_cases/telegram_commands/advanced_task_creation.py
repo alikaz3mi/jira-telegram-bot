@@ -306,71 +306,151 @@ class AdvancedTaskCreation:
         """
         epic_context = epic_context or {}
         parent_story_context = parent_story_context or {}
-
-        # Extract business goals from project info
+        
+        story_inputs = self._prepare_story_inputs(
+            description, project_info, epic_context, parent_story_context
+        )
+        
+        try:
+            user_story = await self._generate_user_story_with_service(
+                description, project_info, story_inputs
+            )
+            return self._convert_user_story_to_dict(user_story)
+        except Exception as e:
+            LOGGER.error(f"Error generating user story: {str(e)}")
+            return self._create_fallback_user_story(description, project_info)
+            
+    def _prepare_story_inputs(
+        self,
+        description: str,
+        project_info: Dict[str, Any],
+        epic_context: Dict[str, Any],
+        parent_story_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Prepare inputs for story generation.
+        
+        Args:
+            description: The detailed task description
+            project_info: Project configuration information
+            epic_context: Optional context from linked epic
+            parent_story_context: Optional context from parent story
+            
+        Returns:
+            Dictionary of prepared inputs
+        """
+        # Extract business goals and product area
         business_goal = project_info.get("project_info", {}).get(
-            "objective",
-            "Improve user experience",
+            "objective", "Improve user experience"
         )
-
-        # Extract product area from project info
         product_area = project_info.get("project_info", {}).get(
-            "description",
-            "Software Product",
+            "description", "Software Product"
         )
-
-        # Main personas from project info if available
+        
+        # Main personas from project info
         primary_persona = "User"
         if "personas" in project_info:
             primary_persona = next(iter(project_info["personas"]), "User")
-
-        # Format the epic context if available
-        epic_context_text = ""
-        if epic_context:
-            epic_context_text = f"""Epic Information:
+            
+        return {
+            "product_area": product_area,
+            "business_goal": business_goal,
+            "primary_persona": primary_persona,
+            "dependencies": "Integration with existing systems required",
+            "epic_context": self._format_epic_context(epic_context),
+            "parent_story_context": self._format_parent_context(parent_story_context),
+        }
+        
+    def _format_epic_context(self, epic_context: Dict[str, Any]) -> str:
+        """Format epic context for story generation.
+        
+        Args:
+            epic_context: Epic context information
+            
+        Returns:
+            Formatted epic context text
+        """
+        if not epic_context:
+            return ""
+            
+        return f"""Epic Information:
 Epic Key: {epic_context.get('key', '')}
 Epic Summary: {epic_context.get('summary', '')}
 Epic Description: {epic_context.get('description', '')}"""
-
-        # Format the parent story context if available
-        parent_context_text = ""
-        if parent_story_context:
-            parent_context_text = f"""Parent Story Information:
+        
+    def _format_parent_context(self, parent_story_context: Dict[str, Any]) -> str:
+        """Format parent story context for story generation.
+        
+        Args:
+            parent_story_context: Parent story context information
+            
+        Returns:
+            Formatted parent context text
+        """
+        if not parent_story_context:
+            return ""
+            
+        return f"""Parent Story Information:
 Story Key: {parent_story_context.get('key', '')}
 Story Summary: {parent_story_context.get('summary', '')}
 Story Description: {parent_story_context.get('description', '')}"""
-
-        # Extract dependencies from description or use default
-        dependencies = "Integration with existing systems required"
         
-        try:
-            # Use the story generator service to create a structured user story
-            project_key = list(project_info.get("departments", {}).keys())[0] if project_info.get("departments") else ""
-            user_story = await self.story_generator.generate(
-                raw_text=description,
-                project=project_key,
-                product_area=product_area,
-                business_goal=business_goal,
-                primary_persona=primary_persona,
-                dependencies=dependencies,
-                epic_context=epic_context_text,
-                parent_story_context=parent_context_text,
-            )
+    async def _generate_user_story_with_service(
+        self,
+        description: str,
+        project_info: Dict[str, Any],
+        story_inputs: Dict[str, Any],
+    ) -> UserStory:
+        """Generate user story using the story generator service.
+        
+        Args:
+            description: The detailed task description
+            project_info: Project configuration information
+            story_inputs: Prepared inputs for story generation
             
-            # Convert the UserStory object to a dictionary format expected by the rest of the code
-            return {
-                "summary": user_story.summary,
-                "description": user_story.description,
-                "component": user_story.components[0] if user_story.components else "",
-                "story_points": user_story.story_points,
-                "priority": user_story.priority,
-            }
-        except Exception as e:
-            LOGGER.error(f"Error generating user story: {str(e)}")
-            # Fallback in case of error
-            return {
-                "summary": "User story based on description",
-                "description": f"""As a user, I want the described functionality so that I can achieve my goals.
+        Returns:
+            Generated UserStory object
+        """
+        project_key = list(project_info.get("departments", {}).keys())[0] if project_info.get("departments") else ""
+        return await self.story_generator.generate(
+            raw_text=description,
+            project=project_key,
+            **story_inputs
+        )
+        
+    def _convert_user_story_to_dict(self, user_story: UserStory) -> Dict[str, Any]:
+        """Convert UserStory object to dictionary format.
+        
+        Args:
+            user_story: UserStory object
+            
+        Returns:
+            Dictionary representation of user story
+        """
+        return {
+            "summary": user_story.summary,
+            "description": user_story.description,
+            "component": user_story.components[0] if user_story.components else "",
+            "story_points": user_story.story_points,
+            "priority": user_story.priority,
+        }
+        
+    def _create_fallback_user_story(
+        self,
+        description: str,
+        project_info: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Create a fallback user story when generation fails.
+        
+        Args:
+            description: The detailed task description
+            project_info: Project configuration information
+            
+        Returns:
+            Dictionary containing basic user story
+        """
+        return {
+            "summary": "User story based on description",
+            "description": f"""As a user, I want the described functionality so that I can achieve my goals.
 
 {description}
 
@@ -383,31 +463,10 @@ Story Description: {parent_story_context.get('description', '')}"""
 - Code is written and tested
 - Documentation is updated
 - Changes are reviewed and approved""",
-                "component": list(project_info["departments"].keys())[0],
-                "story_points": 5,
-                "priority": "Medium",
-            }
-        except Exception:
-            # Fallback in case of error
-            return {
-                "summary": "User story based on description",
-                "description": f"""As a user, I want the described functionality so that I can achieve my goals.
-
-{description}
-
-**Acceptance Criteria:**
-- Given the system is set up, when the functionality is used, then it works as expected.
-- Given an error occurs, when the user interacts with the system, then appropriate feedback is provided.
-- Given the user completes their task, when they review their work, then they can see the results.
-
-**Definition of Done:**
-- Code is written and tested
-- Documentation is updated
-- Changes are reviewed and approved""",
-                "component": list(project_info["departments"].keys())[0],
-                "story_points": 5,
-                "priority": "Medium",
-            }
+            "component": list(project_info["departments"].keys())[0],
+            "story_points": 5,
+            "priority": "Medium",
+        }
 
     def _merge_descriptions(self, original: str, new_content: str) -> str:
         """Merge original description with new user story content.
@@ -419,82 +478,122 @@ Story Description: {parent_story_context.get('description', '')}"""
         Returns:
             Combined description preserving both contents
         """
-        # If original is empty, just return new content
         if not original or original.strip() == "":
             return new_content
 
-        # Check if original already has user story formatting
         if "As a " in original and "I want " in original and "so that " in original:
-            # Already has user story format, update acceptance criteria and other sections
-
-            # Extract sections from new content
-            new_sections = {}
-            possible_sections = [
-                "Acceptance Criteria",
-                "Non-functional Requirements",
-                "Sizing",
-                "Risks & Open Questions",
-                "Definition of Done",
-            ]
-
-            for section in possible_sections:
-                if section in new_content:
-                    start_idx = new_content.find(section)
-                    next_section_idx = float("inf")
-                    for next_section in possible_sections:
-                        if (
-                            next_section != section
-                            and next_section in new_content[start_idx + len(section) :]
-                        ):
-                            section_idx = (
-                                new_content[start_idx + len(section) :].find(
-                                    next_section,
-                                )
-                                + start_idx
-                                + len(section)
-                            )
-                            next_section_idx = min(next_section_idx, section_idx)
-
-                    if next_section_idx < float("inf"):
-                        new_sections[section] = new_content[
-                            start_idx:next_section_idx
-                        ].strip()
-                    else:
-                        new_sections[section] = new_content[start_idx:].strip()
-
-            # Update or append each section
-            result = original
-            for section, content in new_sections.items():
-                if section in result:
-                    # Update existing section
-                    start_idx = result.find(section)
-                    next_section_idx = float("inf")
-                    for next_section in possible_sections:
-                        if (
-                            next_section != section
-                            and next_section in result[start_idx + len(section) :]
-                        ):
-                            section_idx = (
-                                result[start_idx + len(section) :].find(next_section)
-                                + start_idx
-                                + len(section)
-                            )
-                            next_section_idx = min(next_section_idx, section_idx)
-
-                    if next_section_idx < float("inf"):
-                        result = (
-                            result[:start_idx] + content + result[next_section_idx:]
-                        )
-                    else:
-                        result = result[:start_idx] + content
-                else:
-                    # Append new section
-                    result += f"\n\n{content}"
-
-            return result
+            new_sections = self._extract_content_sections(new_content)
+            return self._update_existing_user_story(original, new_sections)
         else:
-            # Doesn't have user story format, preserve original as context
-            return f"""**Original Description:**
+            return self._format_as_enhanced_story(original, new_content)
+            
+    def _extract_content_sections(self, content: str) -> Dict[str, str]:
+        """Extract sections from user story content.
+        
+        Args:
+            content: User story content with sections
+            
+        Returns:
+            Dictionary of section name to section content
+        """
+        new_sections = {}
+        possible_sections = [
+            "Acceptance Criteria",
+            "Non-functional Requirements",
+            "Sizing",
+            "Risks & Open Questions",
+            "Definition of Done",
+        ]
+
+        for section in possible_sections:
+            if section in content:
+                start_idx = content.find(section)
+                next_section_idx = self._find_next_section_index(
+                    content, section, start_idx, possible_sections
+                )
+
+                if next_section_idx < float("inf"):
+                    new_sections[section] = content[start_idx:next_section_idx].strip()
+                else:
+                    new_sections[section] = content[start_idx:].strip()
+                    
+        return new_sections
+    
+    def _find_next_section_index(
+        self, content: str, current_section: str, start_idx: int, possible_sections: List[str]
+    ) -> float:
+        """Find the index of the next section in content.
+        
+        Args:
+            content: The content to search in
+            current_section: The current section name
+            start_idx: Starting index for the search
+            possible_sections: List of possible section names
+            
+        Returns:
+            Index of the next section or infinity if none found
+        """
+        next_section_idx = float("inf")
+        for next_section in possible_sections:
+            if (
+                next_section != current_section
+                and next_section in content[start_idx + len(current_section):]
+            ):
+                section_idx = (
+                    content[start_idx + len(current_section):].find(next_section)
+                    + start_idx
+                    + len(current_section)
+                )
+                next_section_idx = min(next_section_idx, section_idx)
+                
+        return next_section_idx
+        
+    def _update_existing_user_story(self, original: str, new_sections: Dict[str, str]) -> str:
+        """Update existing user story with new sections.
+        
+        Args:
+            original: Original user story text
+            new_sections: New sections to update or append
+            
+        Returns:
+            Updated user story text
+        """
+        result = original
+        possible_sections = [
+            "Acceptance Criteria",
+            "Non-functional Requirements",
+            "Sizing",
+            "Risks & Open Questions",
+            "Definition of Done",
+        ]
+        
+        for section, content in new_sections.items():
+            if section in result:
+                start_idx = result.find(section)
+                next_section_idx = self._find_next_section_index(
+                    result, section, start_idx, possible_sections
+                )
+
+                if next_section_idx < float("inf"):
+                    result = result[:start_idx] + content + result[next_section_idx:]
+                else:
+                    result = result[:start_idx] + content
+            else:
+                result += f"\n\n{content}"
+                
+        return result
+    
+    def _format_as_enhanced_story(self, original: str, new_content: str) -> str:
+        """Format original content and new user story.
+        
+        Args:
+            original: Original description text
+            new_content: New user story content
+            
+        Returns:
+            Combined description with clear separation
+        """
+        return f"""**Original Description:**
 {original}
 
 **Enhanced User Story:**
@@ -516,6 +615,33 @@ Story Description: {parent_story_context.get('description', '')}"""
         Returns:
             Dictionary containing parsed tasks information
         """
+        try:
+            formatted_details = self._format_project_details(project_info)
+            result = await self._generate_task_structure(
+                description, 
+                project_info, 
+                task_type, 
+                formatted_details
+            )
+            
+            # Assign tasks based on skill levels for stories
+            if task_type == "story" and "stories" in result:
+                result = self._assign_tasks(result, project_info)
+                
+            return result
+        except Exception as e:
+            LOGGER.error(f"Error parsing task description: {str(e)}")
+            return self._generate_fallback_result(task_type, description, project_info)
+    
+    def _format_project_details(self, project_info: Dict[str, Any]) -> Dict[str, str]:
+        """Format project details for AI prompt.
+        
+        Args:
+            project_info: Project configuration information
+            
+        Returns:
+            Dictionary of formatted project details
+        """
         # Format department details
         dept_details = []
         for dept, info in project_info["departments"].items():
@@ -530,70 +656,107 @@ Story Description: {parent_story_context.get('description', '')}"""
                 f"{assignee['username']} ({assignee['role']}) - {assignee['department']}",
             )
             
-        try:
-            # Prepare common inputs
-            project_context = project_info["project_info"]["description"]
-            departments = ", ".join(project_info["departments"].keys())
-            department_details_str = "\n\n".join(dept_details)
-            assignee_details_str = "\n".join(assignee_details)
+        return {
+            "project_context": project_info["project_info"]["description"],
+            "departments": ", ".join(project_info["departments"].keys()),
+            "department_details": "\n\n".join(dept_details),
+            "assignee_details": "\n".join(assignee_details),
+        }
+        
+    async def _generate_task_structure(
+        self, 
+        description: str,
+        project_info: Dict[str, Any],
+        task_type: str,
+        formatted_details: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Generate the task structure using appropriate service.
+        
+        Args:
+            description: The detailed task description
+            project_info: Project configuration information
+            task_type: Either "story" or "subtask"
+            formatted_details: Dictionary containing formatted project details
             
-            # Use the appropriate service based on task type
-            if task_type == "story":
-                if self.story_decomposition_service:
-                    result = await self.story_decomposition_service.decompose_story(
-                        project_context=project_context,
-                        description=description,
-                        departments=departments,
-                        department_details=department_details_str,
-                        assignee_details=assignee_details_str,
-                    )
-                else:
-                    # Fallback to direct AI service if no decomposition service is provided
-                    prompt_spec = await self.prompt_catalog.get_prompt("decompose_user_story")
-                    result = await self.ai_service.run(
-                        prompt=prompt_spec,
-                        inputs={
-                            "project_context": project_context,
-                            "description": description,
-                            "departments": departments,
-                            "department_details": department_details_str,
-                            "assignee_details": assignee_details_str,
-                        },
-                        cleanse_llm_text=True,
-                    )
-            else:  # task_type == "subtask"
-                if self.subtask_creation_service:
-                    result = await self.subtask_creation_service.create_subtasks(
-                        project_context=project_context,
-                        description=description,
-                        departments=departments,
-                        department_details=department_details_str,
-                        assignee_details=assignee_details_str,
-                    )
-                else:
-                    # Fallback to direct AI service if no subtask creation service is provided
-                    prompt_spec = await self.prompt_catalog.get_prompt("create_subtasks")
-                    result = await self.ai_service.run(
-                        prompt=prompt_spec,
-                        inputs={
-                            "project_context": project_context,
-                            "description": description,
-                            "departments": departments,
-                            "department_details": department_details_str,
-                            "assignee_details": assignee_details_str,
-                        },
-                        cleanse_llm_text=True,
-                    )
+        Returns:
+            Dictionary containing structured tasks
+        """
+        if task_type == "story":
+            return await self._generate_story_structure(description, formatted_details)
+        else:
+            return await self._generate_subtask_structure(description, formatted_details)
             
-            # Assign tasks based on skill levels for stories
-            if task_type == "story" and "stories" in result:
-                result = self._assign_tasks(result, project_info)
-                
-            return result
-        except Exception as e:
-            LOGGER.error(f"Error parsing task description: {str(e)}")
-            # Provide fallback result based on task type
-            return self._generate_fallback_result(task_type, description, project_info)
+    async def _generate_story_structure(
+        self, 
+        description: str, 
+        formatted_details: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """Generate story structure using decomposition service.
+        
+        Args:
+            description: The detailed task description
+            formatted_details: Dictionary containing formatted project details
+            
+        Returns:
+            Dictionary containing structured story data
+        """
+        if self.story_decomposition_service:
+            return await self.story_decomposition_service.decompose_story(
+                project_context=formatted_details["project_context"],
+                description=description,
+                departments=formatted_details["departments"],
+                department_details=formatted_details["department_details"],
+                assignee_details=formatted_details["assignee_details"],
+            )
+        else:
+            prompt_spec = await self.prompt_catalog.get_prompt("decompose_user_story")
+            return await self.ai_service.run(
+                prompt=prompt_spec,
+                inputs={
+                    "project_context": formatted_details["project_context"],
+                    "description": description,
+                    "departments": formatted_details["departments"],
+                    "department_details": formatted_details["department_details"],
+                    "assignee_details": formatted_details["assignee_details"],
+                },
+                cleanse_llm_text=True,
+            )
+            
+    async def _generate_subtask_structure(
+        self, 
+        description: str, 
+        formatted_details: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """Generate subtask structure using subtask creation service.
+        
+        Args:
+            description: The detailed task description
+            formatted_details: Dictionary containing formatted project details
+            
+        Returns:
+            Dictionary containing structured subtask data
+        """
+        if self.subtask_creation_service:
+            return await self.subtask_creation_service.create_subtasks(
+                project_context=formatted_details["project_context"],
+                description=description,
+                departments=formatted_details["departments"],
+                department_details=formatted_details["department_details"],
+                assignee_details=formatted_details["assignee_details"],
+            )
+        else:
+            prompt_spec = await self.prompt_catalog.get_prompt("create_subtasks")
+            return await self.ai_service.run(
+                prompt=prompt_spec,
+                inputs={
+                    "project_context": formatted_details["project_context"],
+                    "description": description,
+                    "departments": formatted_details["departments"],
+                    "department_details": formatted_details["department_details"],
+                    "assignee_details": formatted_details["assignee_details"],
+                },
+                cleanse_llm_text=True,
+            )
             
     def _generate_fallback_result(
         self,
@@ -662,9 +825,36 @@ Story Description: {parent_story_context.get('description', '')}"""
         Returns:
             Updated task data with assignments
         """
-        # Get department leads and members
+        team_structure = self._build_team_structure(project_info)
+        
+        # Assign tasks based on skill levels
+        for story in parsed_data["stories"]:
+            for comp_tasks in story["component_tasks"]:
+                dept = comp_tasks["component"]
+                if dept not in team_structure["dept_members"]:
+                    continue
+
+                self._assign_department_tasks(
+                    comp_tasks, 
+                    dept, 
+                    team_structure["dept_members"], 
+                    team_structure["dept_leads"]
+                )
+
+        return parsed_data
+        
+    def _build_team_structure(self, project_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Build team structure from project info.
+        
+        Args:
+            project_info: Project configuration information
+            
+        Returns:
+            Dictionary containing team structure
+        """
         dept_leads = {comp["name"]: comp["lead"] for comp in project_info["components"]}
         dept_members = {}
+        
         for assignee in project_info["assignees"]:
             dept = assignee["department"]
             if dept not in dept_members:
@@ -675,63 +865,118 @@ Story Description: {parent_story_context.get('description', '')}"""
                     "role": assignee["role"],
                 },
             )
+            
+        return {
+            "dept_leads": dept_leads,
+            "dept_members": dept_members,
+        }
+        
+    def _assign_department_tasks(
+        self, 
+        comp_tasks: Dict[str, Any], 
+        dept: str, 
+        dept_members: Dict[str, List[Dict[str, str]]],
+        dept_leads: Dict[str, str],
+    ) -> None:
+        """Assign tasks for a department based on skill levels.
+        
+        Args:
+            comp_tasks: Component tasks to assign
+            dept: Department name
+            dept_members: Dictionary of department members
+            dept_leads: Dictionary of department leads
+        """
+        members = dept_members[dept]
+        leader = dept_leads.get(dept)
 
-        # Assign tasks based on skill levels
-        for story in parsed_data["stories"]:
-            for comp_tasks in story["component_tasks"]:
-                dept = comp_tasks["component"]
-                if dept not in dept_members:
-                    continue
+        # Group members by seniority
+        seniors = [m for m in members if m["role"] == "Senior Developer"]
+        mid_levels = [m for m in members if m["role"] == "Mid-level Developer"]
+        juniors = [m for m in members if m["role"] == "Junior Developer"]
 
-                members = dept_members[dept]
-                leader = dept_leads.get(dept)
+        # Distribute tasks based on complexity (story points)
+        self._distribute_tasks_based_on_complexity(
+            comp_tasks,
+            juniors,
+            leader,
+            mid_levels,
+            seniors,
+        )
 
-                # Sort members by seniority for task allocation
-                seniors = [m for m in members if m["role"] == "Senior Developer"]
-                mid_levels = [m for m in members if m["role"] == "Mid-level Developer"]
-                juniors = [m for m in members if m["role"] == "Junior Developer"]
-
-                # Distribute tasks based on complexity (story points)
-                self._distribute_tasks_based_on_complexity(
-                    comp_tasks,
-                    juniors,
-                    leader,
-                    mid_levels,
-                    seniors,
-                )
-
-        return parsed_data
-
-    @staticmethod
     def _distribute_tasks_based_on_complexity(
-        comp_tasks,
-        juniors,
-        leader,
-        mid_levels,
-        seniors,
-    ) -> Dict[str, Any]:
+        self,
+        comp_tasks: Dict[str, Any],
+        juniors: List[Dict[str, str]],
+        leader: str,
+        mid_levels: List[Dict[str, str]],
+        seniors: List[Dict[str, str]],
+    ) -> None:
+        """Distribute tasks based on their complexity and available team members.
+        
+        Args:
+            comp_tasks: Component tasks to distribute
+            juniors: List of junior developers
+            leader: Department lead username
+            mid_levels: List of mid-level developers
+            seniors: List of senior developers
+        """
         for task in comp_tasks["subtasks"]:
             if task.get("assignee") is None:  # Only assign if not already assigned
-                if task["story_points"] >= 5:  # Complex tasks
-                    if seniors:
-                        task["assignee"] = seniors[0]["username"]
-                elif task["story_points"] >= 2:  # Medium tasks
-                    if mid_levels:
-                        task["assignee"] = mid_levels[0]["username"]
-                    elif seniors:
-                        task["assignee"] = seniors[0]["username"]
-                else:  # Simple tasks
-                    if juniors:
-                        task["assignee"] = juniors[0]["username"]
-                    elif mid_levels:
-                        task["assignee"] = mid_levels[0]["username"]
-                    elif seniors:
-                        task["assignee"] = seniors[0]["username"]
-
-                # If still no assignee, assign to department lead
-                if not task.get("assignee") and leader:
-                    task["assignee"] = leader
-        return comp_tasks
+                self._assign_task_based_on_complexity(
+                    task, seniors, mid_levels, juniors, leader
+                )
+                
+    def _assign_task_based_on_complexity(
+        self,
+        task: Dict[str, Any],
+        seniors: List[Dict[str, str]],
+        mid_levels: List[Dict[str, str]],
+        juniors: List[Dict[str, str]],
+        leader: str,
+    ) -> None:
+        """Assign a specific task based on its complexity.
+        
+        Args:
+            task: Task to assign
+            seniors: List of senior developers
+            mid_levels: List of mid-level developers
+            juniors: List of junior developers
+            leader: Department lead username
+        """
+        story_points = task["story_points"]
+        
+        if story_points >= 5:  # Complex tasks
+            self._assign_to_available_developer(task, seniors)
+        elif story_points >= 2:  # Medium tasks
+            if not self._assign_to_available_developer(task, mid_levels):
+                self._assign_to_available_developer(task, seniors)
+        else:  # Simple tasks
+            if not self._assign_to_available_developer(task, juniors):
+                if not self._assign_to_available_developer(task, mid_levels):
+                    self._assign_to_available_developer(task, seniors)
+                    
+        # If still no assignee, assign to department lead
+        if not task.get("assignee") and leader:
+            task["assignee"] = leader
+            
+    def _assign_to_available_developer(
+        self,
+        task: Dict[str, Any],
+        developers: List[Dict[str, str]],
+    ) -> bool:
+        """Assign task to first available developer in the list.
+        
+        Args:
+            task: Task to assign
+            developers: List of available developers
+            
+        Returns:
+            True if assignment was successful, False otherwise
+        """
+        if developers:
+            task["assignee"] = developers[0]["username"]
+            return True
+        return False
 
 
 # Testing functionality should be moved to proper test files in the tests directory
