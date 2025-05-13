@@ -13,7 +13,6 @@ from jira import JIRA
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
@@ -21,7 +20,7 @@ from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface im
 
 
 class JiraRepository(TaskManagerRepositoryInterface):
-    def __init__(self, settings: JiraBoardSettings = JIRA_SETTINGS):
+    def __init__(self, settings: JiraBoardSettings):
         self.settings = settings
         self.jira = JIRA(
             server=self.settings.domain,
