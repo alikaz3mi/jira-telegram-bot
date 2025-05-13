@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings import POSTGRES_SETTINGS
 
@@ -105,7 +105,7 @@ ensure_schema_updates()
 #    (If the table doesn't exist at all, this will create it; if it does, we're good)
 Base.metadata.create_all(engine)
 
-jira_repository = JiraRepository(settings=JIRA_SETTINGS)
+jira_repository = JiraServerRepository(settings=JIRA_SETTINGS)
 
 
 def get_tasks_info(project_key: str) -> list[dict]:

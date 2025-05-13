@@ -6,7 +6,7 @@ from datetime import timedelta
 import requests
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings import TELEGRAM_SETTINGS
@@ -100,7 +100,7 @@ def send_telegram_message(chat_id: int, text: str):
 
 
 def main():
-    jira_repo = JiraRepository(settings=JIRA_SETTINGS)
+    jira_repo = JiraServerRepository(settings=JIRA_SETTINGS)
     user_config = UserConfig()
 
     threshold_date = datetime.now() + timedelta(days=3)

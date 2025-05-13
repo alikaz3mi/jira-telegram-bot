@@ -26,7 +26,7 @@ class LangChainAiService(AiServiceProtocol):
         cleanse_llm_text: bool = False,
     ) -> Dict[str, Any]:
         # TODO: get a model with the least used RPM and RPD. Or, that has at least 10% of the max RPM and RPD
-        model = self.model_registry[prompt.model_hint, prompt.model_engine]
+        model = self.model_registry[prompt.ai_model_hint, prompt.ai_model_engine]
         parser = StructuredOutputParser.from_response_schemas(
             [ResponseSchema(**schema) for schema in prompt.schemas],
         )

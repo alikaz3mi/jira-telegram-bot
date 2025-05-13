@@ -22,7 +22,7 @@ from jira_telegram_bot.settings.telegram_settings import (
 from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
-    JiraRepository,
+    JiraServerRepository,
 )
 from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
     NotificationGateway,
@@ -136,7 +136,7 @@ def configure_container() -> Container:
     )
     
     container[TaskManagerRepositoryInterface] = Singleton(
-        lambda c: JiraRepository(c[JiraConnectionSettings])
+        lambda c: JiraServerRepository(c[JiraConnectionSettings])
     )
     
     container[ProjectInfoRepositoryInterface] = Singleton(

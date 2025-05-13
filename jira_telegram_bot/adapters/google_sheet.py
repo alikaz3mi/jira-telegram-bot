@@ -14,7 +14,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
-    JiraRepository,
+    JiraServerRepository,
 )
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings import GOOGLE_SHEETS_SETTINGS
@@ -198,7 +198,7 @@ class SheetRepository:
     def create_jira_tasks_from_assignments(
         self,
         sheet_id: str,
-        jira_repository: JiraRepository,
+        jira_repository: JiraServerRepository,
         worksheet_name: str = "Assignments",
         project_key: Optional[str] = None,
         default_task_type: str = "Task",
@@ -301,7 +301,7 @@ class SheetRepository:
     def _set_sprint_for_task(
         self,
         task_data: TaskData,
-        jira_repository: JiraRepository,
+        jira_repository: JiraServerRepository,
         sprint_name: str,
     ):
         """
@@ -389,7 +389,7 @@ async def create_tasks_from_sheet() -> List[str]:
         # Initialize the JiraRepository
         from jira_telegram_bot.settings import JIRA_SETTINGS
 
-        jira_repository = JiraRepository(JIRA_SETTINGS)
+        jira_repository = JiraServerRepository(JIRA_SETTINGS)
 
         # Initialize the Google Sheet client and repository
         sheet_client = GoogleSheetClient(GOOGLE_SHEETS_SETTINGS.token_path)

@@ -19,3 +19,4 @@ __pycache__
 
 
 bulk_task.py
+.coverage

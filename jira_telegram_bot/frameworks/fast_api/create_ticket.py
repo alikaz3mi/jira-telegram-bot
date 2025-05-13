@@ -17,7 +17,7 @@ from fastapi import Request
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.file_storage import TelegramPostDataStore
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
-    JiraRepository,
+    JiraServerRepository,
 )
 from jira_telegram_bot.adapters.services.telegram import MockTelegramAudio
 from jira_telegram_bot.adapters.services.telegram import MockTelegramDocument
@@ -40,7 +40,7 @@ from jira_telegram_bot.use_cases.ai_agents.create_ticketing_issue import (
 
 app = FastAPI()
 telegram_post_data_store = TelegramPostDataStore()
-jira_repository = JiraRepository(JIRA_SETTINGS)
+jira_repository = JiraServerRepository(JIRA_SETTINGS)
 user_config = UserConfig()
 
 JIRA_PROJECT_KEY = "PCT"

@@ -32,8 +32,8 @@ class FilePromptCatalog(PromptCatalogProtocol):
         return StructuredPrompt(
             template=data["prompt"],
             schemas=data["schemas"],
-            model_hint=data.get("model_hint", "gpt-4o-mini"),
-            model_engine=data.get("model_engine", "openai"),
+            ai_model_hint=data.get("model_hint", "gpt-4o-mini"),
+            ai_model_engine=data.get("model_engine", "openai"),
             temperature=data.get("temperature", 0.3),
             few_shots=data.get("few_shots", []),
             input_variables=data.get("input_variables", []),

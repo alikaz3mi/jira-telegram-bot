@@ -58,25 +58,26 @@ User Input → Telegram Bot → AdvancedTaskCreationHandler → AdvancedTaskCrea
 
 ```mermaid
 graph TD
-    User[User] -->|/advanced_task| TelegramBot[Telegram Bot]
-    TelegramBot -->|Handles conversation| Handler[AdvancedTaskCreationHandler]
-    Handler -->|Calls use case| UseCase[AdvancedTaskCreation]
-    UseCase -->|Creates tasks| Jira[Jira API]
-    UseCase -->|Requests generation| AI[AI Services]
-    AI -->|Returns structured content| UseCase
-    Jira -->|Returns created issues| UseCase
-    UseCase -->|Returns results| Handler
-    Handler -->|Displays results| User
-    
-    classDef framework fill:#dae8fc,stroke:#6c8ebf;
-    classDef usecase fill:#d5e8d4,stroke:#82b366;
-    classDef external fill:#f8cecc,stroke:#b85450;
-    classDef ai fill:#ffe6cc,stroke:#d79b00;
-    
-    class User,TelegramBot,Handler framework;
-    class UseCase usecase;
-    class Jira external;
-    class AI ai;
+   User[User] -->|/advanced_task| TelegramBot[Telegram Bot]
+   TelegramBot -->|Handles conversation| Handler[AdvancedTaskCreationHandler]
+   Handler -->|Calls use case| UseCase[AdvancedTaskCreation]
+   UseCase -->|Creates tasks| Jira[Jira API]
+   UseCase -->|Requests generation| AI[AI Services]
+   AI -->|Returns structured content| UseCase
+   Jira -->|Returns created issues| UseCase
+   UseCase -->|Returns results| Handler
+   Handler -->|Displays results| User
+   
+   %% Styling with better fonts and improved colors
+   classDef framework fill:#4d668f,stroke:#8ba3d2,color:#ffffff,font-family:Arial,font-weight:bold;
+   classDef usecase fill:#5c8a5c,stroke:#9ed49e,color:#ffffff,font-family:Arial,font-weight:bold;
+   classDef external fill:#a85656,stroke:#e6a0a0,color:#ffffff,font-family:Arial,font-weight:bold;
+   classDef ai fill:#b38c3e,stroke:#ffcc80,color:#ffffff,font-family:Arial,font-weight:bold;
+   
+   class User,TelegramBot,Handler framework;
+   class UseCase usecase;
+   class Jira external;
+   class AI ai;
 ```
 
 ### Sequence Diagram (Mermaid)

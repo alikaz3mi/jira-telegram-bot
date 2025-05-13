@@ -15,11 +15,11 @@ class StructuredPrompt(BaseModel):
     template: str = Field(
         description="Prompt template with placeholders for user inputs.",
     )
-    model_hint: str = Field(
+    ai_model_hint: str = Field(
         default="gpt-4o-mini",
         description="Optional model hint for the LLM.",
     )
-    model_engine: str = Field(
+    ai_model_engine: str = Field(
         default="openai",
         description="Optional model engine for the LLM.",
     )

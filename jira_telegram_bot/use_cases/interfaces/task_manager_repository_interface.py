@@ -73,9 +73,59 @@ class TaskManagerRepositoryInterface(ABC):
         pass
 
     @abstractmethod
-    def update_issue(self, task_data: TaskData) -> Issue:
+    def add_comment(self, issue_key: str, comment: str):
         pass
 
     @abstractmethod
-    def get_issue(self, task_id: str) -> Optional[Issue]:
+    def search_for_issues(self, query: str, max_results: int = 1000) -> List[Issue]:
+        pass
+
+    @abstractmethod
+    def get_stories_by_epic(self, epic_key: str, project_key: str) -> List[Issue]:
+        pass
+
+    @abstractmethod
+    def get_stories_by_project(
+        self, 
+        project_key: str,
+        epic_link: str = None,
+        status: str = None,
+        filters: str = None,
+    ) -> List[Issue]:
+        pass
+
+    @abstractmethod
+    def get_labels(self, project_key: str) -> List[str]:
+        pass
+
+    @abstractmethod
+    def set_labels(self, project_key: str, labels: List[str]) -> bool:
+        pass
+
+    @abstractmethod
+    def transition_task(self, issue_key: str, status: str) -> None:
+        pass
+
+    @abstractmethod
+    def assign_issue(self, issue_key: str, assignee: str) -> None:
+        pass
+
+    @abstractmethod
+    def update_issue(self, issue_key: str, task_data: TaskData) -> None:
+        pass
+
+    @abstractmethod
+    def update_issue_from_fields(self, issue_key: str, fields: dict) -> None:
+        pass
+
+    @abstractmethod
+    def get_issue(self, issue_key: str) -> Optional[Issue]:
+        pass
+
+    @abstractmethod
+    def build_task_data_from_issue(self, issue: Issue) -> TaskData:
+        pass
+
+    @abstractmethod
+    def create_task_data_from_jira_issue(self, issue) -> TaskData:
         pass

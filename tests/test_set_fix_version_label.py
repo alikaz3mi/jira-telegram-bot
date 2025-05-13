@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.settings import JIRA_SETTINGS
 
 
 def main():
     # Instantiate your Jira repository (adjust as needed for your environment)
-    jira = JiraRepository(JIRA_SETTINGS)
+    jira = JiraServerRepository(JIRA_SETTINGS)
 
     # Search JIRA for story issues in project PARSCHAT
     # Adjust JQL if you want to refine search further

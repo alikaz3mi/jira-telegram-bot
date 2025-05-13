@@ -145,6 +145,78 @@ JIRA_STORY_POINTS_ID=customfield_10106
 - Check `cron.log` for scheduled tasks
 - Enable debug logging in settings
 
+## Testing
+
+### Integration Tests
+
+The project includes comprehensive integration tests for the Jira Server Repository to verify functionality against a real Jira instance.
+
+#### Running Integration Tests
+
+1. **Set up environment variables**
+
+   Before running integration tests, you need to set up environment variables for your Jira instance:
+
+   ```bash
+   export JIRA_DOMAIN=https://your-jira-instance.com
+   export JIRA_USERNAME=your_username
+   # Set either password or API token
+   export JIRA_PASSWORD=your_password
+   # OR
+   export JIRA_API_TOKEN=your_api_token
+   # Test project key (must exist in your Jira instance)
+   export JIRA_TEST_PROJECT_KEY=TEST
+   ```
+
+2. **Run the integration tests**
+
+   ```bash
+   # Run Jira repository integration tests specifically
+   make integration-tests-jira
+   
+   # Run all integration tests
+   make integration-tests
+   ```
+
+3. **View test results**
+
+   After running tests, coverage reports are generated in the `reports/` directory:
+   - HTML coverage report: `reports/jira_coverage_html/index.html`
+   - XML coverage report: `reports/jira_coverage.xml`
+   - JUnit test report: `reports/jira_junit.xml`
+
+#### Integration Test Features
+
+- Tests all repository functionality against real Jira instance
+- Includes high-load concurrency tests (50 parallel requests)
+- Tests race conditions and edge cases
+- Proper cleanup of test issues after test runs
+- Comprehensive test coverage of repository methods
+
+#### Notes on Integration Testing
+
+- These tests create real Jira issues in your test project
+- All created issues are transitioned to "Done" after tests complete
+- Tests are designed to work with both Jira Server and Jira Cloud
+- Rate limiting may affect concurrency test results
+
+### Unit Tests
+
+To run the unit tests:
+
+```bash
+make unit-tests
+```
+
+### All Tests
+
+To run both unit and integration tests:
+
+```bash
+# Run unit tests first, then integration tests
+make unit-tests && make integration-tests
+```
+
 ## Contributing
 1. Fork the repository
 2. Create feature branch
@@ -158,3 +230,4 @@ This project is licensed under the MIT License - see LICENSE file for details.
 - Built with [python-telegram-bot](https://python-telegram-bot.org/)
 - Uses [jira-python](https://jira.readthedocs.io/)
 - AI features powered by OpenAI/Gemini
+- Jira rest API fields: [jira rest api server](https://your-jira-instance.com/rest/api/2/field)

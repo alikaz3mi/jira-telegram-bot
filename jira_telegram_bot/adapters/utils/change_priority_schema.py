@@ -7,7 +7,7 @@ from jira import Issue
 from jira.exceptions import JIRAError
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 
 
 # --------------------------------------------------------------------------- #
@@ -35,7 +35,7 @@ PRIORITY_REMAP: Dict[str, str] = {
 # --------------------------------------------------------------------------- #
 
 
-def _build_target_priority_id_map(repo: JiraRepository) -> Dict[str, str]:
+def _build_target_priority_id_map(repo: JiraServerRepository) -> Dict[str, str]:
     """
     Return a dict  {priority_name (case‑insensitive) -> priority_id}  that
     reflects the priorities actually configured on the JIRA instance.
@@ -51,7 +51,7 @@ def _build_target_priority_id_map(repo: JiraRepository) -> Dict[str, str]:
 # --------------------------------------------------------------------------- #
 
 
-def update_priorities_for_board(repo: JiraRepository, project_key: str) -> None:
+def update_priorities_for_board(repo: JiraServerRepository, project_key: str) -> None:
     """Fetch all issues on *project_key* and remap their priority in‑place."""
     LOGGER.info("Loading priorities configured on the server …")
     target_name_to_id = _build_target_priority_id_map(repo)
@@ -118,5 +118,5 @@ def update_priorities_for_board(repo: JiraRepository, project_key: str) -> None:
 # --------------------------------------------------------------------------- #
 
 if __name__ == "__main__":
-    repo = JiraRepository()  # credentials & domain come from JIRA_SETTINGS
+    repo = JiraServerRepository()  # credentials & domain come from JIRA_SETTINGS
     update_priorities_for_board(repo, PROJECT_KEY)
