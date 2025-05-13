@@ -97,16 +97,10 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         project_key = query.data.split("|")[1]
         context.user_data["project_key"] = project_key
 
-        # Load project info
-        project_info_path = os.path.join(
-            DEFAULT_PATH,
-            "jira_telegram_bot/settings/projects_info.json",
-        )
-        with open(project_info_path, "r") as f:
-            projects_info = json.load(f)
-
-        if project_key in projects_info:
-            context.user_data["project_info"] = projects_info[project_key]
+        try:
+            # Load project info using the repository
+            project_info = await self.advanced_task_creation.project_info_repository.get_project_info(project_key)
+            context.user_data["project_info"] = project_info
 
             # Get epics for the project
             epics = self.advanced_task_creation.task_manager_repository.get_epics(
@@ -146,10 +140,16 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 )
                 return ConversationHandler.END
 
-        else:
+        except ValueError:
             await query.edit_message_text(
                 f"❌ Sorry, couldn't find project info for {project_key}. "
                 "Please contact an administrator.",
+            )
+            return ConversationHandler.END
+        except Exception as e:
+            LOGGER.error(f"Error loading project info: {str(e)}")
+            await query.edit_message_text(
+                f"❌ An error occurred while loading project information: {str(e)}",
             )
             return ConversationHandler.END
 

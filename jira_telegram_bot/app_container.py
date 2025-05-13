@@ -18,7 +18,7 @@ from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import 
 from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import (
     LangChainAiService,
 )
-from jira_telegram_bot.adapters.ai_models.ai_agents.generate_user_story import (
+from jira_telegram_bot.adapters.ai_models.ai_agents.story_generator_service import (
     StoryGeneratorService,
 )
 from jira_telegram_bot.adapters.ai_models.ai_agents.story_decomposition_service import (
