@@ -1,6 +1,7 @@
 """Application container for Jira Telegram bot."""
 
 import os
+import asyncio
 from telegram.ext import Application
 
 from lagom import Container, Singleton
@@ -19,16 +20,16 @@ from jira_telegram_bot.use_cases.telegram_commands.task_get_users_time import Ta
 from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
 from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTaskTransition
 from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
-from jira_telegram_bot.settings import OPENAI_SETTINGS
-from jira_telegram_bot.settings import TELEGRAM_SETTINGS
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
+from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
+from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
-from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
     AiServiceProtocol,
-    PromptCatalogProtocol,
 )
 from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
+from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
+    SpeechProcessorInterface,
+)
 from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import (
     StoryDecompositionInterface,
 )
@@ -41,10 +42,14 @@ from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface im
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
+from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
+    ProjectInfoRepositoryInterface,
+)
 
 
 # Global container instance
 _container = None
+_application = None
 
 
 def get_container() -> Container:
@@ -54,7 +59,7 @@ def get_container() -> Container:
         The configured container
     """
     global _container
-    if _container is None:
+    if (_container is None):
         _container = setup_container()
     return _container
 
@@ -72,7 +77,7 @@ def setup_container() -> Container:
     child_container = Container(container)
     
     # Create LLM chain for board summarization
-    llm_chain = create_llm_chain(OPENAI_SETTINGS)
+    llm_chain = create_llm_chain(container[OpenAISettings])
     summary_generator = TaskProcessor(llm_chain)
     
     # Configure Telegram command use cases
@@ -121,12 +126,16 @@ def setup_container() -> Container:
         lambda c: AdvancedTaskCreation(
             task_manager_repository=c[TaskManagerRepositoryInterface],
             user_config=c[UserConfigInterface],
-            ai_service=c[AiServiceProtocol],
-            prompt_catalog=c[PromptCatalogProtocol],
-            story_generator=c[StoryGenerator],
+            project_info_repository=c[ProjectInfoRepositoryInterface],
+            story_generator= c[StoryGenerator],
             story_decomposition_service=c[StoryDecompositionInterface],
             subtask_creation_service=c[SubtaskCreationInterface],
         )
+    )
+    
+    # Make SpeechProcessor available directly from container
+    child_container[SpeechProcessor] = Singleton(
+        lambda c: c[SpeechProcessorInterface]
     )
     
     return child_container
@@ -138,15 +147,18 @@ def create_telegram_application() -> Application:
     Returns:
         Configured Telegram Application instance
     """
-    application = (
-        Application.builder()
-        .token(TELEGRAM_SETTINGS.TOKEN)
-        .read_timeout(20)
-        .connect_timeout(20)
-        .build()
-    )
+    global _application
     
-    return application
+    if _application is None:
+        _application = (
+            Application.builder()
+            .token(_container[TelegramConnectionSettings].TOKEN)
+            .read_timeout(20)
+            .connect_timeout(20)
+            .build()
+        )
+    
+    return _application
 
 
 def create_fastapi_integration() -> FastApiIntegration:
@@ -160,27 +172,61 @@ def create_fastapi_integration() -> FastApiIntegration:
     return deps
 
 
-async def startup() -> None:
+def startup() -> None:
     """Run startup tasks for the application."""
     LOGGER.info("Starting Jira Telegram Bot application")
-    # Add any startup tasks here
     
+    # Initialize container to trigger creation of services
+    container = get_container()
+    
+    # Initialize key services that might need startup procedures
+    try:
+        # Initialize repository connections
+        jira_repo = container[TaskManagerRepositoryInterface]
+        LOGGER.info("Initialized Jira repository connection")
+        
+        # Initialize AI services
+        ai_service = container[AiServiceProtocol]
+        LOGGER.info("Initialized AI service")
+        
+        # Initialize speech processor service
+        speech_processor = container[SpeechProcessorInterface]
+        LOGGER.info("Initialized speech processor service")
+        
+        # Initialize other potential stateful services
+        user_config = container[UserConfigInterface]
+        LOGGER.info("Initialized user configuration service")
+        
+    except Exception as e:
+        LOGGER.error(f"Error during startup: {str(e)}")
+        raise
+
 
 async def shutdown() -> None:
     """Run shutdown tasks for the application."""
     LOGGER.info("Shutting down Jira Telegram Bot application")
-    # Add any cleanup tasks here
-
-
-def run_app() -> None:
-    """Run the Telegram bot application."""
-    LOGGER.info("Starting Jira Telegram Bot")
     
-    # Get container and create application
     container = get_container()
-    application = create_telegram_application()
     
-    # App initialization logic can be moved here from __main__.py
-    
-    # Run telegram application
-    application.run_polling()
+    # Properly close connections and resources
+    try:
+        # Clean up Jira connection if needed
+        jira_repo = container[TaskManagerRepositoryInterface]
+        if hasattr(jira_repo, 'close') and callable(getattr(jira_repo, 'close')):
+            await jira_repo.close()
+            LOGGER.info("Closed Jira repository connection")
+        
+        # Clean up AI service connections if needed
+        ai_service = container[AiServiceProtocol]
+        if hasattr(ai_service, 'close') and callable(getattr(ai_service, 'close')):
+            await ai_service.close()
+            LOGGER.info("Closed AI service connection")
+        
+        # Clean up speech processor connections if needed
+        speech_processor = container[SpeechProcessorInterface]
+        if hasattr(speech_processor, 'close') and callable(getattr(speech_processor, 'close')):
+            await speech_processor.close()
+            LOGGER.info("Closed speech processor connection")
+        
+    except Exception as e:
+        LOGGER.error(f"Error during shutdown: {str(e)}")

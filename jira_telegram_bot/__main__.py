@@ -1,5 +1,3 @@
-"""Main entry point for the Jira Telegram Bot application."""
-
 import os
 import traceback
 from pathlib import Path
@@ -9,7 +7,7 @@ from telegram.ext import CommandHandler
 from telegram.warnings import PTBUserWarning
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.app_container import get_container, create_telegram_application, startup, shutdown
+from jira_telegram_bot.app_container import get_container, create_telegram_application, startup
 from jira_telegram_bot.frameworks.telegram.advanced_task_creation_handler import (
     AdvancedTaskCreationHandler,
 )
@@ -115,8 +113,8 @@ def ensure_data_directories():
     LOGGER.info(f"Ensuring data directories exist: {data_dir}")
 
 
-def main():
-    """Run the Jira Telegram Bot application."""
+def setup_and_run():
+    """Set up and run the application with proper async handling."""
     # Ensure data directories exist
     ensure_data_directories()
     
@@ -160,15 +158,29 @@ def main():
     application.add_error_handler(error)
     
     # Run startup tasks
-    import asyncio
-    asyncio.run(startup())
+    startup()
+    
+    # Start the bot
+    LOGGER.info("Starting bot")
+    
     
     try:
-        LOGGER.info("Starting bot")
         application.run_polling()
-    finally:
-        # Run shutdown tasks when the app is stopped
-        asyncio.run(shutdown())
+        
+            
+    except (KeyboardInterrupt, SystemExit):
+        LOGGER.info("Application received termination signal")
+
+
+def main():
+    """Run the Jira Telegram Bot application."""
+    try:
+        setup_and_run()
+    except KeyboardInterrupt:
+        LOGGER.info("Application interrupted by user")
+    except Exception as e:
+        LOGGER.error(f"Application failed with error: {e}")
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

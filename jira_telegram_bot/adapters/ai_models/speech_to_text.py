@@ -7,7 +7,7 @@ from loguru import logger
 from openai import AsyncOpenAI
 
 from jira_telegram_bot.entities.speech import TranscriptionResult
-from jira_telegram_bot.settings import OPENAI_SETTINGS
+from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
 )
@@ -16,8 +16,8 @@ from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
 class SpeechProcessor(SpeechProcessorInterface):
     """Adapter for speech processing using OpenAI's GPT-4o model."""
 
-    def __init__(self):
-        self.api_key = OPENAI_SETTINGS.token
+    def __init__(self, settings: OpenAISettings):
+        self.api_key = settings.token
         self.client = AsyncOpenAI(api_key=self.api_key)
         self.model = "gpt-4o-transcribe" 
 

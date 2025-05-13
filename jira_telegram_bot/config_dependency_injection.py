@@ -9,6 +9,7 @@ from lagom import Container, Singleton
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
+from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
@@ -28,6 +29,9 @@ from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
 )
 from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import (
     FilePromptCatalog, 
+)
+from jira_telegram_bot.adapters.repositories.file_storage.project_info_repository import (
+    ProjectInfoRepository
 )
 from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import (
     LangChainAiService,
@@ -70,6 +74,9 @@ from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import (
 )
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
+    ProjectInfoRepositoryInterface
 )
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
@@ -117,19 +124,75 @@ def configure_container() -> Container:
     container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     container[JiraBoardSettings] = Singleton(lambda: JiraBoardSettings())
     
+    # Add GoogleSheetsSettings if it exists
+    try:
+        container[GoogleSheetsConnectionSettings] = Singleton(lambda: GoogleSheetsConnectionSettings())
+    except Exception as e:
+        LOGGER.warning(f"GoogleSheetsConnectionSettings not registered: {e}")
+    
     # A) Bind INTERFACE -> ADAPTER
-    container[NotificationGatewayInterface] = Singleton(NotificationGateway)
-    container[TaskManagerRepositoryInterface] = Singleton(JiraRepository)
-    container[LLMModelInterface] = Singleton(LLMModels)
-    container[SpeechProcessorInterface] = Singleton(SpeechProcessor)
+    container[NotificationGatewayInterface] = Singleton(
+        lambda c: NotificationGateway(c[TelegramConnectionSettings])
+    )
+    
+    container[TaskManagerRepositoryInterface] = Singleton(
+        lambda c: JiraRepository(c[JiraConnectionSettings])
+    )
+    
+    container[ProjectInfoRepositoryInterface] = Singleton(
+        lambda c: ProjectInfoRepository()
+    )
+    
+    container[LLMModelInterface] = Singleton(
+        lambda c: LLMModels(
+            c[OpenAISettings],
+            c[GeminiConnectionSetting]
+        )
+    )
+    
+    container[SpeechProcessorInterface] = Singleton(
+        lambda c: SpeechProcessor(
+            c[OpenAISettings],
+        )
+    )
     
     # AI Service bindings
-    container[AiServiceProtocol] = Singleton(LangChainAiService)
-    container[PromptCatalogProtocol] = Singleton(FilePromptCatalog)
-    container[StoryGenerator] = Singleton(StoryGeneratorService)
-    container[StoryDecompositionInterface] = Singleton(StoryDecompositionService)
-    container[SubtaskCreationInterface] = Singleton(SubtaskCreationService)
-    container[UserConfigInterface] = Singleton(UserConfig)
+    container[AiServiceProtocol] = Singleton(
+        lambda c: LangChainAiService(
+            c[LLMModelInterface]
+        )
+    )
+    
+    container[PromptCatalogProtocol] = Singleton(
+        lambda c: FilePromptCatalog()
+    )
+    
+    container[StoryGenerator] = Singleton(
+        lambda c: StoryGeneratorService(
+            c[AiServiceProtocol],
+            c[PromptCatalogProtocol]
+        )
+    )
+    
+    container[StoryDecompositionInterface] = Singleton(
+        lambda c: StoryDecompositionService(
+            c[AiServiceProtocol],
+            c[PromptCatalogProtocol]
+        )
+    )
+    
+    container[SubtaskCreationInterface] = Singleton(
+        lambda c: SubtaskCreationService(
+            c[AiServiceProtocol],
+            c[PromptCatalogProtocol]
+        )
+    )
+    
+    container[UserConfigInterface] = Singleton(
+        lambda c: UserConfig(
+            user_config_path=str(data_dir / "storage" / "user_config.json")
+        )
+    )
 
     # B) Bind basic USE CASES
     container[CreateTaskUseCase] = Singleton(
