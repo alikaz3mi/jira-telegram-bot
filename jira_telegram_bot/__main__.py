@@ -1,16 +1,15 @@
-from __future__ import annotations
+"""Main entry point for the Jira Telegram Bot application."""
 
+import os
 import traceback
+from pathlib import Path
 from warnings import filterwarnings
 
-from telegram.ext import Application
 from telegram.ext import CommandHandler
 from telegram.warnings import PTBUserWarning
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraRepository
-from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
-from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.app_container import get_container, create_telegram_application, startup, shutdown
 from jira_telegram_bot.frameworks.telegram.advanced_task_creation_handler import (
     AdvancedTaskCreationHandler,
 )
@@ -30,20 +29,14 @@ from jira_telegram_bot.frameworks.telegram.task_transition_handler import (
 from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
     UserSettingsHandler,
 )
-from jira_telegram_bot.settings import OPENAI_SETTINGS
-from jira_telegram_bot.settings import TELEGRAM_SETTINGS
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
-from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import create_llm_chain
-from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.telegram_commands.board_summary_generator import BoardSummaryGenerator
 from jira_telegram_bot.use_cases.telegram_commands.create_task import JiraTaskCreation
 from jira_telegram_bot.use_cases.telegram_commands.task_get_users_time import TaskGetUsersTime
 from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
 from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTaskTransition
 from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
-
-llm_chain = create_llm_chain(OPENAI_SETTINGS)
-summary_generator = TaskProcessor(llm_chain)
+from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 
 filterwarnings(
     action="ignore",
@@ -53,6 +46,12 @@ filterwarnings(
 
 
 async def help_command(update, context):
+    """Display help information to the user.
+    
+    Args:
+        update: The update object from Telegram
+        context: The context object from Telegram
+    """
     help_text = (
         "Here's how to use this bot:\n\n"
         "1. **/create_task** - Start creating a new task.\n"
@@ -69,6 +68,12 @@ async def help_command(update, context):
 
 
 async def error(update, context):
+    """Handle errors that occur during handling of updates.
+    
+    Args:
+        update: The update object from Telegram
+        context: The context object from Telegram containing the error
+    """
     LOGGER.warning(f'Update \n\n "{update}" caused error "\n {context.error}"')
     if context.error:
         LOGGER.error(f"Context error details: {context.error}")
@@ -98,36 +103,38 @@ async def error(update, context):
             LOGGER.error(line)
 
 
+def ensure_data_directories():
+    """Ensure necessary data directories exist."""
+    data_dir = Path(os.environ.get("DATA_DIR", "./data"))
+    storage_dir = data_dir / "storage"
+    
+    # Create data directories if they don't exist
+    data_dir.mkdir(parents=True, exist_ok=True)
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    
+    LOGGER.info(f"Ensuring data directories exist: {data_dir}")
+
+
 def main():
-    application = (
-        Application.builder()
-        .token(TELEGRAM_SETTINGS.TOKEN)
-        .read_timeout(20)
-        .connect_timeout(20)
-        .build()
-    )
+    """Run the Jira Telegram Bot application."""
+    # Ensure data directories exist
+    ensure_data_directories()
+    
+    # Get container and dependencies
+    container = get_container()
+    application = create_telegram_application()
+    
+    # Get use cases from container
+    task_creation_use_case = container[JiraTaskCreation]
+    task_status_use_case = container[TaskStatus]
+    task_transition_use_case = container[JiraTaskTransition]
+    user_settings_use_case = container[UserSettingsConversation]
+    task_get_users_time_use_case = container[TaskGetUsersTime]
+    board_summary_generator_use_case = container[BoardSummaryGenerator]
+    advanced_task_creation_use_case = container[AdvancedTaskCreation]
+    speech_processor = container[SpeechProcessor]
 
-    jira_repo = JiraRepository()
-    user_config_instance = UserConfig()
-    speech_processor = SpeechProcessor()
-
-    task_creation_use_case = JiraTaskCreation(jira_repo, user_config_instance)
-    task_status_use_case = TaskStatus(jira_repo.jira)
-    task_transition_use_case = JiraTaskTransition(jira_repo.jira)
-    user_settings_use_case = UserSettingsConversation(
-        user_config_instance,
-        ["alikaz3mi"],
-    )
-    task_get_users_time_use_case = TaskGetUsersTime(
-        jira_repo,
-        ["alikaz3mi", "hamed_ahmadi1991"],
-    )
-    board_summary_generator_use_case = BoardSummaryGenerator(
-        jira_repo,
-        summary_generator,
-    )
-    advanced_task_creation_use_case = AdvancedTaskCreation(jira_repo, user_config_instance)
-
+    # Create handlers
     task_creation_handler = TaskCreationHandler(task_creation_use_case)
     task_status_handler = TaskStatusHandler(task_status_use_case)
     task_transition_handler = TaskTransitionHandler(task_transition_use_case)
@@ -141,6 +148,7 @@ def main():
         speech_processor,
     )
 
+    # Add handlers to application
     application.add_handler(task_creation_handler.get_handler())
     application.add_handler(task_transition_handler.get_handler())
     application.add_handler(task_status_handler.get_handler())
@@ -150,9 +158,17 @@ def main():
     application.add_handler(advanced_task_creation_handler.get_handler())
     application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
-
-    LOGGER.info("Starting bot")
-    application.run_polling()
+    
+    # Run startup tasks
+    import asyncio
+    asyncio.run(startup())
+    
+    try:
+        LOGGER.info("Starting bot")
+        application.run_polling()
+    finally:
+        # Run shutdown tasks when the app is stopped
+        asyncio.run(shutdown())
 
 
 if __name__ == "__main__":

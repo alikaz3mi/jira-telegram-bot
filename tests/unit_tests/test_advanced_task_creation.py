@@ -43,10 +43,10 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
 
         # Setup mock project info
         self.projects_info = {
-            "PARSCHAT": {
+            "RADTHARN": {
                 "project_info": {
                     "description": "AI Chat Bot Project",
-                    "key": "PARSCHAT",
+                    "key": "RADTHARN",
                     "objective": "Create a seamless user experience",
                 },
                 "departments": {
@@ -101,7 +101,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         self.patcher = patch.object(
             AdvancedTaskCreation, 
             '_get_project_info', 
-            AsyncMock(return_value=self.projects_info["PARSCHAT"])
+            AsyncMock(return_value=self.projects_info["RADTHARN"])
         )
         self.mock_get_project_info = self.patcher.start()
         
@@ -175,7 +175,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         )
 
         # Call the method under test
-        tasks = await self.creator.create_tasks(description, "PARSCHAT")
+        tasks = await self.creator.create_tasks(description, "RADTHARN")
 
         # Verify that the story decomposition service was called with the correct arguments
         self.mock_story_decomposition.decompose_story.assert_awaited_once()
@@ -210,8 +210,8 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
     async def test_create_structured_user_story(self):
         """Test creating a structured user story using the story generator service"""
         description = "Implement user profile page with editable fields"
-        project_key = "PARSCHAT"
-        epic_key = "PARSCHAT-123"
+        project_key = "RADTHARN"
+        epic_key = "RADTHARN-123"
         
         # Setup mock user story
         mock_user_story = UserStory(
@@ -244,7 +244,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         
         # Mock the create_task response
         self.mock_jira_repo.create_task.return_value = Mock(
-            key="PARSCHAT-456"
+            key="RADTHARN-456"
         )
 
         # Call the method under test
@@ -290,7 +290,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
             ),
         )
 
-        tasks = await self.creator.create_tasks(voice_text, "PARSCHAT")
+        tasks = await self.creator.create_tasks(voice_text, "RADTHARN")
 
         # Verify appropriate task breakdown
         self.assertGreater(len(tasks), 0, "Should create multiple tasks")
@@ -316,7 +316,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
             ),
         )
 
-        tasks = await self.creator.create_tasks(description, "PARSCHAT")
+        tasks = await self.creator.create_tasks(description, "RADTHARN")
 
         for task in tasks:
             points = task.fields.customfield_10106
@@ -344,7 +344,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
             ),
         )
 
-        tasks = await self.creator.create_tasks(description, "PARSCHAT")
+        tasks = await self.creator.create_tasks(description, "RADTHARN")
 
         for task in tasks:
             if task.fields.customfield_10106 >= 5:  # High story points
@@ -365,7 +365,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         """
 
         self.mock_jira_repo.create_task.side_effect = lambda x: Mock(
-            key=f"PARSCHAT-{hash(x.summary)%1000}",
+            key=f"RADTHARN-{hash(x.summary)%1000}",
             fields=Mock(
                 summary=x.summary,
                 description=x.description,
@@ -375,7 +375,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
             ),
         )
 
-        tasks = await self.creator.create_tasks(description, "PARSCHAT")
+        tasks = await self.creator.create_tasks(description, "RADTHARN")
 
         # Verify structure and distribution
         self.assertGreaterEqual(len(tasks), 4, "Should create multiple tasks")
@@ -404,8 +404,8 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
     async def test_create_subtasks(self):
         """Test creating subtasks for an existing story using the subtask creation service"""
         description = "Add pagination to the existing user list table"
-        project_key = "PARSCHAT"
-        parent_story_key = "PARSCHAT-789"
+        project_key = "RADTHARN"
+        parent_story_key = "RADTHARN-789"
         
         # Setup mock subtasks response
         mock_subtasks_response = {
@@ -477,7 +477,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
     async def test_story_decomposition_direct_call(self):
         """Test direct use of story decomposition service"""
         description = "Create a user profile edit page with avatar upload"
-        project_key = "PARSCHAT"
+        project_key = "RADTHARN"
         
         # Setup mock story decomposition response
         mock_story_response = {
@@ -507,7 +507,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         self.mock_story_decomposition.decompose_story.return_value = mock_story_response
         
         # Create a sample project info dictionary
-        project_info = self.projects_info["PARSCHAT"]
+        project_info = self.projects_info["RADTHARN"]
         
         # Call the private method directly to test decomposition service usage
         result = await self.creator._parse_task_description(
