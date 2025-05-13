@@ -11,7 +11,7 @@ from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
 from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
-from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings, JiraConnectionType
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
@@ -26,6 +26,9 @@ from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import 
 )
 from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
     NotificationGateway,
+)
+from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import (
+    JiraCloudRepository
 )
 from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import (
     FilePromptCatalog, 
@@ -136,7 +139,9 @@ def configure_container() -> Container:
     )
     
     container[TaskManagerRepositoryInterface] = Singleton(
-        lambda c: JiraServerRepository(c[JiraConnectionSettings])
+        lambda c: JiraCloudRepository(c[JiraConnectionSettings]) 
+        if c[JiraConnectionSettings].connection_type == JiraConnectionType.CLOUD 
+        else JiraServerRepository(c[JiraConnectionSettings])
     )
     
     container[ProjectInfoRepositoryInterface] = Singleton(
