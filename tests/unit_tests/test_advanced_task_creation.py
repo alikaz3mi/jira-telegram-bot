@@ -90,8 +90,6 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         self.creator = AdvancedTaskCreation(
             task_manager_repository=self.mock_jira_repo,
             user_config=self.mock_user_config,
-            ai_service=self.mock_ai_service,
-            prompt_catalog=self.mock_prompt_catalog,
             story_generator=self.mock_story_generator,
             story_decomposition_service=self.mock_story_decomposition,
             subtask_creation_service=self.mock_subtask_creation,

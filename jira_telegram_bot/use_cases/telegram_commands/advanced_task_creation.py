@@ -50,7 +50,7 @@ class AdvancedTaskCreation:
             story_decomposition_service: Service for decomposing stories into tasks
             subtask_creation_service: Service for creating subtasks
         """
-        self.jira_repo = task_manager_repository
+        self.task_manager_repository = task_manager_repository
         self.user_config = user_config
         self.project_info_repository = project_info_repository
         self.story_generator = story_generator
@@ -176,7 +176,7 @@ class AdvancedTaskCreation:
                 task_type="Sub-task",
                 parent_issue_key=parent_story_key,
             )
-            subtask_issue = self.jira_repo.create_task(subtask_data)
+            subtask_issue = self.task_manager_repository.create_task(subtask_data)
             LOGGER.info(
                 f"Subtask created: {subtask_issue.key} under parent story {parent_story_key}",
             )
@@ -208,7 +208,7 @@ class AdvancedTaskCreation:
                 priority=story["priority"],
                 epic_link=epic_key,
             )
-            story_issue = self.jira_repo.create_task(story_data)
+            story_issue = self.task_manager_repository.create_task(story_data)
             created_tasks.append(story_issue)
 
             # Create subtasks for each component
@@ -224,7 +224,7 @@ class AdvancedTaskCreation:
                         task_type="Sub-task",
                         parent_issue_key=story_issue.key,
                     )
-                    subtask_issue = self.jira_repo.create_task(
+                    subtask_issue = self.task_manager_repository.create_task(
                         subtask_data,
                     )
                     LOGGER.info(
@@ -263,7 +263,7 @@ class AdvancedTaskCreation:
         parent_story_context = {}
 
         if epic_key:
-            epic_issue = self.jira_repo.get_issue(epic_key)
+            epic_issue = self.task_manager_repository.get_issue(epic_key)
             if epic_issue:
                 epic_context = {
                     "key": epic_key,
@@ -272,7 +272,7 @@ class AdvancedTaskCreation:
                 }
 
         if parent_story_key:
-            parent_issue = self.jira_repo.get_issue(parent_story_key)
+            parent_issue = self.task_manager_repository.get_issue(parent_story_key)
             if parent_issue:
                 parent_story_context = {
                     "key": parent_story_key,
@@ -360,7 +360,7 @@ class AdvancedTaskCreation:
         # Create or update the task
         if parent_story_key:
             # Update existing story with enhanced content
-            parent_issue = self.jira_repo.get_issue(parent_story_key)
+            parent_issue = self.task_manager_repository.get_issue(parent_story_key)
 
             # Generate updated description that preserves original content
             original_description = parent_issue.fields.description or ""
@@ -383,7 +383,7 @@ class AdvancedTaskCreation:
             )
 
             # Update the existing story
-            self.jira_repo.update_issue_from_fields(
+            self.task_manager_repository.update_issue_from_fields(
                 parent_story_key,
                 issue_fields,
             )
@@ -409,7 +409,7 @@ class AdvancedTaskCreation:
             )
 
             # Create the new story
-            new_issue = self.jira_repo.create_task(story_data)
+            new_issue = self.task_manager_repository.create_task(story_data)
             LOGGER.info(
                 f"Created new story: {new_issue.key} with structured content",
             )

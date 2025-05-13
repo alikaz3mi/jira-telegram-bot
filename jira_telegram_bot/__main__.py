@@ -146,7 +146,7 @@ def setup_and_run():
         speech_processor,
     )
 
-    # Add handlers to application
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(task_creation_handler.get_handler())
     application.add_handler(task_transition_handler.get_handler())
     application.add_handler(task_status_handler.get_handler())
@@ -154,21 +154,20 @@ def setup_and_run():
     application.add_handler(user_settings_handler.get_handler())
     application.add_handler(task_get_users_time_handler.get_handler())
     application.add_handler(advanced_task_creation_handler.get_handler())
-    application.add_handler(CommandHandler("help", help_command))
     application.add_error_handler(error)
-    
-    # Run startup tasks
     startup()
     
     # Start the bot
-    LOGGER.info("Starting bot")
+    LOGGER.info("Starting bot with polling...")
     
-    
-    try:
-        application.run_polling()
-                
-    except (KeyboardInterrupt, SystemExit):
-        LOGGER.info("Application received termination signal")
+    # Configure more options for polling
+    application.run_polling(
+        allowed_updates=["message", "callback_query", "channel_post"],
+        poll_interval=1.0,  # Check for updates every second
+        timeout=30,         # Longer timeout for API requests
+        drop_pending_updates=True,  # Start fresh on bot restart
+        close_loop=False    # Don't close the event loop
+    )
 
 
 def main():
