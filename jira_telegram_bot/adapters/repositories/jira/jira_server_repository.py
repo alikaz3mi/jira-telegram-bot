@@ -19,7 +19,7 @@ from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface im
 )
 
 
-class JiraRepository(TaskManagerRepositoryInterface):
+class JiraServerRepository(TaskManagerRepositoryInterface):
     def __init__(self, settings: JiraBoardSettings):
         self.settings = settings
         if self.settings.password:

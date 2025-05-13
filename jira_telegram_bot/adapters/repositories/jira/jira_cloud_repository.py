@@ -18,7 +18,6 @@ from jira import JIRA
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
@@ -32,18 +31,18 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
     TaskManagerRepositoryInterface, specifically tailored for Jira Cloud instances.
     """
 
-    def __init__(self, settings: JiraBoardSettings = JIRA_SETTINGS):
+    def __init__(self, settings: JiraBoardSettings):
         """Initialize the Jira Cloud repository.
         
         Args:
-            settings: Settings for connecting to Jira Cloud. Defaults to global JIRA_SETTINGS.
+            settings: Settings for connecting to Jira Cloud.
         """
         self.settings = settings
         
         # Jira Cloud always uses API token authentication
         self.jira = JIRA(
             server=self.settings.domain,
-            token_auth=self.settings.api_token,
+            basic_auth=(self.settings.email, self.settings.token),
         )
         
         self.cache = {}

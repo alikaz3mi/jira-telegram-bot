@@ -1,5 +1,6 @@
 from pydantic_settings import SettingsConfigDict
 from pydantic import Field
+from typing import Optional
 
 from jira_telegram_bot.utils.pydantic_advanced_settings import CustomizedSettings
 from enum import Enum
@@ -12,6 +13,7 @@ class JiraConnectionType(Enum):
 class JiraConnectionSettings(CustomizedSettings):
     username: str = Field(description="Jira username")
     password: str = Field(default=None, description="Jira password")
+    email: Optional[str] = Field(default=None, description="Jira email")
     domain: str = Field(description="Jira_domain")
     token: str = Field(
         description="Jira token",
