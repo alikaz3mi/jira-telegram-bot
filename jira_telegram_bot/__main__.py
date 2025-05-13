@@ -166,8 +166,7 @@ def setup_and_run():
     
     try:
         application.run_polling()
-        
-            
+                
     except (KeyboardInterrupt, SystemExit):
         LOGGER.info("Application received termination signal")
 
