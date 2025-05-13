@@ -11,8 +11,12 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.entities.task import UserStory
 from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
-from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import StoryDecompositionInterface
-from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import SubtaskCreationInterface
+from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import (
+    StoryDecompositionInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import (
+    SubtaskCreationInterface,
+)
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
@@ -285,32 +289,32 @@ class AdvancedTaskCreation:
             product_area = project_info.get("project_info", {}).get(
                 "description", "Software Product"
             )
-            
+
             # Main personas from project info
             primary_persona = "User"
             if "personas" in project_info:
                 primary_persona = next(iter(project_info["personas"]), "User")
-                
+
             # Format epic and parent context
             epic_context_str = ""
             if epic_context:
                 epic_context_str = f"""Epic Information:
-                                    Epic Key: {epic_context.get('key', '')}
-Epic Summary: {epic_context.get('summary', '')}
-Epic Description: {epic_context.get('description', '')}"""
+                                    Epic Key: {epic_context.get("key", "")}
+                                    Epic Summary: {epic_context.get("summary", "")}
+                                    Epic Description: {epic_context.get("description", "")}
+                                    """
 
             parent_context_str = ""
             if parent_story_context:
                 parent_context_str = f"""Parent Story Information:
-Story Key: {parent_story_context.get('key', '')}
-Story Summary: {parent_story_context.get('summary', '')}
-Story Description: {parent_story_context.get('description', '')}"""
-            
-            # Generate user story
+                                        Story Key: {parent_story_context.get("key", "")}
+                                        Story Summary: {parent_story_context.get("summary", "")}
+                                        Story Description: {parent_story_context.get("description", "")}"""
+
             project_key_for_story = project_key
             if "departments" in project_info:
                 project_key_for_story = list(project_info["departments"].keys())[0]
-                
+
             user_story = await self.story_generator.generate(
                 raw_text=description,
                 project=project_key_for_story,
@@ -322,7 +326,7 @@ Story Description: {parent_story_context.get('description', '')}"""
                 parent_story_context=parent_context_str,
             )
 
-            # Convert to dictionary 
+            # Convert to dictionary
             user_story_content = {
                 "summary": user_story.summary,
                 "description": user_story.description,
@@ -435,7 +439,9 @@ Story Description: {parent_story_context.get('description', '')}"""
 **Enhanced User Story:**
 {new_content}"""
 
-    def _update_existing_user_story_content(self, original: str, new_content: str) -> str:
+    def _update_existing_user_story_content(
+        self, original: str, new_content: str
+    ) -> str:
         """Update an existing user story with new content, preserving structure.
 
         Args:
@@ -447,25 +453,29 @@ Story Description: {parent_story_context.get('description', '')}"""
         """
         # Extract sections from the new content
         new_sections = self._extract_sections(new_content)
-        
+
         # Update or append sections to original content
         result = original
         for section_name, section_content in new_sections.items():
             if section_name in result:
                 # Update existing section
                 start_idx = result.find(section_name)
-                next_section_idx = self._find_next_section(result, section_name, start_idx)
-                
+                next_section_idx = self._find_next_section(
+                    result, section_name, start_idx
+                )
+
                 if next_section_idx < float("inf"):
-                    result = result[:start_idx] + section_content + result[next_section_idx:]
+                    result = (
+                        result[:start_idx] + section_content + result[next_section_idx:]
+                    )
                 else:
                     result = result[:start_idx] + section_content
             else:
                 # Append new section
                 result += f"\n\n{section_content}"
-                
+
         return result
-        
+
     def _extract_sections(self, content: str) -> Dict[str, str]:
         """Extract sections from user story content.
 
@@ -483,20 +493,22 @@ Story Description: {parent_story_context.get('description', '')}"""
             "Risks & Open Questions",
             "Definition of Done",
         ]
-        
+
         for section in possible_sections:
             if section in content:
                 start_idx = content.find(section)
                 next_section_idx = self._find_next_section(content, section, start_idx)
-                
+
                 if next_section_idx < float("inf"):
                     sections[section] = content[start_idx:next_section_idx].strip()
                 else:
                     sections[section] = content[start_idx:].strip()
-                    
+
         return sections
-        
-    def _find_next_section(self, content: str, current_section: str, start_idx: int) -> float:
+
+    def _find_next_section(
+        self, content: str, current_section: str, start_idx: int
+    ) -> float:
         """Find the index of the next section in the content.
 
         Args:
@@ -514,22 +526,22 @@ Story Description: {parent_story_context.get('description', '')}"""
             "Risks & Open Questions",
             "Definition of Done",
         ]
-        
+
         next_section_idx = float("inf")
         for section in possible_sections:
             if (
                 section != current_section
-                and section in content[start_idx + len(current_section):]
+                and section in content[start_idx + len(current_section) :]
             ):
                 section_idx = (
-                    content[start_idx + len(current_section):].find(section)
+                    content[start_idx + len(current_section) :].find(section)
                     + start_idx
                     + len(current_section)
                 )
                 next_section_idx = min(next_section_idx, section_idx)
-                
+
         return next_section_idx
-        
+
     def _assign_tasks(
         self,
         parsed_data: Dict[str, Any],
@@ -547,7 +559,7 @@ Story Description: {parent_story_context.get('description', '')}"""
         # Build team structure
         dept_leads = {comp["name"]: comp["lead"] for comp in project_info["components"]}
         dept_members = {}
-        
+
         for assignee in project_info["assignees"]:
             dept = assignee["department"]
             if dept not in dept_members:
@@ -558,7 +570,7 @@ Story Description: {parent_story_context.get('description', '')}"""
                     "role": assignee["role"],
                 },
             )
-        
+
         # Assign tasks based on skill levels
         for story in parsed_data["stories"]:
             for comp_tasks in story["component_tasks"]:
@@ -576,9 +588,11 @@ Story Description: {parent_story_context.get('description', '')}"""
 
                 # Distribute tasks based on complexity (story points)
                 for task in comp_tasks["subtasks"]:
-                    if task.get("assignee") is None:  # Only assign if not already assigned
+                    if (
+                        task.get("assignee") is None
+                    ):  # Only assign if not already assigned
                         story_points = task["story_points"]
-                        
+
                         if story_points >= 5:  # Complex tasks
                             if seniors:
                                 task["assignee"] = seniors[0]["username"]
@@ -594,7 +608,7 @@ Story Description: {parent_story_context.get('description', '')}"""
                                 task["assignee"] = mid_levels[0]["username"]
                             elif seniors:
                                 task["assignee"] = seniors[0]["username"]
-                                
+
                         # If still no assignee, assign to department lead
                         if not task.get("assignee") and leader:
                             task["assignee"] = leader

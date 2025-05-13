@@ -54,6 +54,97 @@ User Input → Telegram Bot → AdvancedTaskCreationHandler → AdvancedTaskCrea
                                                          AI Service/Story Generator
 ```
 
+### High-Level Flow Diagram (Mermaid)
+
+```mermaid
+graph TD
+    User[User] -->|/advanced_task| TelegramBot[Telegram Bot]
+    TelegramBot -->|Handles conversation| Handler[AdvancedTaskCreationHandler]
+    Handler -->|Calls use case| UseCase[AdvancedTaskCreation]
+    UseCase -->|Creates tasks| Jira[Jira API]
+    UseCase -->|Requests generation| AI[AI Services]
+    AI -->|Returns structured content| UseCase
+    Jira -->|Returns created issues| UseCase
+    UseCase -->|Returns results| Handler
+    Handler -->|Displays results| User
+    
+    classDef framework fill:#dae8fc,stroke:#6c8ebf;
+    classDef usecase fill:#d5e8d4,stroke:#82b366;
+    classDef external fill:#f8cecc,stroke:#b85450;
+    classDef ai fill:#ffe6cc,stroke:#d79b00;
+    
+    class User,TelegramBot,Handler framework;
+    class UseCase usecase;
+    class Jira external;
+    class AI ai;
+```
+
+### Sequence Diagram (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Handler as AdvancedTaskCreationHandler
+    participant UseCase as AdvancedTaskCreation
+    participant AI as AI Services
+    participant Jira as Jira API
+
+    User->>Handler: /advanced_task command
+    Handler->>User: Display project selection
+    User->>Handler: Select project
+    Handler->>UseCase: Get project info
+    Handler->>User: Display epic selection
+    User->>Handler: Select epic
+    Handler->>User: Ask for task type
+    User->>Handler: Select task type (story/subtask)
+    
+    alt Task type is subtask
+        Handler->>User: Display parent story selection
+        User->>Handler: Select parent story
+    end
+    
+    Handler->>User: Request description
+    
+    alt Voice message
+        User->>Handler: Send voice message
+        Handler->>AI: Transcribe voice
+        AI->>Handler: Return transcription
+        Handler->>User: Confirm transcription
+        User->>Handler: Confirm/Edit transcription
+    else Text message
+        User->>Handler: Send text description
+    end
+
+    Handler->>User: Show confirmation prompt
+    User->>Handler: Confirm task creation
+    
+    alt Create story
+        Handler->>UseCase: create_structured_user_story()
+        UseCase->>AI: Generate user story
+        AI->>UseCase: Return structured user story
+        UseCase->>Jira: Create user story
+        
+        Handler->>UseCase: create_tasks(type="story")
+        UseCase->>AI: Decompose story
+        AI->>UseCase: Return tasks data
+        UseCase->>UseCase: Assign tasks
+        UseCase->>Jira: Create stories with subtasks
+    else Create subtasks
+        Handler->>UseCase: create_tasks(type="subtask")
+        UseCase->>AI: Generate subtasks
+        AI->>UseCase: Return subtask data
+        UseCase->>Jira: Create subtasks
+    end
+    
+    Jira->>UseCase: Return created issues
+    UseCase->>Handler: Return created issues
+    Handler->>User: Display created tasks
+```
+
+### Detailed Process Flow (Draw.io)
+
+The detailed process flow diagram is available as a Draw.io file at `docs/advanced_task_creation_drawio.xml`
+
 ## Detailed Process Flow
 
 ### 1. Task Creation Flow
