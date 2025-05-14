@@ -1,5 +1,7 @@
 """Dependency injection configuration for jira telegram bot."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from typing import Dict, Any
@@ -7,6 +9,26 @@ from typing import Dict, Any
 from lagom import Container, Singleton
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.adapters.ai_models.ai_agents.board_summarizer_service import BoardSummarizerService
+from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import LangChainAiService
+from jira_telegram_bot.adapters.ai_models.ai_agents.story_decomposition_service import (
+    StoryDecompositionService,
+)
+from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
+
+from jira_telegram_bot.adapters.ai_models.ai_agents.story_generator_service import StoryGeneratorService
+from jira_telegram_bot.adapters.ai_models.ai_agents.subtask_creation_service import SubtaskCreationService
+from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
+from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
+from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import FilePromptCatalog
+from jira_telegram_bot.adapters.repositories.file_storage.project_info_repository import ProjectInfoRepository
+from jira_telegram_bot.adapters.repositories.file_storage.user_authentication_repository import (
+    FileUserAuthenticationRepository,
+)
+from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import JiraCloudRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
+from jira_telegram_bot.adapters.services.telegram.telegram_gateway import NotificationGateway
+from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
 from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
@@ -18,79 +40,31 @@ from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSetti
 from jira_telegram_bot.settings.telegram_settings import (
     TelegramWebhookConnectionSettings,
 )
-
-from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
-from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
-    JiraServerRepository,
-)
-from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
-    NotificationGateway,
-)
-from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import (
-    JiraCloudRepository
-)
-from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import (
-    FilePromptCatalog, 
-)
-from jira_telegram_bot.adapters.repositories.file_storage.project_info_repository import (
-    ProjectInfoRepository
-)
-from jira_telegram_bot.adapters.repositories.file_storage.user_authentication_repository import (
-    FileUserAuthenticationRepository
-)
-from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import (
-    LangChainAiService,
-)
-from jira_telegram_bot.adapters.ai_models.ai_agents.story_generator_service import (
-    StoryGeneratorService,
-)
-from jira_telegram_bot.adapters.ai_models.ai_agents.story_decomposition_service import (
-    StoryDecompositionService,
-)
-from jira_telegram_bot.adapters.ai_models.ai_agents.subtask_creation_service import (
-    SubtaskCreationService,
-)
-from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import (
-    ParseJiraPromptUseCase,
-)
+from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase, TaskGrouper
+from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
-from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
-    HandleJiraWebhookUseCase,
-)
-from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
-    AiServiceProtocol,
-    PromptCatalogProtocol,
-)
+from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AiServiceProtocol
 from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
-from jira_telegram_bot.use_cases.interfaces.llm_model_interface import (
-    LLMModelInterface,
-)
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
 )
-from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
-    SpeechProcessorInterface,
+from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
+    ProjectInfoRepositoryInterface,
 )
-from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import (
-    StoryDecompositionInterface,
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
+    PromptCatalogProtocol,
 )
-from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import (
-    SubtaskCreationInterface,
-)
+from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import SpeechProcessorInterface
+from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import StoryDecompositionInterface
+from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import SubtaskCreationInterface
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
-    ProjectInfoRepositoryInterface
-)
-from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
-    UserConfigInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import (
     UserAuthenticationInterface,
 )
-from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
 
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
@@ -179,6 +153,14 @@ def configure_container() -> Container:
         lambda c: FilePromptCatalog()
     )
     
+    # Board Summarizer Service
+    container[BoardSummarizerService] = Singleton(
+        lambda c: BoardSummarizerService(
+            c[PromptCatalogProtocol],
+            c[AiServiceProtocol]
+        )
+    )
+    
     container[StoryGenerator] = Singleton(
         lambda c: StoryGeneratorService(
             c[AiServiceProtocol],
@@ -217,6 +199,14 @@ def configure_container() -> Container:
     container[CreateTaskUseCase] = Singleton(
         lambda c: CreateTaskUseCase(
             jira_repo=c[TaskManagerRepositoryInterface],
+        )
+    )
+    
+    # Board Summarizer Use Case
+    container[BoardSummarizerUseCase] = Singleton(
+        lambda c: BoardSummarizerUseCase(
+            summarizer_service=c[BoardSummarizerService],
+            task_grouper=TaskGrouper()
         )
     )
     

@@ -5,7 +5,6 @@ from fastapi import Depends
 from fastapi import Request
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.settings import JIRA_SETTINGS
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
@@ -19,22 +18,37 @@ from jira_telegram_bot.utils.data_store import save_comment
 from jira_telegram_bot.utils.data_store import save_mapping
 
 
-def get_telegram_router(deps):
+def get_telegram_router(deps) -> APIRouter:
+    """Create and return a router with Telegram webhook endpoints.
+    
+    Args:
+        deps: Dependency injection container with FastAPI integration.
+        
+    Returns:
+        An APIRouter with Telegram webhook routes configured.
+    """
     router = APIRouter()
+    
+    # Create dependency resolver functions
+    def get_create_task_usecase():
+        return deps.resolve(CreateTaskUseCase)
+    
+    def get_parse_prompt_usecase():
+        return deps.resolve(ParseJiraPromptUseCase)
+    
+    def get_telegram_gateway():
+        return deps.resolve(NotificationGatewayInterface)
+    
+    def get_jira_repository():
+        return deps.resolve(TaskManagerRepositoryInterface)
 
     @router.post("/telegram/webhook")
     async def telegram_webhook(
         request: Request,
-        create_task_uc: CreateTaskUseCase = Depends(deps.depends(CreateTaskUseCase)),
-        parse_prompt_uc: ParseJiraPromptUseCase = Depends(
-            deps.depends(ParseJiraPromptUseCase),
-        ),
-        telegram_gateway: NotificationGatewayInterface = Depends(
-            deps.depends(NotificationGatewayInterface),
-        ),
-        jira_repo: TaskManagerRepositoryInterface = Depends(
-            deps.depends(TaskManagerRepositoryInterface),
-        ),
+        create_task_uc: CreateTaskUseCase = Depends(get_create_task_usecase),
+        parse_prompt_uc: ParseJiraPromptUseCase = Depends(get_parse_prompt_usecase),
+        telegram_gateway: NotificationGatewayInterface = Depends(get_telegram_gateway),
+        jira_repo: TaskManagerRepositoryInterface = Depends(get_jira_repository),
     ):
         """
         Your main Telegram webhook entrypoint
@@ -82,7 +96,7 @@ def get_telegram_router(deps):
                 # Possibly call telegram_gateway.send_message to confirm
                 telegram_gateway.send_message(
                     chat_id=channel_post["chat"]["id"],
-                    text=f"Created Jira task: {JIRA_SETTINGS.domain}/browse/{issue.key}",
+                    text=f"Created Jira task: {jira_repo.settings.domain}/browse/{issue.key}",
                 )
                 return {"status": "success", "message": "Task created."}
 
@@ -92,3 +106,5 @@ def get_telegram_router(deps):
         except Exception as e:
             LOGGER.error(f"Error in telegram_webhook: {e}", exc_info=True)
             return {"status": "error", "message": str(e)}
+            
+    return router

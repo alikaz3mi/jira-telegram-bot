@@ -1,39 +1,62 @@
 """Main entry point for FastAPI application serving Telegram webhooks."""
 
 import asyncio
+import contextlib
 import uvicorn
-from functools import partial
+from typing import AsyncGenerator
+
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.app_container import startup, shutdown
 from jira_telegram_bot.frameworks.fast_api.create_ticket_controller import app
 
 
-async def run_app_wrapper():
-    """Wrap application startup and shutdown in async context."""
-    # Run startup tasks
-    await startup()
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    """Define application lifespan events.
     
-    # The actual application will be run by uvicorn
+    Args:
+        _app: FastAPI application instance
+        
+    Yields:
+        None
+    """
+    # Startup: run initialization tasks
+    startup()
     LOGGER.info("FastAPI application ready to serve requests")
-
-
-def on_shutdown():
-    """Run shutdown tasks when Uvicorn exits."""
-    asyncio.run(shutdown())
+    
+    yield
+    
+    # Shutdown: clean up resources
+    await shutdown()
     LOGGER.info("FastAPI application shutdown complete")
 
 
+# Update app to use the lifespan context manager
+app.router.lifespan_context = lifespan
+
+
+async def run_app_wrapper() -> None:
+    """Wrap application setup in async context.
+    
+    Returns:
+        None
+    """
+    LOGGER.info("Preparing FastAPI application")
+    # No need to run startup here as it will be called in the lifespan context
+
+
 if __name__ == "__main__":
-    # Run startup tasks
+    # Run async setup
     asyncio.run(run_app_wrapper())
     
-    # Register shutdown handler with Uvicorn
+    # Start Uvicorn server with app module path for proper reloading
     uvicorn.run(
-        app,
+        "jira_telegram_bot.frameworks.fast_api.create_ticket_controller:app",
         host="0.0.0.0",
-        port=2315,
+        port=2316,
         reload=True,
         log_level="info",
-        on_shutdown=[on_shutdown],
     )

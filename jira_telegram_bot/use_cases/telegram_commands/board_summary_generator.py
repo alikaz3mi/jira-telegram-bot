@@ -12,7 +12,7 @@ from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import TaskProcessor
+from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
@@ -47,7 +47,7 @@ class BoardSummaryGenerator:
     def __init__(
         self,
         jira_repository: TaskManagerRepositoryInterface,
-        summary_generator: TaskProcessor,
+        summary_generator: BoardSummarizerUseCase,
         user_authentication_repository: UserAuthenticationInterface,
     ):
         self.jira_repository = jira_repository
@@ -394,12 +394,13 @@ class BoardSummaryGenerator:
                 issue_summary = escape_markdown_v2(response_text)
 
                 await update.message.reply_text(issue_summary, parse_mode="MarkdownV2")
-                result = self.summary_generator.process_tasks(tasks)
+                
+                # Use the new BoardSummarizerUseCase.execute method
+                result = await self.summary_generator.execute(tasks)
                 await update.message.reply_text(
                     escape_markdown_v2(result),
                     parse_mode="Markdown",
                 )
-
             else:
                 await update.message.reply_text("No tasks found matching the criteria.")
         except Exception as e:

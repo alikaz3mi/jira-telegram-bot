@@ -13,9 +13,8 @@ from jira_telegram_bot.adapters.services.telegram.authentication import Telegram
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import (
     AdvancedTaskCreation,
 )
-from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import create_llm_chain
-from jira_telegram_bot.use_cases.telegram_commands.board_summarizer import TaskProcessor
 from jira_telegram_bot.use_cases.telegram_commands.board_summary_generator import BoardSummaryGenerator
+from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase
 from jira_telegram_bot.use_cases.telegram_commands.create_task import JiraTaskCreation
 from jira_telegram_bot.use_cases.telegram_commands.task_get_users_time import TaskGetUsersTime
 from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
@@ -80,10 +79,6 @@ def setup_container() -> Container:
     # Create a child container that inherits from the base container
     child_container = Container(container)
     
-    # Create LLM chain for board summarization
-    llm_chain = create_llm_chain(container[OpenAISettings])
-    summary_generator = TaskProcessor(llm_chain)
-    
     # Authentication service
     child_container[TelegramAuthenticationService] = Singleton(
         lambda c: TelegramAuthenticationService(
@@ -128,7 +123,7 @@ def setup_container() -> Container:
     child_container[BoardSummaryGenerator] = Singleton(
         lambda c: BoardSummaryGenerator(
             c[TaskManagerRepositoryInterface],
-            summary_generator,
+            c[BoardSummarizerUseCase],
             c[UserAuthenticationInterface]
         )
     )
@@ -139,7 +134,7 @@ def setup_container() -> Container:
             task_manager_repository=c[TaskManagerRepositoryInterface],
             user_config=c[UserConfigInterface],
             project_info_repository=c[ProjectInfoRepositoryInterface],
-            story_generator= c[StoryGenerator],
+            story_generator=c[StoryGenerator],
             story_decomposition_service=c[StoryDecompositionInterface],
             subtask_creation_service=c[SubtaskCreationInterface],
         )
