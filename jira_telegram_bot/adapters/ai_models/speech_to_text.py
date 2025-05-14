@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+import shutil
+import asyncio
+from pathlib import Path
 from typing import Optional
 
-from loguru import logger
 from openai import AsyncOpenAI
 
+from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.speech import TranscriptionResult
-from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
 )
@@ -16,8 +18,8 @@ from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
 class SpeechProcessor(SpeechProcessorInterface):
     """Adapter for speech processing using OpenAI's GPT-4o model."""
 
-    def __init__(self, settings: OpenAISettings):
-        self.api_key = settings.token
+    def __init__(self):
+        self.api_key = OPENAI_SETTINGS.token
         self.client = AsyncOpenAI(api_key=self.api_key)
         self.model = "gpt-4o-transcribe" 
 
@@ -26,7 +28,64 @@ class SpeechProcessor(SpeechProcessorInterface):
         input_path: str,
         target_format: str = "mp3",
     ) -> str:
-        pass
+        """Convert audio file to a specified format using FFmpeg.
+        
+        Parameters
+        ----------
+        input_path : str
+            Path to the input audio file
+        target_format : str, optional
+            Target audio format, by default "mp3"
+            
+        Returns
+        -------
+        str
+            Path to the converted audio file
+            
+        Raises
+        ------
+        RuntimeError
+            If the conversion process fails or FFmpeg is not available
+        """
+        ffmpeg_path = shutil.which("ffmpeg")
+        if not ffmpeg_path:
+            logger.error("FFmpeg not found. Please install FFmpeg to process audio files.")
+            raise RuntimeError(
+                "FFmpeg is required but not installed. Install it with 'apt-get install ffmpeg'"
+            )
+        
+        input_path_obj = Path(input_path)
+        output_path = str(input_path_obj.parent / f"{input_path_obj.stem}.{target_format}")
+        
+        try:
+            command = [
+                ffmpeg_path,
+                "-i", input_path,
+                "-y",  # Overwrite output file if it exists
+                output_path
+            ]
+            
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                logger.error(f"FFmpeg error: {stderr.decode()}")
+                raise RuntimeError(f"Failed to convert audio: {stderr.decode()}")
+            
+            logger.info(f"Successfully converted {input_path} to {output_path}")
+            return output_path
+        except FileNotFoundError:
+            error_msg = "FFmpeg executable not found in PATH"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        except Exception as e:
+            logger.error(f"Error converting audio format: {e}")
+            raise RuntimeError(f"Audio conversion failed: {e}")
 
     async def transcribe_audio(
         self,
@@ -63,7 +122,7 @@ class SpeechProcessor(SpeechProcessorInterface):
                 )
                 return response
         except Exception as e:
-            logger.error(f"Error transcribing audio with Whisper: {e}")
+            logger.error(f"Error transcribing audio: {e}")
             raise RuntimeError(f"Error with speech recognition service: {e}")
 
     async def process_voice_message(self, voice_file_path: str) -> TranscriptionResult:
@@ -85,15 +144,26 @@ class SpeechProcessor(SpeechProcessorInterface):
         Exception
             If any processing error occurs during transcription
         """
-        mp3_path = voice_file_path
+        original_path = voice_file_path
+        converted_path = None
+        
         try:
-            text = await self.transcribe_audio(mp3_path)
+            file_ext = Path(voice_file_path).suffix.lower().lstrip('.')
+            
+            # Convert if not already in a compatible format
+            if file_ext not in ['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm']:
+                logger.info(f"Converting {file_ext} format to mp3")
+                converted_path = await self.convert_audio_format(voice_file_path, "mp3")
+                audio_path = converted_path
+            else:
+                audio_path = voice_file_path
+            
+            text = await self.transcribe_audio(audio_path)
             is_persian = self.is_persian(text)
             confidence = 0.95
 
             translation = await self.translate_to_english(text) if is_persian else None
 
-            os.remove(mp3_path)
             return TranscriptionResult(
                 text=text,
                 is_persian=is_persian,
@@ -102,9 +172,16 @@ class SpeechProcessor(SpeechProcessorInterface):
             )
         except Exception as e:
             logger.error(f"Error processing voice message: {e}")
-            if os.path.exists(mp3_path):
-                os.remove(mp3_path)
             raise
+        finally:
+            # Clean up temporary files
+            try:
+                if converted_path and os.path.exists(converted_path):
+                    os.remove(converted_path)
+                if os.path.exists(original_path):
+                    os.remove(original_path)
+            except Exception as e:
+                logger.warning(f"Failed to clean up audio files: {e}")
 
     async def translate_to_english(self, text: str) -> str:
         """Translate Persian text to English using GPT-4o.

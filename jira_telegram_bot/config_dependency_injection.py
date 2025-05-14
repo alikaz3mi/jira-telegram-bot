@@ -214,6 +214,7 @@ def configure_container() -> Container:
     
     container[HandleJiraWebhookUseCase] = Singleton(
         lambda c: HandleJiraWebhookUseCase(
+            jira_settings=c[JiraConnectionSettings],
             telegram_gateway=c[NotificationGatewayInterface],
         )
     )

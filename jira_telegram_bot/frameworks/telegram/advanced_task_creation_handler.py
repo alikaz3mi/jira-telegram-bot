@@ -211,8 +211,8 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
                     await update.message.reply_text(
                         f"*I transcribed your message* {confidence_indicator}\n\n"
-                        f"🇮🇷 *Persian:*\n{result.text}\n\n"
-                        f"🇬🇧 *English:*\n{result.translation}\n\n"
+                        f"🇮🇷 *Persian:*\n ```\n{result.text}``` \n\n"
+                        f"🇬🇧 *English:*\n ```\n{result.translation}```\n\n"
                         "Is this correct?",
                         reply_markup=reply_markup,
                         parse_mode="Markdown",

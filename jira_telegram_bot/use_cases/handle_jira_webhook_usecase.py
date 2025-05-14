@@ -4,7 +4,7 @@ from typing import Any
 from typing import Dict
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
 )
@@ -18,7 +18,11 @@ class HandleJiraWebhookUseCase:
     relevant notifications to Telegram if needed.
     """
 
-    def __init__(self, telegram_gateway: NotificationGatewayInterface):
+    def __init__(self, 
+                jira_settings: JiraConnectionSettings,
+                 telegram_gateway: NotificationGatewayInterface
+                 ):
+        self.jira_settings = jira_settings
         self._telegram_gateway = telegram_gateway
 
     def run(self, webhook_body: Dict[str, Any]) -> Dict[str, str]:
@@ -112,7 +116,7 @@ class HandleJiraWebhookUseCase:
         creator_name = webhook_body.get("user", {}).get("displayName", "someone")
         msg = (
             f"🔔 *Jira Event*\n\n"
-            f"🔑 Issue Key: {JIRA_SETTINGS.domain}/browse/{issue_data['key']}\n\n"
+            f"🔑 Issue Key: {self.jira_settings.domain}/browse/{issue_data['key']}\n\n"
             f"📝 Summary: {summary}\n\n"
             f"👤 Created by {creator_name}"
         )
