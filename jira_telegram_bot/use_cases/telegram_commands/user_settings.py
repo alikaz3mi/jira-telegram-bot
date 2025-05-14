@@ -8,10 +8,10 @@ from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.ext import ConversationHandler
 
-from jira_telegram_bot.adapters.services.telegram.authentication import check_user_allowed
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
+from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import UserAuthenticationInterface
 
 
 class UserSettingsConversation:
@@ -28,14 +28,15 @@ class UserSettingsConversation:
     def __init__(
         self,
         user_config_repo: UserConfigInterface,
-        admin_usernames: List[str],
+        user_authentication_repo: UserAuthenticationInterface,
     ):
         """
         :param user_config_repo: your user config repository to load/save user configs
         :param admin_usernames: list of telegram usernames with admin privileges
+        :param user_authentication_repo: your user authentication repository
         """
         self.user_config_repo = user_config_repo
-        self.admin_usernames = set(admin_usernames)
+        self.user_authentication_repo = user_authentication_repo
 
     def build_main_menu(self, is_admin: bool) -> InlineKeyboardMarkup:
         """
@@ -67,7 +68,8 @@ class UserSettingsConversation:
         """
         /setting entry point
         """
-        if not await check_user_allowed(update):
+        username = update.message.from_user.username
+        if not await self.user_authentication_repo.is_user_allowed(username):
             await update.message.reply_text("You are not allowed to use settings.")
             return ConversationHandler.END
 

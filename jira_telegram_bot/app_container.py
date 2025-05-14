@@ -9,6 +9,7 @@ from lagom.integrations.fast_api import FastApiIntegration
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.config_dependency_injection import configure_container
+from jira_telegram_bot.adapters.services.telegram.authentication import TelegramAuthenticationService
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import (
     AdvancedTaskCreation,
 )
@@ -38,6 +39,9 @@ from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import (
 )
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import (
+    UserAuthenticationInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
@@ -80,6 +84,13 @@ def setup_container() -> Container:
     llm_chain = create_llm_chain(container[OpenAISettings])
     summary_generator = TaskProcessor(llm_chain)
     
+    # Authentication service
+    child_container[TelegramAuthenticationService] = Singleton(
+        lambda c: TelegramAuthenticationService(
+            c[UserAuthenticationInterface]
+        )
+    )
+    
     # Configure Telegram command use cases
     child_container[JiraTaskCreation] = Singleton(
         lambda c: JiraTaskCreation(
@@ -90,20 +101,20 @@ def setup_container() -> Container:
     
     child_container[TaskStatus] = Singleton(
         lambda c: TaskStatus(
-            c[TaskManagerRepositoryInterface].jira
+            c[TaskManagerRepositoryInterface]
         )
     )
     
     child_container[JiraTaskTransition] = Singleton(
         lambda c: JiraTaskTransition(
-            c[TaskManagerRepositoryInterface].jira
+            c[TaskManagerRepositoryInterface]
         )
     )
     
     child_container[UserSettingsConversation] = Singleton(
         lambda c: UserSettingsConversation(
             c[UserConfigInterface],
-            ["alikaz3mi"]  # Admin users
+            c[UserAuthenticationInterface]
         )
     )
     
@@ -117,7 +128,8 @@ def setup_container() -> Container:
     child_container[BoardSummaryGenerator] = Singleton(
         lambda c: BoardSummaryGenerator(
             c[TaskManagerRepositoryInterface],
-            summary_generator
+            summary_generator,
+            c[UserAuthenticationInterface]
         )
     )
     

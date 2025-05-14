@@ -1,16 +1,16 @@
 from telegram import Update
 from telegram.ext import CallbackContext, ConversationHandler
-from jira import JIRA
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.settings import JIRA_BOARD_SETTINGS
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
+    TaskManagerRepositoryInterface,
+)
 
 
 class TaskStatus:
     TASK_ID = 1
 
-    def __init__(self, jira: JIRA):
-        self.jira = jira
-        self.board_settings = JIRA_BOARD_SETTINGS
+    def __init__(self, task_repository: TaskManagerRepositoryInterface):
+        self.task_repository = task_repository
 
     async def get_task_status(self, update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("Please enter the task ID or key:")
@@ -20,7 +20,7 @@ class TaskStatus:
         task_id = update.message.text.strip()
 
         try:
-            issues = self.jira.search_issues(
+            issues = self.task_repository.search_issues(
                 f"project = '{self.board_settings.board_name}' AND key = '{self.board_settings.board_name}-{task_id}'"
             )
 

@@ -36,6 +36,9 @@ from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import 
 from jira_telegram_bot.adapters.repositories.file_storage.project_info_repository import (
     ProjectInfoRepository
 )
+from jira_telegram_bot.adapters.repositories.file_storage.user_authentication_repository import (
+    FileUserAuthenticationRepository
+)
 from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import (
     LangChainAiService,
 )
@@ -84,6 +87,9 @@ from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface im
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
+from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import (
+    UserAuthenticationInterface,
+)
 from jira_telegram_bot.adapters.user_config import UserConfig
 
 
@@ -116,6 +122,7 @@ def configure_container() -> Container:
     
     # Configure settings
     data_dir = Path(os.environ.get('DATA_DIR', './data'))
+    config_dir = Path(os.environ.get('CONFIG_DIR', './config'))
     
     # Add settings to container
     container[JiraConnectionSettings] = Singleton(lambda: JiraConnectionSettings())
@@ -196,6 +203,13 @@ def configure_container() -> Container:
     container[UserConfigInterface] = Singleton(
         lambda c: UserConfig(
             user_config_path=str(data_dir / "storage" / "user_config.json")
+        )
+    )
+    
+    # User Authentication Repository
+    container[UserAuthenticationInterface] = Singleton(
+        lambda c: FileUserAuthenticationRepository(
+            auth_file_path=str(config_dir / "allowed_users.json")
         )
     )
 

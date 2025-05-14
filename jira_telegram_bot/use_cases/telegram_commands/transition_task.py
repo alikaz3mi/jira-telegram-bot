@@ -8,14 +8,15 @@ from telegram.ext import CallbackContext
 from telegram.ext import ConversationHandler
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.settings import JIRA_BOARD_SETTINGS
-
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
+    TaskManagerRepositoryInterface,
+)
 
 class JiraTaskTransition:
     ASSIGNEE, TASK_SELECTION, TASK_ACTION = range(3)
 
-    def __init__(self, jira: JIRA):
-        self.jira = jira
+    def __init__(self, task_repository: TaskManagerRepositoryInterface):
+        self.task_repository = task_repository
 
     def build_inline_keyboard(self, items, row_size=2):
         """Helper function to build an inline keyboard."""
@@ -31,6 +32,7 @@ class JiraTaskTransition:
 
     async def start_transition(self, update: Update, context: CallbackContext) -> int:
         """Start the task transition process by selecting the assignee."""
+        self.assignees = await self.task_repository.get_assignees()
         keyboard = self.build_inline_keyboard(self.assignees, row_size=2)
         await update.message.reply_text(
             "Please choose who you are:",
@@ -53,8 +55,8 @@ class JiraTaskTransition:
         LOGGER.info("Assignee selected: %s", assignee)
 
         # Fetch tasks assigned to the user
-        issues = self.jira.search_issues(
-            f'assignee="{assignee}" AND project="{self.jira.project(JIRA_BOARD_SETTINGS.board_name)}"',
+        issues = await self.task_repository.search_issues(
+            f'assignee="{assignee}" AND status != "Done" AND sprint in openSprints()',
         )
         if not issues:
             await query.edit_message_text(f"No tasks found for assignee {assignee}.")
@@ -89,7 +91,7 @@ class JiraTaskTransition:
             return ConversationHandler.END
 
         task_key = query.data
-        issue = self.jira.issue(task_key)
+        issue = self.task_repository.issue(task_key)
         context.user_data["selected_task"] = issue
 
         description = issue.fields.description or "No description provided"
@@ -128,13 +130,13 @@ class JiraTaskTransition:
         if query.data == "continue":
             issue = context.user_data.get("selected_task")
             # Transition the issue to another status (example: "In Progress")
-            transitions = self.jira.transitions(issue)
+            transitions = self.task_repository.transitions(issue)
             transition_id = next(
                 t["id"] for t in transitions if t["name"] == "In Progress"
             )
 
             if transition_id:
-                self.jira.transition_issue(issue, transition_id)
+                self.task_repository.transition_issue(issue, transition_id)
                 await query.edit_message_text(
                     f"Task {issue.key} transitioned to 'In Progress'.",
                 )
