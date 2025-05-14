@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
-from jira_telegram_bot.settings import JIRA_SETTINGS
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+
+JIRA_SETTINGS = JiraConnectionSettings()
 
 jira = JiraServerRepository(JIRA_SETTINGS)
 

@@ -14,8 +14,7 @@ from typing import Dict, List
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import JIRA_SETTINGS
-
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 
 class TestJiraServerRepositoryConcurrency(unittest.TestCase):
     """Concurrency integration tests for JiraServerRepository.
@@ -27,6 +26,7 @@ class TestJiraServerRepositoryConcurrency(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test environment with real Jira credentials."""
+        cls.JIRA_SETTINGS = JiraConnectionSettings()
         # Project key for testing - the only environment variable we need
         cls.test_project_key = os.environ.get("JIRA_TEST_PROJECT_KEY")
         
@@ -37,7 +37,7 @@ class TestJiraServerRepositoryConcurrency(unittest.TestCase):
             )
         
         # Initialize repository with the global JIRA_SETTINGS
-        cls.repository = JiraServerRepository(settings=JIRA_SETTINGS)
+        cls.repository = JiraServerRepository(settings=cls.JIRA_SETTINGS)
         
         # Store created issues to clean up after tests
         cls.created_issues = []

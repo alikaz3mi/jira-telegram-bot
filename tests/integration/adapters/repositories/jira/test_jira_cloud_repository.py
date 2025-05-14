@@ -13,8 +13,7 @@ from typing import List, Dict
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import JiraCloudRepository
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.settings.jira_settings import JiraConnectionType
+from jira_telegram_bot.settings.jira_settings import JiraConnectionType, JiraConnectionSettings
 
 
 class TestJiraCloudRepository(unittest.TestCase):
@@ -27,6 +26,7 @@ class TestJiraCloudRepository(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test environment with real Jira Cloud credentials."""
+        JIRA_SETTINGS = JiraConnectionSettings()
         # Skip tests if not using a cloud instance
         if JIRA_SETTINGS.connection_type != JiraConnectionType.CLOUD:
             raise unittest.SkipTest("Tests only applicable for Jira Cloud instances")

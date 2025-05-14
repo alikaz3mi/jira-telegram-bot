@@ -51,7 +51,7 @@ class SpeechProcessor(SpeechProcessorInterface):
         """
         ffmpeg_path = shutil.which("ffmpeg")
         if not ffmpeg_path:
-            logger.error("FFmpeg not found. Please install FFmpeg to process audio files.")
+            LOGGER.error("FFmpeg not found. Please install FFmpeg to process audio files.")
             raise RuntimeError(
                 "FFmpeg is required but not installed. Install it with 'apt-get install ffmpeg'"
             )
@@ -76,17 +76,17 @@ class SpeechProcessor(SpeechProcessorInterface):
             stdout, stderr = await process.communicate()
             
             if process.returncode != 0:
-                logger.error(f"FFmpeg error: {stderr.decode()}")
+                LOGGER.error(f"FFmpeg error: {stderr.decode()}")
                 raise RuntimeError(f"Failed to convert audio: {stderr.decode()}")
             
-            logger.info(f"Successfully converted {input_path} to {output_path}")
+            LOGGER.info(f"Successfully converted {input_path} to {output_path}")
             return output_path
         except FileNotFoundError:
             error_msg = "FFmpeg executable not found in PATH"
-            logger.error(error_msg)
+            LOGGER.error(error_msg)
             raise RuntimeError(error_msg)
         except Exception as e:
-            logger.error(f"Error converting audio format: {e}")
+            LOGGER.error(f"Error converting audio format: {e}")
             raise RuntimeError(f"Audio conversion failed: {e}")
 
     async def transcribe_audio(
@@ -124,7 +124,7 @@ class SpeechProcessor(SpeechProcessorInterface):
                 )
                 return response
         except Exception as e:
-            logger.error(f"Error transcribing audio: {e}")
+            LOGGER.error(f"Error transcribing audio: {e}")
             raise RuntimeError(f"Error with speech recognition service: {e}")
 
     async def process_voice_message(self, voice_file_path: str) -> TranscriptionResult:
@@ -154,7 +154,7 @@ class SpeechProcessor(SpeechProcessorInterface):
             
             # Convert if not already in a compatible format
             if file_ext not in ['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm']:
-                logger.info(f"Converting {file_ext} format to mp3")
+                LOGGER.info(f"Converting {file_ext} format to mp3")
                 converted_path = await self.convert_audio_format(voice_file_path, "mp3")
                 audio_path = converted_path
             else:
@@ -173,7 +173,7 @@ class SpeechProcessor(SpeechProcessorInterface):
                 confidence=confidence,
             )
         except Exception as e:
-            logger.error(f"Error processing voice message: {e}")
+            LOGGER.error(f"Error processing voice message: {e}")
             raise
         finally:
             # Clean up temporary files
@@ -183,7 +183,7 @@ class SpeechProcessor(SpeechProcessorInterface):
                 if os.path.exists(original_path):
                     os.remove(original_path)
             except Exception as e:
-                logger.warning(f"Failed to clean up audio files: {e}")
+                LOGGER.warning(f"Failed to clean up audio files: {e}")
 
     async def translate_to_english(self, text: str) -> str:
         """Translate Persian text to English using GPT-4o.
@@ -224,7 +224,7 @@ class SpeechProcessor(SpeechProcessorInterface):
             )
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"Error translating text: {e}")
+            LOGGER.error(f"Error translating text: {e}")
             return text
 
     @staticmethod
