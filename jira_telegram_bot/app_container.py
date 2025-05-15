@@ -48,6 +48,8 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
 from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
     ProjectInfoRepositoryInterface,
 )
+from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
+from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint
 
 
 # Global container instance
@@ -143,6 +145,18 @@ def setup_container() -> Container:
     # Make SpeechProcessor available directly from container
     child_container[SpeechProcessor] = Singleton(
         lambda c: c[SpeechProcessorInterface]
+    )
+    
+    # Register API endpoints
+    child_container[SubServiceEndpoints] = container[SubServiceEndpoints]
+    
+    # Register the endpoints with the SubServiceEndpoints registry
+    child_container.resolve(SubServiceEndpoints).register(
+        child_container.resolve(JiraWebhookEndpoint)
+    )
+    
+    child_container.resolve(SubServiceEndpoints).register(
+        child_container.resolve(TelegramWebhookEndpoint)
     )
     
     return child_container

@@ -29,6 +29,13 @@ from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import J
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.adapters.services.telegram.telegram_gateway import NotificationGateway
 from jira_telegram_bot.adapters.user_config import UserConfig
+
+# Import webhook use cases
+from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWebhookUseCase
+
+# Import API framework components
+from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
+from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
 from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
@@ -215,11 +222,41 @@ def configure_container() -> Container:
             openai_gateway=c[LLMModelInterface],
         )
     )
-    
-    container[HandleJiraWebhookUseCase] = Singleton(
+      container[HandleJiraWebhookUseCase] = Singleton(
         lambda c: HandleJiraWebhookUseCase(
             jira_settings=c[JiraConnectionSettings],
             telegram_gateway=c[NotificationGatewayInterface],
+        )
+    )
+    
+    # Register webhook use cases
+    container[JiraWebhookUseCase] = Singleton(
+        lambda c: JiraWebhookUseCase(
+            jira_settings=c[JiraConnectionSettings],
+            telegram_gateway=c[NotificationGatewayInterface],
+        )
+    )
+    
+    container[TelegramWebhookUseCase] = Singleton(
+        lambda c: TelegramWebhookUseCase(
+            create_task_use_case=c[CreateTaskUseCase],
+            parse_prompt_use_case=c[ParseJiraPromptUseCase],
+            task_manager_repository=c[TaskManagerRepositoryInterface],
+        )
+    )
+    
+    # Register API endpoints
+    container[SubServiceEndpoints] = Singleton(lambda: SubServiceEndpoints())
+    
+    container[JiraWebhookEndpoint] = Singleton(
+        lambda c: JiraWebhookEndpoint(
+            jira_webhook_use_case=c[JiraWebhookUseCase],
+        )
+    )
+    
+    container[TelegramWebhookEndpoint] = Singleton(
+        lambda c: TelegramWebhookEndpoint(
+            telegram_webhook_use_case=c[TelegramWebhookUseCase],
         )
     )
     
