@@ -192,15 +192,15 @@ def create_telegram_application() -> Application:
     return _application
 
 
-def create_fastapi_integration() -> FastApiIntegration:
+def create_fastapi_integration():
     """Create FastAPI integration with dependency injection.
     
     Returns:
         FastAPI integration for dependency injection
     """
     container = get_container()
-    deps = FastApiIntegration(container)
-    return deps
+    # deps = FastApiIntegration(container)
+    return container
 
 
 def startup() -> None:

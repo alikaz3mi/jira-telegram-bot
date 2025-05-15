@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.app_container import startup, shutdown
-from jira_telegram_bot.frameworks.fast_api.create_ticket_controller import app
+from jira_telegram_bot.frameworks.api.entry_point import app
 
 
 @asynccontextmanager
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     
     # Start Uvicorn server with app module path for proper reloading
     uvicorn.run(
-        "jira_telegram_bot.frameworks.fast_api.create_ticket_controller:app",
+        "jira_telegram_bot.frameworks.api.entry_point:app",
         host="0.0.0.0",
         port=2316,
         reload=True,
