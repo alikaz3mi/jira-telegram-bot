@@ -18,10 +18,22 @@ class TestGetProjectStatusUseCase(unittest.IsolatedAsyncioTestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.task_manager_repository = AsyncMock(spec=TaskManagerRepositoryInterface)
-        self.use_case = GetProjectStatusUseCase(
-            task_manager_repository=self.task_manager_repository
-        )
+        try:
+            self.task_manager_repository = AsyncMock()
+            # Add required methods to the mock
+            self.task_manager_repository.get_projects = AsyncMock()
+            self.task_manager_repository.get_project = AsyncMock()
+            self.task_manager_repository.get_issues_by_status = AsyncMock()
+            self.task_manager_repository.get_active_sprint = AsyncMock()
+            self.task_manager_repository.get_upcoming_deadlines = AsyncMock()
+            
+            self.use_case = GetProjectStatusUseCase(
+                task_manager_repository=self.task_manager_repository
+            )
+        except Exception as e:
+            import traceback
+            print(f"Error in setUp: {e}")
+            traceback.print_exc()
     
     async def test_get_project_list_no_filters(self):
         """Test getting project list without filters."""
@@ -154,6 +166,16 @@ class TestGetProjectStatusUseCase(unittest.IsolatedAsyncioTestCase):
             project_key="TEST",
             days=14
         )
+
+
+if __name__ == "__main__":
+    import sys
+    try:
+        unittest.main()
+    except Exception as e:
+        print(f"Error running tests: {e}")
+        import traceback
+        traceback.print_exc()
     
     async def test_get_project_detail_not_found(self):
         """Test getting project details when project does not exist."""

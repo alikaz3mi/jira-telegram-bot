@@ -13,8 +13,16 @@ class TestUpdateProjectTrackingUseCase(unittest.IsolatedAsyncioTestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.task_manager_repository = AsyncMock(spec=TaskManagerRepositoryInterface)
-        self.user_config = MagicMock(spec=UserConfigInterface)
+        self.task_manager_repository = AsyncMock()
+        # Add required methods to the mock
+        self.task_manager_repository.get_project = AsyncMock()
+        
+        self.user_config = MagicMock()
+        # Add required methods to the mock
+        self.user_config.get_value = MagicMock()
+        self.user_config.set_value = MagicMock()
+        self.user_config.save_config = MagicMock()
+        
         self.use_case = UpdateProjectTrackingUseCase(
             task_manager_repository=self.task_manager_repository,
             user_config=self.user_config

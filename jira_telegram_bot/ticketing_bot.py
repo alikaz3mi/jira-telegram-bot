@@ -1,62 +1,33 @@
 """Main entry point for FastAPI application serving Telegram webhooks."""
 
-import asyncio
-import contextlib
 import uvicorn
-from typing import AsyncGenerator
-
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.app_container import startup, shutdown
-from jira_telegram_bot.frameworks.api.entry_point import app
+from jira_telegram_bot.app_container import get_container, create_fastapi_integration
+from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
+from jira_telegram_bot.frameworks.api.api_endpoint import APIEndpoint, APIEndpointConfig
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Define application lifespan events.
+def main():
+    """Main function to start the API server."""
+    LOGGER.info("Initializing Jira Telegram Bot API server")
     
-    Args:
-        _app: FastAPI application instance
-        
-    Yields:
-        None
-    """
-    # Startup: run initialization tasks
-    startup()
-    LOGGER.info("FastAPI application ready to serve requests")
+    # Get container and retrieve registered endpoints
+    container = get_container()
+    sub_service_endpoints = container[SubServiceEndpoints]
     
-    yield
+    # Create FastAPI dependency integration
+    fastapi_di = create_fastapi_integration()
     
-    # Shutdown: clean up resources
-    await shutdown()
-    LOGGER.info("FastAPI application shutdown complete")
-
-
-# Update app to use the lifespan context manager
-app.router.lifespan_context = lifespan
-
-
-async def run_app_wrapper() -> None:
-    """Wrap application setup in async context.
+    # Create API endpoint configuration with specific port
+    api_config = APIEndpointConfig(port=2316)
     
-    Returns:
-        None
-    """
-    LOGGER.info("Preparing FastAPI application")
-    # No need to run startup here as it will be called in the lifespan context
+    # Create and configure API endpoint
+    api_endpoint = APIEndpoint(api_config, sub_service_endpoints)
+    
+    LOGGER.info("Starting FastAPI server")
+    # Run the application in the main process
+    api_endpoint.start_app(main_process=True)
 
 
 if __name__ == "__main__":
-    # Run async setup
-    asyncio.run(run_app_wrapper())
-    
-    # Start Uvicorn server with app module path for proper reloading
-    uvicorn.run(
-        "jira_telegram_bot.frameworks.api.entry_point:app",
-        host="0.0.0.0",
-        port=2316,
-        reload=True,
-        log_level="info",
-    )
+    main()

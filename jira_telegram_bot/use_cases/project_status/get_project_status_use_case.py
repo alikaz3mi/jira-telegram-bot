@@ -42,7 +42,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
         """
         try:
             # Get projects from task manager
-            projects = await self.task_manager_repository.get_projects()
+            projects = self.task_manager_repository.get_projects()
             
             # Filter by status if provided
             if status:

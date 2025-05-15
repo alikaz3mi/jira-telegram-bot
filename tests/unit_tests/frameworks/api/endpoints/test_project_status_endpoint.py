@@ -72,39 +72,10 @@ class TestProjectStatusEndpoint(unittest.TestCase):
             )
         ]
     
-    @patch.object(TestClient, 'get')
-    def test_get_projects_success(self, mock_get):
+    def test_get_projects_success(self):
         """Test successful project list retrieval."""
         # Arrange
         self.get_project_status_use_case.get_project_list = AsyncMock(side_effect=self._mock_get_project_list)
-        
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "projects": [
-                {
-                    "key": "TEST",
-                    "name": "Test Project",
-                    "task_count": 10,
-                    "status_counts": [
-                        {"status": "To Do", "count": 3},
-                        {"status": "In Progress", "count": 4},
-                        {"status": "Done", "count": 3}
-                    ]
-                },
-                {
-                    "key": "DEMO",
-                    "name": "Demo Project",
-                    "task_count": 5,
-                    "status_counts": [
-                        {"status": "To Do", "count": 2},
-                        {"status": "In Progress", "count": 1},
-                        {"status": "Done", "count": 2}
-                    ]
-                }
-            ]
-        }
-        mock_get.return_value = mock_response
         
         # Act
         response = self.client.get("/projects/")
@@ -138,35 +109,10 @@ class TestProjectStatusEndpoint(unittest.TestCase):
             )
         return None
     
-    @patch.object(TestClient, 'get')
-    def test_get_project_detail_success(self, mock_get):
+    def test_get_project_detail_success(self):
         """Test successful project detail retrieval."""
         # Arrange
         self.get_project_status_use_case.get_project_detail = AsyncMock(side_effect=self._mock_get_project_detail)
-        
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "project": {
-                "key": "TEST",
-                "name": "Test Project",
-                "task_count": 10,
-                "status_counts": [
-                    {"status": "To Do", "count": 3},
-                    {"status": "In Progress", "count": 4},
-                    {"status": "Done", "count": 3}
-                ]
-            },
-            "sprint_data": {
-                "name": "Sprint 1",
-                "startDate": "2025-05-01",
-                "endDate": "2025-05-15"
-            },
-            "upcoming_deadlines": [
-                {"key": "TEST-1", "summary": "Task 1", "dueDate": "2025-05-20"}
-            ]
-        }
-        mock_get.return_value = mock_response
         
         # Act
         response = self.client.get("/projects/TEST")
@@ -176,19 +122,14 @@ class TestProjectStatusEndpoint(unittest.TestCase):
         data = response.json()
         self.assertIn("project", data)
         self.assertEqual(data["project"]["key"], "TEST")
-        self.assertIn("sprint_data", data)
+        self.assertEqual(data["project"]["name"], "Test Project")
+        self.assertEqual(data["sprint_data"]["name"], "Sprint 1")
         self.assertIn("upcoming_deadlines", data)
     
-    @patch.object(TestClient, 'get')
-    def test_get_project_detail_not_found(self, mock_get):
+    def test_get_project_detail_not_found(self):
         """Test project detail not found."""
         # Arrange
         self.get_project_status_use_case.get_project_detail = AsyncMock(side_effect=self._mock_get_project_detail)
-        
-        mock_response = MagicMock()
-        mock_response.status_code = 404
-        mock_response.json.return_value = {"detail": "Project 'NOTFOUND' not found"}
-        mock_get.return_value = mock_response
         
         # Act
         response = self.client.get("/projects/NOTFOUND")
@@ -198,8 +139,7 @@ class TestProjectStatusEndpoint(unittest.TestCase):
         data = response.json()
         self.assertIn("detail", data)
     
-    @patch.object(TestClient, 'put')
-    def test_update_project_tracking_success(self, mock_put):
+    def test_update_project_tracking_success(self):
         """Test successful project tracking update."""
         # Arrange
         self.update_project_tracking_use_case.update_tracking = AsyncMock(
@@ -208,15 +148,6 @@ class TestProjectStatusEndpoint(unittest.TestCase):
                 "notification_channel": "12345678"
             }
         )
-        
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "project_key": "TEST",
-            "tracking_enabled": True,
-            "notification_channel": "12345678"
-        }
-        mock_put.return_value = mock_response
         
         # Act
         response = self.client.put(

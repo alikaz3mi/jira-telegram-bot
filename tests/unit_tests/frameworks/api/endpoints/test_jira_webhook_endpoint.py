@@ -51,8 +51,7 @@ class TestJiraWebhookEndpoint(unittest.TestCase):
                 message="Invalid webhook data"
             )
     
-    @patch.object(TestClient, 'post')
-    def test_jira_webhook_endpoint_success(self, mock_post):
+    def test_jira_webhook_endpoint_success(self):
         """Test successful webhook processing."""
         # Arrange
         webhook_data = {
@@ -65,13 +64,9 @@ class TestJiraWebhookEndpoint(unittest.TestCase):
             message="Processed event for PROJ-123"
         )
         
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=lambda: {"status": "success", "message": "Processed event for PROJ-123"}
-        )
-        
         # Act
-        response = self.client.post("/webhook/jira/", json=webhook_data)
+        with patch('fastapi.Request.json', AsyncMock(return_value=webhook_data)):
+            response = self.client.post("/webhook/jira/", json=webhook_data)
         
         # Assert
         self.jira_webhook_use_case.process_webhook.assert_called_once_with(webhook_data)
@@ -81,8 +76,7 @@ class TestJiraWebhookEndpoint(unittest.TestCase):
             {"status": "success", "message": "Processed event for PROJ-123"}
         )
     
-    @patch.object(TestClient, 'post')
-    def test_jira_webhook_endpoint_error(self, mock_post):
+    def test_jira_webhook_endpoint_error(self):
         """Test error handling in webhook processing."""
         # Arrange
         webhook_data = {
@@ -95,13 +89,9 @@ class TestJiraWebhookEndpoint(unittest.TestCase):
             message="Invalid webhook data"
         )
         
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=lambda: {"status": "error", "message": "Invalid webhook data"}
-        )
-        
         # Act
-        response = self.client.post("/webhook/jira/", json=webhook_data)
+        with patch('fastapi.Request.json', AsyncMock(return_value=webhook_data)):
+            response = self.client.post("/webhook/jira/", json=webhook_data)
         
         # Assert
         self.jira_webhook_use_case.process_webhook.assert_called_once_with(webhook_data)
@@ -111,8 +101,7 @@ class TestJiraWebhookEndpoint(unittest.TestCase):
             {"status": "error", "message": "Invalid webhook data"}
         )
     
-    @patch.object(TestClient, 'post')
-    def test_jira_webhook_endpoint_exception(self, mock_post):
+    def test_jira_webhook_endpoint_exception(self):
         """Test exception handling in webhook processing."""
         # Arrange
         webhook_data = {
@@ -122,13 +111,9 @@ class TestJiraWebhookEndpoint(unittest.TestCase):
         
         self.jira_webhook_use_case.process_webhook.side_effect = Exception("Test exception")
         
-        mock_post.return_value = MagicMock(
-            status_code=500,
-            json=lambda: {"status": "error", "message": "Error: Test exception"}
-        )
-        
         # Act
-        response = self.client.post("/webhook/jira/", json=webhook_data)
+        with patch('fastapi.Request.json', AsyncMock(return_value=webhook_data)):
+            response = self.client.post("/webhook/jira/", json=webhook_data)
         
         # Assert
         self.jira_webhook_use_case.process_webhook.assert_called_once_with(webhook_data)

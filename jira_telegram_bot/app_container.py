@@ -149,25 +149,14 @@ def setup_container() -> Container:
         lambda c: c[SpeechProcessorInterface]
     )
     
+    # Get the endpoint registry
+    endpoint_registry = child_container[SubServiceEndpoints]
+    
     # Register API endpoints
-    child_container[SubServiceEndpoints] = container[SubServiceEndpoints]
-    
-    # Register the endpoints with the SubServiceEndpoints registry
-    child_container.resolve(SubServiceEndpoints).register(
-        child_container.resolve(JiraWebhookEndpoint)
-    )
-    
-    child_container.resolve(SubServiceEndpoints).register(
-        child_container.resolve(TelegramWebhookEndpoint)
-    )
-    
-    child_container.resolve(SubServiceEndpoints).register(
-        child_container.resolve(HealthCheckEndpoint)
-    )
-    
-    child_container.resolve(SubServiceEndpoints).register(
-        child_container.resolve(ProjectStatusEndpoint)
-    )
+    endpoint_registry.register(child_container[JiraWebhookEndpoint])
+    endpoint_registry.register(child_container[TelegramWebhookEndpoint])
+    endpoint_registry.register(child_container[HealthCheckEndpoint])
+    endpoint_registry.register(child_container[ProjectStatusEndpoint])
     
     return child_container
 
@@ -199,8 +188,8 @@ def create_fastapi_integration():
         FastAPI integration for dependency injection
     """
     container = get_container()
-    # deps = FastApiIntegration(container)
-    return container
+    deps = FastApiIntegration(container)
+    return deps
 
 
 def startup() -> None:

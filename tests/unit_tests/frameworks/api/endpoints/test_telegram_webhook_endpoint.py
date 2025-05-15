@@ -38,8 +38,7 @@ class TestTelegramWebhookEndpoint(unittest.TestCase):
         self.assertEqual(router.prefix, "/webhook/telegram")
         self.assertEqual(router.tags, ["Webhooks"])
     
-    @patch.object(TestClient, 'post')
-    def test_telegram_webhook_endpoint_success(self, mock_post):
+    def test_telegram_webhook_endpoint_success(self):
         """Test successful webhook processing."""
         # Arrange
         update_data = {
@@ -57,13 +56,9 @@ class TestTelegramWebhookEndpoint(unittest.TestCase):
             message="Processed update"
         )
         
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=lambda: {"status": "success", "message": "Processed update"}
-        )
-        
         # Act
-        response = self.client.post("/webhook/telegram/", json=update_data)
+        with patch('fastapi.Request.json', AsyncMock(return_value=update_data)):
+            response = self.client.post("/webhook/telegram/", json=update_data)
         
         # Assert
         self.telegram_webhook_use_case.process_update.assert_called_once_with(update_data)
@@ -73,8 +68,7 @@ class TestTelegramWebhookEndpoint(unittest.TestCase):
             {"status": "success", "message": "Processed update"}
         )
     
-    @patch.object(TestClient, 'post')
-    def test_telegram_webhook_endpoint_ignored(self, mock_post):
+    def test_telegram_webhook_endpoint_ignored(self):
         """Test ignored update in webhook processing."""
         # Arrange
         update_data = {
@@ -87,13 +81,9 @@ class TestTelegramWebhookEndpoint(unittest.TestCase):
             message="Unsupported update type"
         )
         
-        mock_post.return_value = MagicMock(
-            status_code=200,
-            json=lambda: {"status": "ignored", "message": "Unsupported update type"}
-        )
-        
         # Act
-        response = self.client.post("/webhook/telegram/", json=update_data)
+        with patch('fastapi.Request.json', AsyncMock(return_value=update_data)):
+            response = self.client.post("/webhook/telegram/", json=update_data)
         
         # Assert
         self.telegram_webhook_use_case.process_update.assert_called_once_with(update_data)
@@ -103,8 +93,7 @@ class TestTelegramWebhookEndpoint(unittest.TestCase):
             {"status": "ignored", "message": "Unsupported update type"}
         )
     
-    @patch.object(TestClient, 'post')
-    def test_telegram_webhook_endpoint_exception(self, mock_post):
+    def test_telegram_webhook_endpoint_exception(self):
         """Test exception handling in webhook processing."""
         # Arrange
         update_data = {
@@ -119,13 +108,9 @@ class TestTelegramWebhookEndpoint(unittest.TestCase):
         
         self.telegram_webhook_use_case.process_update.side_effect = Exception("Test exception")
         
-        mock_post.return_value = MagicMock(
-            status_code=500,
-            json=lambda: {"status": "error", "message": "Error: Test exception"}
-        )
-        
         # Act
-        response = self.client.post("/webhook/telegram/", json=update_data)
+        with patch('fastapi.Request.json', AsyncMock(return_value=update_data)):
+            response = self.client.post("/webhook/telegram/", json=update_data)
         
         # Assert
         self.telegram_webhook_use_case.process_update.assert_called_once_with(update_data)

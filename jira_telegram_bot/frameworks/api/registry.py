@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
+from jira_telegram_bot import LOGGER
 from jira_telegram_bot.frameworks.api.base_endpoint import ServiceAPIEndpointBluePrint
 
 
@@ -24,4 +25,5 @@ class SubServiceEndpoints:
         Args:
             endpoint: The endpoint to register
         """
+        LOGGER.info(f"Registering endpoint: {endpoint.__class__.__name__}")
         self.endpoints.append(endpoint)

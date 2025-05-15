@@ -129,12 +129,21 @@ def configure_container() -> Container:
     container[NotificationGatewayInterface] = Singleton(
         lambda c: NotificationGateway(c[TelegramConnectionSettings])
     )
+      # Determine which Jira repository implementation to use
+    jira_mode = os.environ.get("JIRA_MODE", "").lower()
     
-    container[TaskManagerRepositoryInterface] = Singleton(
-        lambda c: JiraCloudRepository(c[JiraConnectionSettings]) 
-        if c[JiraConnectionSettings].connection_type == JiraConnectionType.CLOUD 
-        else JiraServerRepository(c[JiraConnectionSettings])
-    )
+    if jira_mode == "mock":
+        # Import here to avoid circular imports
+        from jira_telegram_bot.adapters.repositories.jira.mock_jira_repository import MockJiraRepository
+        container[TaskManagerRepositoryInterface] = Singleton(lambda: MockJiraRepository())
+        LOGGER.warning("Using MOCK Jira repository for development/testing")
+    else:
+        # Default behavior: use cloud or server based on connection type
+        container[TaskManagerRepositoryInterface] = Singleton(
+            lambda c: JiraCloudRepository(c[JiraConnectionSettings]) 
+            if c[JiraConnectionSettings].connection_type == JiraConnectionType.CLOUD 
+            else JiraServerRepository(c[JiraConnectionSettings])
+        )
     
     container[ProjectInfoRepositoryInterface] = Singleton(
         lambda c: ProjectInfoRepository()
