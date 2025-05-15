@@ -36,6 +36,10 @@ from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWeb
 # Import API framework components
 from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
+from jira_telegram_bot.use_cases.project_status import GetProjectStatusUseCase, UpdateProjectTrackingUseCase
+from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
 from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
@@ -222,7 +226,8 @@ def configure_container() -> Container:
             openai_gateway=c[LLMModelInterface],
         )
     )
-      container[HandleJiraWebhookUseCase] = Singleton(
+    
+    container[HandleJiraWebhookUseCase] = Singleton(
         lambda c: HandleJiraWebhookUseCase(
             jira_settings=c[JiraConnectionSettings],
             telegram_gateway=c[NotificationGatewayInterface],
@@ -244,8 +249,7 @@ def configure_container() -> Container:
             task_manager_repository=c[TaskManagerRepositoryInterface],
         )
     )
-    
-    # Register API endpoints
+      # Register API endpoints
     container[SubServiceEndpoints] = Singleton(lambda: SubServiceEndpoints())
     
     container[JiraWebhookEndpoint] = Singleton(
@@ -257,6 +261,30 @@ def configure_container() -> Container:
     container[TelegramWebhookEndpoint] = Singleton(
         lambda c: TelegramWebhookEndpoint(
             telegram_webhook_use_case=c[TelegramWebhookUseCase],
+        )
+    )
+    
+    container[HealthCheckEndpoint] = Singleton(lambda: HealthCheckEndpoint())
+    
+    # Register project status use cases
+    container[GetProjectStatusUseCase] = Singleton(
+        lambda c: GetProjectStatusUseCase(
+            task_manager_repository=c[TaskManagerRepositoryInterface],
+        )
+    )
+    
+    container[UpdateProjectTrackingUseCase] = Singleton(
+        lambda c: UpdateProjectTrackingUseCase(
+            task_manager_repository=c[TaskManagerRepositoryInterface],
+            user_config=c[UserConfigInterface],
+        )
+    )
+    
+    # Register project status endpoints
+    container[ProjectStatusEndpoint] = Singleton(
+        lambda c: ProjectStatusEndpoint(
+            get_project_status_use_case=c[GetProjectStatusUseCase],
+            update_project_tracking_use_case=c[UpdateProjectTrackingUseCase],
         )
     )
     

@@ -50,6 +50,8 @@ from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface im
 )
 from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
 
 
 # Global container instance
@@ -157,6 +159,14 @@ def setup_container() -> Container:
     
     child_container.resolve(SubServiceEndpoints).register(
         child_container.resolve(TelegramWebhookEndpoint)
+    )
+    
+    child_container.resolve(SubServiceEndpoints).register(
+        child_container.resolve(HealthCheckEndpoint)
+    )
+    
+    child_container.resolve(SubServiceEndpoints).register(
+        child_container.resolve(ProjectStatusEndpoint)
     )
     
     return child_container

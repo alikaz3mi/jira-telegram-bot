@@ -1,6 +1,8 @@
 ---
 mode: agent
 description: Generate high-coverage unittest files (≥ 90 %) for selected Python modules
+tools: [terminalLastCommand, githubRepo, testFailure]
+
 ---
 
 # 🎯 Goal  

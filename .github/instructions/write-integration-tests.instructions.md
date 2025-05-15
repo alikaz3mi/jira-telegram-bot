@@ -1,6 +1,7 @@
 ---
 mode: agent
 description: Create integration & concurrency tests with ≥ 90 % coverage
+tools: [terminalLastCommand, githubRepo, testFailure]
 ---
 
 # 🌐 Scope  
@@ -12,6 +13,7 @@ End-to-end tests across service API, DB, brokers, external APIs, incl. load/conc
 - Place files in `tests/integration/`, prefixed `test_`.  
 - Cover happy paths, failure modes, and race conditions.  
 - Assert overall coverage ≥ 90 %; export JUnit & HTML reports to `reports/`.
+- Make sure that all tests are passed
 
 # 🏗️ Steps  
 1. Ask for entry command if unknown: `${input:entry:Entrypoint cmd}`.  

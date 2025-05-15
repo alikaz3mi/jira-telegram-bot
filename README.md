@@ -15,6 +15,7 @@ A powerful Telegram bot that integrates with Jira to streamline task management 
 - **Task Tracking**: Monitor task status and receive notifications
 - **Workflow Management**: Transition tasks between different states
 - **Media Support**: Attach images, documents, and other media to tasks
+- **Webhook Integration**: Bidirectional sync between Jira and Telegram
 
 ### Smart Features
 - **AI Integration**: Uses GPT models for task analysis and breakdown
@@ -41,9 +42,16 @@ A powerful Telegram bot that integrates with Jira to streamline task management 
 - Python 3.11 or higher
 - Telegram Bot Token (from [@BotFather](https://t.me/botfather))
 - Jira account with API access
+- Public URL for webhook endpoints (e.g., using ngrok or a deployed server)
 - Optional: OpenAI API key for AI features
 
-### Installation
+### Documentation
+
+- [Webhook Integration Guide](docs/webhook_integration.md) - How to set up and use webhooks
+- [Webhook Architecture](docs/webhook_architecture.md) - Technical details of the webhook implementation
+- [Advanced Task Creation Flow](docs/advanced_task_creation_flow.md) - How advanced task creation works
+
+## Installation
 
 1. **Clone and Install**
    ```bash

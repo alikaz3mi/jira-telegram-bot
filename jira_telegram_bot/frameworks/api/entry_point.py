@@ -55,6 +55,7 @@ app.add_middleware(
 deps = create_fastapi_integration()
 
 # Register endpoints from SubServiceEndpoints
-for endpoint in deps.resolve(SubServiceEndpoints).endpoints:
+endpoints = deps[SubServiceEndpoints].endpoints
+for endpoint in endpoints:
     LOGGER.info(f"Registering endpoint: {endpoint.__class__.__name__}")
     app.include_router(endpoint.create_rest_api_route())

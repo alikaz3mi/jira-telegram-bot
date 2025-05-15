@@ -52,7 +52,7 @@ After files are generated, automatically call:
 /write-unit-tests: paths=<comma_separated_new_files>
 /write-integration-tests: entry='python -m uvicorn jira_telegram_bot.frameworks.api.entry_point:app --port 8000' paths=<comma_separated_new_files>
 ```  
-so that combined coverage stays **≥ 90 %**.
+so that combined coverage stays **≥ 90 %** and all tests are passed.
 
 ## 6 Quality gates  
 * Ensure `ruff`, `mypy --strict`, and `pytest -q` all succeed.  
