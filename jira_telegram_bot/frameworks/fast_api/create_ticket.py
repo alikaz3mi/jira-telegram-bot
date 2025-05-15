@@ -526,7 +526,7 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
             f"No Jira issue found for original message_id={original_message_id}",
         )
         return {"status": "error", "message": "No matching Jira issue found"}
-
+you
 
 async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
     """Handle comments in group chats."""
