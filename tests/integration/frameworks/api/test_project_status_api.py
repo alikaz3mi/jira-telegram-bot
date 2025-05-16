@@ -52,7 +52,7 @@ class TestProjectStatusAPI(unittest.TestCase):
         mock_get_project_list.return_value = project_summaries
         
         # Act
-        response = self.client.get("/projects/")
+        response = self.client.get("/api/v1/projects/")
         
         # Assert
         self.assertEqual(response.status_code, 200)
@@ -87,7 +87,7 @@ class TestProjectStatusAPI(unittest.TestCase):
         mock_get_project_detail.return_value = project_detail
         
         # Act
-        response = self.client.get("/projects/TEST")
+        response = self.client.get("/api/v1/projects/TEST")
         
         # Assert
         self.assertEqual(response.status_code, 200)
@@ -107,13 +107,13 @@ class TestProjectStatusAPI(unittest.TestCase):
         mock_get_project_detail.return_value = None
         
         # Act
-        response = self.client.get("/projects/NOTFOUND")
+        response = self.client.get("/api/v1/projects/NOTFOUND")
         
         # Assert
         self.assertEqual(response.status_code, 404)
         data = response.json()
         self.assertIn("detail", data)
-        self.assertIn("not found", data["detail"])
+        self.assertIn("NOT FOUND", data["detail"].upper())
     
     @patch.object(UpdateProjectTrackingUseCase, 'update_tracking')
     def test_update_project_tracking_endpoint(self, mock_update_tracking):
@@ -126,7 +126,7 @@ class TestProjectStatusAPI(unittest.TestCase):
         
         # Act
         response = self.client.put(
-            "/projects/TEST/tracking",
+            "/api/v1/projects/TEST/tracking",
             json={"track": True, "notification_channel": "123456789"}
         )
         
@@ -152,7 +152,7 @@ class TestProjectStatusAPI(unittest.TestCase):
         
         # Act
         response = self.client.put(
-            "/projects/NOTFOUND/tracking",
+            "/api/v1/projects/NOTFOUND/tracking",
             json={"track": True}
         )
         

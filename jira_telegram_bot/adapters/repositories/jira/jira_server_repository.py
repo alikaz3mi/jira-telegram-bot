@@ -25,13 +25,13 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         if self.settings.password:
             # Use basic authentication if password is provided
             self.jira = JIRA(
-            server=self.settings.domain,
+            server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
             basic_auth=(self.settings.username, self.settings.password),
             )
         else:
             # Use API token authentication if password is empty
             self.jira = JIRA(
-            server=self.settings.domain,
+            server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
             token_auth=self.settings.api_token,
             )
         self.cache = {}

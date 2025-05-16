@@ -96,7 +96,7 @@ def get_telegram_router(deps) -> APIRouter:
                 # Possibly call telegram_gateway.send_message to confirm
                 telegram_gateway.send_message(
                     chat_id=channel_post["chat"]["id"],
-                    text=f"Created Jira task: {jira_repo.settings.domain}/browse/{issue.key}",
+                    text=f"Created Jira task: {jira_repo.settings.domain.scheme}://{jira_repo.settings.domain.host}/browse/{issue.key}",
                 )
                 return {"status": "success", "message": "Task created."}
 

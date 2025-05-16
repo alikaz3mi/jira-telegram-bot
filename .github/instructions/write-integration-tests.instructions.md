@@ -22,7 +22,7 @@ End-to-end tests across service API, DB, brokers, external APIs, incl. load/conc
 
    ```python
    async with aiohttp.ClientSession() as s:
-       tasks = [asyncio.create_task(s.post("/payments", json=payload))
+       tasks = [asyncio.create_task(s.post("/api/v1/payments", json=payload))
                 for _ in range(50)]
        results = await asyncio.gather(*tasks)
        assert all(r.status == 200 for r in results)
@@ -40,6 +40,8 @@ End-to-end tests across service API, DB, brokers, external APIs, incl. load/conc
           --junitxml=reports/junit.xml
    docker compose down
    ```
+
+5. For test discovery run `python -m unittest discover -s tests/integration -p test_*`.
 
 # 📜 Output  
 * New/updated `tests/integration/test_*.py` files  

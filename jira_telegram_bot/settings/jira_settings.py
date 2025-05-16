@@ -1,8 +1,8 @@
 from pydantic_settings import SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, HttpUrl
 from typing import Optional
+from pydantic_settings import BaseSettings
 
-from jira_telegram_bot.utils.pydantic_advanced_settings import CustomizedSettings
 from enum import Enum
 
 class JiraConnectionType(Enum):
@@ -10,12 +10,15 @@ class JiraConnectionType(Enum):
     SELF_HOSTED = "self_hosted"
 
 
-class JiraConnectionSettings(CustomizedSettings):
+class JiraConnectionSettings(BaseSettings):
     username: str = Field(description="Jira username")
     password: str = Field(default=None, description="Jira password")
     email: Optional[str] = Field(default=None, description="Jira email")
-    domain: str = Field(description="Jira_domain")
-    token: str = Field(
+    domain: HttpUrl = Field(
+        description="Jira domain (e.g., https://your-domain.atlassian.net)",
+        default=None,
+    )
+    token: Optional[str] = Field(
         description="Jira token",
         default=None,
     )
@@ -31,4 +34,4 @@ class JiraConnectionSettings(CustomizedSettings):
         Returns:
             JiraConnectionType: CLOUD if domain contains 'atlassian.net', SELF_HOSTED otherwise.
         """
-        return JiraConnectionType.CLOUD if "atlassian.net" in self.domain else JiraConnectionType.SELF_HOSTED
+        return JiraConnectionType.CLOUD if "atlassian.net" in self.domain.host else JiraConnectionType.SELF_HOSTED

@@ -74,7 +74,7 @@ def build_message(tasks_by_date):
         for issue in tasks_by_date[date_str]:
             key = issue.key
             summary = issue.fields.summary
-            link = f"{JIRA_SETTINGS.domain}/browse/{key}"
+            link = f"{JIRA_SETTINGS.domain.scheme}://{JIRA_SETTINGS.domain.host}/browse/{key}"
             # In Markdown or HTML
             lines.append(f"- [{key}]({link}): {summary}")
         lines.append("")  # blank line

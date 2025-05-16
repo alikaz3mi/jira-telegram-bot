@@ -41,7 +41,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         
         # Jira Cloud always uses API token authentication
         self.jira = JIRA(
-            server=self.settings.domain,
+            server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
             basic_auth=(self.settings.email, self.settings.token),
         )
         
@@ -704,3 +704,25 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error fetching issue {issue_key}: {e}")
             return None
+    
+    def get_issues_by_status(
+        self,
+        project_key: str,
+        statuses: Optional[List[str]] = None,
+    ) -> Dict[str, int]:
+        """Get issues by status for a project.
+        
+        Args:
+            project_key: Jira project key.
+            statuses: Statuses to filter by.
+
+        Returns:
+            Dictionary of issue keys and their counts.
+        """
+        if statuses:
+            query = f'project = "{project_key}" AND status IN ({",".join([f"{status}" for status in statuses])})'
+        else:
+            query = f'project = "{project_key}"'
+            
+        issues = self.search_for_issues(query)
+        return {issue.key: issue.fields.status.name for issue in issues}

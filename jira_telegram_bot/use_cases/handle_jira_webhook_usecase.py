@@ -116,7 +116,7 @@ class HandleJiraWebhookUseCase:
         creator_name = webhook_body.get("user", {}).get("displayName", "someone")
         msg = (
             f"🔔 *Jira Event*\n\n"
-            f"🔑 Issue Key: {self.jira_settings.domain}/browse/{issue_data['key']}\n\n"
+            f"🔑 Issue Key: {self.jira_settings.domain.scheme}://{self.jira_settings.domain.host}/browse/{issue_data['key']}\n\n"
             f"📝 Summary: {summary}\n\n"
             f"👤 Created by {creator_name}"
         )

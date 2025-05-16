@@ -388,7 +388,7 @@ class BoardSummaryGenerator:
                 response_text = f"Found the following tasks: for {jql_parts} \n\n"
                 tasks = []
                 for issue in issues:
-                    response_text += f"- [{issue.fields.summary}]({self.jira_repository.settings.domain}/browse/{issue.key}) by {issue.fields.assignee} \n\n"
+                    response_text += f"- [{issue.fields.summary}]({self.jira_repository.settings.domain.scheme}://{self.jira_repository.settings.domain.host}/browse/{issue.key}) by {issue.fields.assignee} \n\n"
                     task = self.jira_repository.create_task_data_from_jira_issue(issue)
                     tasks.append(task)
                 issue_summary = escape_markdown_v2(response_text)

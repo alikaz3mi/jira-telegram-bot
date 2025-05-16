@@ -7,12 +7,14 @@ all the functionality of the JiraServerRepository class.
 import asyncio
 import os
 import unittest
+from unittest import mock
 from datetime import datetime
 from typing import List
+from dotenv import load_dotenv
 
 from jira import Issue
 
-from jira_telegram_bot import LOGGER
+from jira_telegram_bot import LOGGER, DEFAULT_PATH
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
@@ -29,18 +31,67 @@ class TestJiraServerRepository(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        """Set up test environment with real Jira credentials."""
-        cls.JIRA_SETTINGS = JiraConnectionSettings()
-        # Project key for testing - this should be a real project in your Jira instance
-        cls.test_project_key = os.environ.get("JIRA_TEST_PROJECT_KEY")
+        """Set up test environment with mocked Jira credentials."""
+        # Create mock settings
+        load_dotenv(os.path.join(DEFAULT_PATH, "tests", "samples", "jira_server_test_env.env"))
+        cls.JIRA_SETTINGS = JiraConnectionSettings(_env_file=os.path.join(DEFAULT_PATH, "tests", "samples", "jira_server_test_env.env"))
+
+        # Project key for testing
+        cls.test_project_key = "TEST"
         
-        # Verify that we have the required environment variables
-        if not cls.test_project_key:
-            raise EnvironmentError(
-                "JIRA_TEST_PROJECT_KEY environment variable must be set"
-            )
+        # Patch the JIRA client to avoid real API calls
+        cls.patcher = mock.patch('jira.JIRA')
+        cls.mock_jira = cls.patcher.start()
         
-        # Initialize repository with the global JIRA_SETTINGS
+        # Configure the mock JIRA client
+        cls.mock_jira_instance = cls.mock_jira.return_value
+        
+        # Mock project methods
+        mock_project = mock.MagicMock()
+        mock_project.key = cls.test_project_key
+        mock_project.name = "Test Project"
+        cls.mock_jira_instance.projects.return_value = [mock_project]
+        
+        # Mock component methods
+        mock_component = mock.MagicMock()
+        mock_component.id = "10001"
+        mock_component.name = "Backend"
+        cls.mock_jira_instance.project_components.return_value = [mock_component]
+        
+        # Mock board methods
+        mock_board = mock.MagicMock()
+        mock_board.id = 1
+        mock_board.name = "TEST Board"
+        cls.mock_jira_instance.boards.return_value = [mock_board]
+        
+        # Mock issue types
+        mock_issue_type = mock.MagicMock()
+        mock_issue_type.name = "Story"
+        mock_issue_type.id = "10002"
+        cls.mock_jira_instance.issue_types_for_project.return_value = [mock_issue_type]
+        
+        # Mock priorities
+        mock_priority = mock.MagicMock()
+        mock_priority.name = "High"
+        mock_priority.id = "2"
+        cls.mock_jira_instance.priorities.return_value = [mock_priority]
+        
+        # Mock issue creation
+        mock_issue = mock.MagicMock()
+        mock_issue.key = "TEST-123"
+        cls.mock_jira_instance.create_issue.return_value = mock_issue
+        cls.mock_jira_instance.issue.return_value = mock_issue
+        
+        # Mock search
+        cls.mock_jira_instance.search_issues.return_value = [mock_issue]
+        
+        # Mock transitions
+        mock_transition = mock.MagicMock()
+        mock_transition.id = "21"
+        mock_transition.name = "Done"
+        cls.mock_jira_instance.transitions.return_value = [mock_transition]
+        
+        # Initialize repository with the mocked settings
         cls.repository = JiraServerRepository(settings=cls.JIRA_SETTINGS)
         
         # Store created issues to clean up after tests
@@ -48,13 +99,8 @@ class TestJiraServerRepository(unittest.TestCase):
     
     @classmethod
     def tearDownClass(cls):
-        """Clean up any test issues created during testing."""
-        for issue_key in cls.created_issues:
-            try:
-                cls.repository.transition_task(issue_key, "Done")
-                LOGGER.info(f"Marked test issue {issue_key} as Done")
-            except Exception as e:
-                LOGGER.error(f"Error cleaning up issue {issue_key}: {e}")
+        """Clean up by stopping the mock patcher."""
+        cls.patcher.stop()
     
     def test_get_projects(self):
         """Test getting all projects."""

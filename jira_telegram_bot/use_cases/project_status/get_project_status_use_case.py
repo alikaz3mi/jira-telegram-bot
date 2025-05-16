@@ -60,7 +60,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
             # Transform to project summaries
             project_summaries = []
             for project in projects:
-                project_key = project.get("key")
+                project_key = project.key
                 
                 # Get status counts for each project
                 status_data = await self.task_manager_repository.get_issues_by_status(
@@ -76,7 +76,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
                 project_summaries.append(
                     ProjectSummary(
                         key=project_key,
-                        name=project.get("name", ""),
+                        name=project.name,
                         task_count=total_count,
                         status_counts=status_counts,
                         last_updated=datetime.now()
@@ -127,7 +127,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
             # Create project summary
             project_summary = ProjectSummary(
                 key=project_key,
-                name=project.get("name", ""),
+                name=project.name,
                 task_count=total_count,
                 status_counts=status_counts,
                 last_updated=datetime.now()

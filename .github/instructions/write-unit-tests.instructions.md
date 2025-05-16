@@ -26,6 +26,8 @@ Produce/extend tests so project-wide line coverage is at least 90 % while follow
 * Never write comments. Onyl write docstring if absolutely necessary.
 ```
 
+
+
 # 🚦 Workflow  
 1. Ask (if nothing selected): `${input:paths:Modules/folders to cover?}`  
 2. Mirror each target under `tests/unit_tests/…`, e.g. `pkg/foo.py` → `tests/unit_tests/pkg/test_foo.py`.  
@@ -34,3 +36,5 @@ Produce/extend tests so project-wide line coverage is at least 90 % while follow
 5. Mock I/O, network, DB and external calls.  
 6. Drop sample fixtures in `tests/samples/` as needed.  
 7. Output new or updated test files plus a brief coverage summary.
+8. For test discovery run `python -m unittest discover -s tests/unit_tests -p test_*`.
+

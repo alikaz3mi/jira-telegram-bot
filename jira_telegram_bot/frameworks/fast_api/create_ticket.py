@@ -98,7 +98,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                 )
 
     issue = jira_repository.create_task(task_data)
-    issue_message = f"Task created (media group) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
+    issue_message = f"Task created (media group) successfully! Link: {JIRA_SETTINGS.domain.scheme}://{JIRA_SETTINGS.domain.host}/browse/{issue.key}"
     LOGGER.info(issue_message)
     post = telegram_post_data_store.load_data_store()[str(messages[-1]["message_id"])]
     group_chat_id = post["group_chat_id"]

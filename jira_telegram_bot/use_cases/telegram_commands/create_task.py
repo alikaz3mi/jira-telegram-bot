@@ -1497,7 +1497,7 @@ class JiraTaskCreation:
         try:
             new_issue = self.jira_repository.create_task(task_data)
             await message.reply_text(
-                f"Task created successfully! Link: {self.jira_repository.settings.domain}/browse/{new_issue.key}",
+                f"Task created successfully! Link: {self.jira_repository.settings.domain.scheme}://{self.jira_repository.settings.domain.host}/browse/{new_issue.key}",
             )
             assignee_user_data = self.user_config.get_user_config_by_jira_username(
                 task_data.assignee,
@@ -1508,7 +1508,7 @@ class JiraTaskCreation:
                         chat_id=assignee_user_data.telegram_user_chat_id,
                         text=(
                             f"Task \n📄{task_data.summary} "
-                            f"\n{self.jira_repository.settings.domain}/browse/{new_issue.key} was created for you"
+                            f"\n{self.jira_repository.settings.domain.scheme}://{self.jira_repository.settings.domain.host}/browse/{new_issue.key} was created for you"
                         ),
                     )
                 except Exception as e:
