@@ -105,9 +105,9 @@ class AdvancedTaskCreation:
         created_tasks = []
 
         if task_type == "story":
-            await self._create_stories(created_tasks, epic_key, project_key, tasks_data)
+            created_tasks = await self._create_stories(created_tasks, epic_key, project_key, tasks_data)
         else:  # task_type == "subtask"
-            await self._create_subtasks_for_story(
+            created_tasks = await self._create_subtasks_for_story(
                 created_tasks,
                 parent_story_key,
                 project_key,
@@ -154,7 +154,7 @@ class AdvancedTaskCreation:
         parent_story_key: str,
         project_key: str,
         tasks_data: Dict[str, Any],
-    ) -> None:
+    ) -> List[Issue]:
         """Create subtasks for an existing parent story.
 
         Args:
@@ -181,6 +181,8 @@ class AdvancedTaskCreation:
                 f"Subtask created: {subtask_issue.key} under parent story {parent_story_key}",
             )
             created_tasks.append(subtask_issue)
+        
+        return created_tasks
 
     async def _create_stories(
         self,
@@ -188,7 +190,7 @@ class AdvancedTaskCreation:
         epic_key: Optional[str],
         project_key: str,
         tasks_data: Dict[str, Any],
-    ) -> None:
+    ) -> List[Issue]:
         """Create stories with subtasks.
 
         Args:
@@ -231,6 +233,7 @@ class AdvancedTaskCreation:
                         f"Subtask created: {subtask_issue.key} under parent story {story_issue.key}",
                     )
                     created_tasks.append(subtask_issue)
+        return created_tasks
 
     async def create_structured_user_story(
         self,

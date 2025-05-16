@@ -3,20 +3,15 @@ from __future__ import annotations
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 
-# JIRA_SETTINGS = JiraConnectionSettings()
 
 
 def main():
-    # Instantiate your Jira repository (adjust as needed for your environment)
+    JIRA_SETTINGS = JiraConnectionSettings()
     jira = JiraServerRepository(JIRA_SETTINGS)
-
-    # Search JIRA for story issues in project PARSCHAT
-    # Adjust JQL if you want to refine search further
-    jql = "project = PARSCHAT AND issuetype = Story"
+    jql = "project = RADTHARN AND issuetype = Story"
     issues = jira.jira.search_issues(jql, maxResults=1000)
 
     for issue in issues:
-        # 1. Update labels based on fixVersions
         try:
             fix_versions = [fv.name for fv in issue.fields.fixVersions]
             if fix_versions:

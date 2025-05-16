@@ -23,6 +23,7 @@ Produce/extend tests so project-wide line coverage is at least 90 % while follow
 * Test classes are prefixed with `Test`
 * Test functions are prefixed with `test_`
 * Asynchronous test functions are prefixed with `test_a`
+* Never write comments. Onyl write docstring if absolutely necessary.
 ```
 
 # 🚦 Workflow  

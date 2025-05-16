@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -42,7 +43,11 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
         """
         try:
             # Get projects from task manager
-            projects = self.task_manager_repository.get_projects()
+            projects_method = self.task_manager_repository.get_projects
+            if asyncio.iscoroutinefunction(projects_method) or hasattr(projects_method, '__await__'):
+                projects = await projects_method()
+            else:
+                projects = projects_method()
             
             # Filter by status if provided
             if status:
