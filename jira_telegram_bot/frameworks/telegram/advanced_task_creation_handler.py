@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import aiohttp
 import json
 import os
 import tempfile
+from io import BytesIO
 
 from telegram import InlineKeyboardButton
 from telegram import InlineKeyboardMarkup
@@ -38,7 +40,9 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         WAIT_FOR_DESCRIPTION,
         CONFIRM_TRANSCRIPTION,
         CONFIRM_BREAKDOWN,
-    ) = range(7)
+        WAIT_FOR_ATTACHMENT,
+        CONFIRM_ATTACHMENT,
+    ) = range(9)
 
     def __init__(
         self,
@@ -48,9 +52,108 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         self.advanced_task_creation = advanced_task_creation
         self.speech_processor = speech_processor
 
+    def get_handler(self):
+        """Return the conversation handler for advanced task creation."""
+        return ConversationHandler(
+            entry_points=[
+                CommandHandler("advanced_task", self.start),
+            ],
+            states={
+                self.SELECT_PROJECT: [
+                    CallbackQueryHandler(
+                        self.select_project,
+                        pattern=r"^project\|",
+                    ),
+                ],
+                self.SELECT_EPIC: [
+                    CallbackQueryHandler(
+                        self.select_epic,
+                        pattern=r"^epic\|",
+                    ),
+                    CallbackQueryHandler(
+                        self.handle_epic_selection,
+                        pattern=r"^epic_select\|",
+                    ),
+                ],
+                self.SELECT_TASK_TYPE: [
+                    CallbackQueryHandler(
+                        self.handle_task_type_selection,
+                        pattern=r"^task_type\|",
+                    ),
+                ],
+                self.SELECT_STORY: [
+                    CallbackQueryHandler(
+                        self.handle_story_selection,
+                        pattern=r"^story\|",
+                    ),
+                ],
+                self.WAIT_FOR_DESCRIPTION: [
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self.process_text_description,
+                    ),
+                    MessageHandler(
+                        filters.VOICE,
+                        self.process_voice_message,
+                    ),
+                    MessageHandler(
+                        filters.FORWARDED,
+                        self.process_text_description,
+                    ),
+                ],
+                self.CONFIRM_TRANSCRIPTION: [
+                    CallbackQueryHandler(
+                        self.handle_transcription_confirmation,
+                        pattern=r"^trans_",
+                    ),
+                ],
+                self.CONFIRM_BREAKDOWN: [
+                    CallbackQueryHandler(
+                        self.create_tasks,
+                        pattern=r"^confirm$",
+                    ),
+                    CallbackQueryHandler(
+                        self.handle_attachment_request,
+                        pattern=r"^add_attachments$",
+                    ),
+                    CallbackQueryHandler(
+                        self.cancel,
+                        pattern=r"^cancel$",
+                    ),
+                ],
+                self.WAIT_FOR_ATTACHMENT: [
+                    MessageHandler(
+                        filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.FORWARDED,
+                        self.process_attachment,
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self.process_attachment,
+                    ),
+                ],
+                self.CONFIRM_ATTACHMENT: [
+                    CallbackQueryHandler(
+                        self.create_tasks,
+                        pattern=r"^confirm$",
+                    ),
+                    CallbackQueryHandler(
+                        self.cancel,
+                        pattern=r"^cancel$",
+                    ),
+                ],
+            },
+            fallbacks=[
+                CommandHandler("cancel", self.cancel),
+            ],
+            name="advanced_task",
+            # Only make the handler persistent if the application has persistence configured
+            persistent=False,
+        )
+
     async def start(self, update: Update, context: CallbackContext) -> int:
         """Start advanced task creation flow."""
         # Get projects from Jira
+        LOGGER.info("Fetching projects from Jira...")
         projects = self.advanced_task_creation.jira_repo.get_projects()
 
         # Create keyboard with project options - 3 per row
@@ -210,8 +313,8 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
                     await update.message.reply_text(
                         f"*I transcribed your message* {confidence_indicator}\n\n"
-                        f"🇮🇷 *Persian:*\n{result.text}\n\n"
-                        f"🇬🇧 *English:*\n{result.translation}\n\n"
+                        f"🇮🇷 *Persian:*\n ```\n{result.text}``` \n\n"
+                        f"🇬🇧 *English:*\n ```\n{result.translation}```\n\n"
                         "Is this correct?",
                         reply_markup=reply_markup,
                         parse_mode="Markdown",
@@ -327,6 +430,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         keyboard = [
             [
                 InlineKeyboardButton("✅ Create Tasks", callback_data="confirm"),
+                InlineKeyboardButton("➕ Add Attachments", callback_data="add_attachments"),
                 InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
             ],
         ]
@@ -342,7 +446,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
             "2️⃣ Break down into component tasks\n"
             "3️⃣ Assign to team members\n"
             "4️⃣ Set story points & priorities\n\n"
-            "Would you like to proceed?"
+            "Would you like to proceed or add attachments?"
         )
 
         if hasattr(update, "callback_query") and update.callback_query:
@@ -372,11 +476,20 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         await query.edit_message_text("🔄 Creating tasks... This might take a minute.")
 
         try:
+            # Get attachments if any
+            attachments = context.user_data.get("attachments", {
+                "images": [],
+                "videos": [],
+                "audio": [],
+                "documents": [],
+            })
+            
             user_story = await self.advanced_task_creation.create_structured_user_story(
                 description=context.user_data["description"],
                 project_key=context.user_data["project_key"],
                 epic_key=context.user_data.get("epic_key"),
                 parent_story_key=context.user_data.get("parent_story_key"),
+                attachments=attachments,
             )
             context.user_data["user_story"] = user_story
 
@@ -386,6 +499,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 task_type=context.user_data["task_type"],
                 parent_story_key=context.user_data.get("parent_story_key"),
                 epic_key=context.user_data.get("epic_key"),
+                attachments=attachments,
             )
 
             # Group tasks by story for better visualization
@@ -536,7 +650,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
                 project_key,
                 epic_key,
                 status='"In Progress", "To Do", "Backlog", "Selected for Development"',
-                filters='description !~ "acceptance criteria" OR description  is EMPTY'
+                filters='(description !~ "acceptance criteria" OR description  is EMPTY)'
             )
 
             if not stories:
@@ -551,13 +665,13 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
             for story in stories:
                 button = InlineKeyboardButton(
-                    f"{story.fields.summary}",
+                    f"{story.fields.summary[:50]}",
                     callback_data=f"story|{story.key}",
                 )
                 current_row.append(button)
 
                 # When we have 3 buttons or it's the last story, add the row
-                if len(current_row) == 2 or story == stories[-1]:
+                if len(current_row) == 1 or story == stories[-1]:
                     keyboard.append(current_row)
                     current_row = []
 
@@ -588,13 +702,7 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
         context.user_data["parent_story_key"] = story_key
         context.user_data["task_type"] = "subtask"
         # get story summary with story key from query.message.reply_markup.inline_keyboard
-        story_summary = [
-            button.text
-            for row in query.message.reply_markup.inline_keyboard
-            for button in row
-            if button.callback_data == f"story|{story_key}"
-        ][0]
-        
+        story_summary = self.advanced_task_creation.jira_repo.get_issue(story_key).fields.summary
 
         # Show available departments and proceed to description
         project_info = context.user_data["project_info"]
@@ -685,56 +793,241 @@ class AdvancedTaskCreationHandler(TaskHandlerInterface):
 
         return self.SELECT_EPIC
 
-    def get_handler(self):
-        """Return the ConversationHandler for this flow."""
-        return ConversationHandler(
-            entry_points=[CommandHandler("advanced_task", self.start)],
-            states={
-                self.SELECT_PROJECT: [
-                    CallbackQueryHandler(self.select_project, pattern="^project\\|"),
-                ],
-                self.SELECT_EPIC: [
-                    CallbackQueryHandler(self.select_epic, pattern="^epic\\|"),
-                    CallbackQueryHandler(
-                        self.handle_task_type_selection,
-                        pattern="^task_type\\|",
-                    ),
-                ],
-                self.SELECT_TASK_TYPE: [
-                    CallbackQueryHandler(
-                        self.handle_task_type_selection,
-                        pattern="^task_type\\|",
-                    ),
-                    CallbackQueryHandler(
-                        self.handle_epic_selection,
-                        pattern="^select_epic$",
-                    ),
-                ],
-                self.SELECT_STORY: [
-                    CallbackQueryHandler(
-                        self.handle_story_selection,
-                        pattern="^story\\|",
-                    ),
-                ],
-                self.WAIT_FOR_DESCRIPTION: [
-                    MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
-                        self.process_text_description,
-                    ),
-                    MessageHandler(filters.VOICE, self.process_voice_message),
-                ],
-                self.CONFIRM_TRANSCRIPTION: [
-                    CallbackQueryHandler(
-                        self.handle_transcription_confirmation,
-                        pattern="^trans_",
-                    ),
-                ],
-                self.CONFIRM_BREAKDOWN: [
-                    CallbackQueryHandler(
-                        self.create_tasks,
-                        pattern="^confirm$|^cancel$",
-                    ),
-                ],
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+    async def handle_attachment_request(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Handle request to add attachments."""
+        query = update.callback_query
+        await query.answer()
+
+        # Initialize attachments in user_data if not there yet
+        if "attachments" not in context.user_data:
+            context.user_data["attachments"] = {
+                "images": [],
+                "videos": [],
+                "audio": [],
+                "documents": [],
+            }
+        
+        if "media_group_messages" not in context.user_data:
+            context.user_data["media_group_messages"] = {}
+
+        await query.edit_message_text(
+            "📎 *Send attachments to include with your tasks*\n\n"
+            "You can send:\n"
+            "• 📸 Photos\n"
+            "• 📄 Documents\n"
+            "• 🎞️ Videos\n"
+            "• 🔊 Audio files\n\n"
+            "When you're done, type 'done' or 'skip' to continue without attachments.",
+            parse_mode="Markdown",
         )
+        
+        return self.WAIT_FOR_ATTACHMENT
+        
+    async def process_attachment(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Process attachment uploads."""
+        attachments = context.user_data["attachments"]
+        media_group_messages = context.user_data["media_group_messages"]
+        
+        if update.message.text:
+            text = update.message.text.lower()
+            if text == "done":
+                # Process any pending media groups
+                for msgs in media_group_messages.values():
+                    await self.process_media_group(msgs, attachments)
+                
+                # Clear the media group storage
+                context.user_data["media_group_messages"] = {}
+                
+                # Proceed to create tasks
+                keyboard = [
+                    [
+                        InlineKeyboardButton("✅ Create Tasks", callback_data="confirm"),
+                        InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                # Count attachments
+                total_attachments = sum(len(files) for files in attachments.values())
+                
+                await update.message.reply_text(
+                    f"✅ {total_attachments} attachments received!\n\n"
+                    "Ready to create the tasks now?",
+                    reply_markup=reply_markup,
+                )
+                return self.CONFIRM_BREAKDOWN
+                
+            elif text == "skip":
+                # Skip attachments
+                await update.message.reply_text("Skipping attachments.")
+                
+                # Create empty attachments dictionary
+                context.user_data["attachments"] = {
+                    "images": [],
+                    "videos": [],
+                    "audio": [],
+                    "documents": [],
+                }
+                
+                # Proceed to create tasks
+                keyboard = [
+                    [
+                        InlineKeyboardButton("✅ Create Tasks", callback_data="confirm"),
+                        InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+                    ],
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    "Ready to create the tasks now?",
+                    reply_markup=reply_markup,
+                )
+                return self.CONFIRM_BREAKDOWN
+            
+            else:
+                await update.message.reply_text(
+                    "Please send files to attach, or type 'done' when finished or 'skip' to continue without attachments."
+                )
+                return self.WAIT_FOR_ATTACHMENT
+                
+        # Handle media groups (multiple photos/videos sent together)
+        if update.message.media_group_id:
+            msgs = media_group_messages.setdefault(update.message.media_group_id, [])
+            msgs.append(update.message)
+            # Delay processing until all media in the group is received
+            return self.WAIT_FOR_ATTACHMENT
+            
+        # Handle single media
+        elif any([
+            update.message.photo,
+            update.message.video,
+            update.message.audio,
+            update.message.document,
+        ]):
+            await self.process_single_media(update.message, attachments)
+            await update.message.reply_text(
+                "✅ Attachment received. You can send more, or type 'done' when finished."
+            )
+            return self.WAIT_FOR_ATTACHMENT
+            
+        else:
+            await update.message.reply_text(
+                "Please send files to attach, or type 'done' when finished or 'skip' to continue without attachments."
+            )
+            return self.WAIT_FOR_ATTACHMENT
+            
+    async def process_media_group(
+        self,
+        messages: list,
+        attachments: dict,
+    ) -> None:
+        """Process a group of media messages."""
+        if not messages:
+            return
+            
+        async with aiohttp.ClientSession() as session:
+            for idx, msg in enumerate(messages):
+                if msg.photo:
+                    media_file = await msg.photo[-1].get_file()
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["images"],
+                        f"group_image_{idx}.jpg",
+                    )
+                elif msg.video:
+                    media_file = await msg.video.get_file()
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["videos"],
+                        f"group_video_{idx}.mp4",
+                    )
+                elif msg.audio:
+                    media_file = await msg.audio.get_file()
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["audio"],
+                        f"group_audio_{idx}.mp3",
+                    )
+                elif msg.document:
+                    media_file = await msg.document.get_file()
+                    filename = msg.document.file_name or f"document_{idx}"
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["documents"],
+                        filename,
+                    )
+                    
+    async def fetch_and_store_media(
+        self,
+        media_file,
+        session,
+        storage_list,
+        filename,
+    ) -> None:
+        """Fetch media from Telegram and store it for attachment to Jira."""
+        try:
+            file_url = media_file.file_path
+            async with session.get(file_url) as response:
+                if response.status == 200:
+                    buffer = BytesIO(await response.read())
+                    storage_list.append((filename, buffer))
+                    LOGGER.info(f"Successfully fetched media: {filename}")
+                else:
+                    LOGGER.error(
+                        f"Failed to fetch media: {filename}, status: {response.status}"
+                    )
+        except Exception as e:
+            LOGGER.error(f"Error fetching media: {e}")
+            
+    async def process_single_media(
+        self,
+        message,
+        attachments,
+    ) -> None:
+        """Process a single media message."""
+        async with aiohttp.ClientSession() as session:
+            if message.photo:
+                media_file = await message.photo[-1].get_file()
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["images"],
+                    "single_image.jpg",
+                )
+            elif message.video:
+                media_file = await message.video.get_file()
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["videos"],
+                    "video.mp4",
+                )
+            elif message.audio:
+                media_file = await message.audio.get_file()
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["audio"],
+                    "audio.mp3",
+                )
+            elif message.document:
+                media_file = await message.document.get_file()
+                filename = message.document.file_name or "document"
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["documents"],
+                    filename,
+                )

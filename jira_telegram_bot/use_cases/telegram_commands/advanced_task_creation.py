@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import aiohttp
 import json
+import tempfile
+from io import BytesIO
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 
 from langchain.output_parsers import ResponseSchema
 from langchain.output_parsers import StructuredOutputParser
@@ -47,6 +51,7 @@ class AdvancedTaskCreation:
         epic_key: Optional[str] = None,
         parent_story_key: Optional[str] = None,
         task_type: str = "story",  # "story" or "subtask"
+        attachments: Dict[str, List] = None,
     ) -> List[TaskData]:
         """Create multiple stories with their component-specific subtasks.
 
@@ -56,6 +61,7 @@ class AdvancedTaskCreation:
             epic_key: Optional epic to link stories to
             parent_story_key: Optional parent story for subtasks
             task_type: Either "story" (with subtasks) or "subtask" (add to existing story)
+            attachments: Optional dictionary of file attachments to add to tasks
 
         Returns:
             List of created TaskData objects
@@ -71,14 +77,47 @@ class AdvancedTaskCreation:
         if not project_info:
             raise ValueError(f"No project info found for {project_key}")
 
-        # Parse the tasks
-        tasks_data = self._parse_task_description(
-            description=description,
-            project_info=project_info,
-            task_type=task_type,
-        )
-
-        created_tasks = []
+        try:
+            # Parse the tasks
+            tasks_data = self._parse_task_description(
+                description=description,
+                project_info=project_info,
+                task_type=task_type,
+            )
+    
+            created_tasks = []
+    
+            # Validate and sanitize the parsed data
+            self._validate_tasks_data(tasks_data, project_info, task_type)
+        except Exception as e:
+            LOGGER.error(f"Error preparing task data: {str(e)}")
+            # Provide fallback simple task data
+            if task_type == "story":
+                tasks_data = {
+                    "stories": [{
+                        "summary": "Story from requirements",
+                        "description": description,
+                        "story_points": 3,
+                        "priority": "Medium",
+                        "component_tasks": [{
+                            "component": list(project_info["departments"].keys())[0],
+                            "subtasks": [{
+                                "summary": "Implement requirements",
+                                "description": "Implement the requirements as described.",
+                                "story_points": 3
+                            }]
+                        }]
+                    }]
+                }
+            else:  # subtask
+                tasks_data = {
+                    "subtasks": [{
+                        "summary": "Subtask from requirements",
+                        "description": description,
+                        "story_points": 3,
+                        "component": list(project_info["departments"].keys())[0],
+                    }]
+                }
 
         if task_type == "story":
             for story in tasks_data["stories"]:
@@ -91,8 +130,14 @@ class AdvancedTaskCreation:
                     story_points=story["story_points"],
                     task_type="Story",
                     priority=story["priority"],
-                    epic_link=epic_key, 
+                    epic_link=epic_key,
                 )
+                
+                # Add attachments to the story if provided
+                if attachments:
+                    for attachment_type, files in attachments.items():
+                        story_data.attachments[attachment_type].extend(files)
+                
                 story_issue = self.jira_repo.create_task(story_data)
                 created_tasks.append(story_issue)
 
@@ -130,6 +175,13 @@ class AdvancedTaskCreation:
                     task_type="Sub-task",
                     parent_issue_key=parent_story_key,
                 )
+                
+                # Only add attachments to the first subtask if provided
+                # This avoids duplicating attachments across all subtasks
+                if attachments and subtask == tasks_data["subtasks"][0]:
+                    for attachment_type, files in attachments.items():
+                        subtask_data.attachments[attachment_type].extend(files)
+                
                 subtask_issue = self.jira_repo.create_task(subtask_data)
                 LOGGER.info(
                     f"Subtask created: {subtask_issue.key} under parent story {parent_story_key}",
@@ -144,6 +196,7 @@ class AdvancedTaskCreation:
         project_key: str,
         epic_key: Optional[str] = None,
         parent_story_key: Optional[str] = None,
+        attachments: Dict[str, List] = None,
     ) -> TaskData:
         """Create a well-structured user story following agile best practices.
 
@@ -240,8 +293,24 @@ class AdvancedTaskCreation:
         else:
             # Create new story
             components = []
-            if "component" in user_story_content:
-                components = [user_story_content["component"]]
+            
+            try:
+                # Make sure we're using department names as components, not epic names
+                if "component" in user_story_content and user_story_content["component"] in project_info["departments"]:
+                    components = [user_story_content["component"]]
+                elif project_info["departments"]:
+                    # Default to first department if component is invalid or missing
+                    first_dept = next(iter(project_info["departments"]))
+                    components = [first_dept]
+                    LOGGER.warning(f"Invalid component '{user_story_content.get('component')}' replaced with '{first_dept}'")
+                else:
+                    # If no departments are found in project info (shouldn't happen but for safety)
+                    components = ["Default"]
+                    LOGGER.error("No departments found in project info, using 'Default' component")
+            except Exception as e:
+                LOGGER.error(f"Error processing component: {str(e)}")
+                # Safe fallback
+                components = ["Default"]
 
             story_data = TaskData(
                 project_key=project_key,
@@ -253,6 +322,11 @@ class AdvancedTaskCreation:
                 priority=user_story_content.get("priority", "Medium"),
                 epic_link=epic_key,
             )
+            
+            # Add attachments to the story if provided
+            if attachments:
+                for attachment_type, files in attachments.items():
+                    story_data.attachments[attachment_type].extend(files)
 
             # Create the new story
             new_issue = self.jira_repo.create_task(story_data)
@@ -306,7 +380,7 @@ class AdvancedTaskCreation:
                 description="""Dictionary containing:
                 summary (string): A concise title for the story,
                 description (string): Full user story with narrative, acceptance criteria, and definition of done,
-                component (string): Primary team/department responsible,
+                component (string): Primary team/department responsible (must be one of the available departments, not an epic name),
                 story_points (number): Estimated story points (1-13),
                 priority (string): High, Medium, or Low""",
                 type="json",
@@ -342,6 +416,8 @@ Write one INVEST-compliant user story in the format:
 
 Add a concise narrative (≤ 3 sentences) that explains why this story matters to the business goal.
 
+IMPORTANT: For the "component" field, use ONLY one of the available departments listed at the beginning of the prompt (e.g., "Front-end", "Backend", etc.). Do NOT use epic names as components.
+
 Provide Acceptance Criteria using Gherkin-style "Given / When / Then" bullets (≥ 3 distinct criteria, covering happy-path and one edge case).
 
 List Non-functional Requirements that could cause the story to fail if ignored (e.g., performance, security, accessibility).
@@ -358,7 +434,8 @@ Tone & Style:
 - Avoid passive voice
 - Generate the result in google doc format
 - Use markdown for formatting
-- Generate the story in fluent Farsi. 
+- Generate the story description in fluent Farsi.
+- Choose components and assignee only based on the given input and do not add any other information.
 
 {format_instructions}
 """
@@ -614,17 +691,19 @@ Your Task:
 1) Break this down into coherent user stories that deliver complete features or capabilities
 2) For each story:
    - Write a clear summary and description
-    - Generate description in markdown format
+   - Generate description in markdown format
    - Identify which components/departments need to be involved
    - For each component involved, create specific subtasks
    - Each subtask should be achievable in 1-2 days
-3) Follow these principles:
+3) IMPORTANT: Analyze the description carefully to identify any specific assignees mentioned. For example, if the description says "John should handle the API integration" or "This task is for Sarah", then assign those tasks to John or Sarah accordingly.
+4) Follow these principles:
    - User stories should be independent and deliver value
    - Tasks should have clear acceptance criteria
-   - Story points follow modified fibonacci (1,2,3,5,8,13)
-   - Subtask points range from 0.5 to 8
+   - Story points for Story follow modified fibonacci (1,2,3,5,8,13)
+   - Subtask story points range from 0.25 to 2
    - Consider dependencies between components
-   - Assign tasks based on skill level (junior, mid-level, senior)
+   - ONLY if assignees are not explicitly mentioned in the description, assign tasks based on skill level (junior, mid-level, senior)
+   - For each subtask, include an "assignee" field with the username if you can determine it from the description
 
 {format_instructions}"""
         else:  # subtask
@@ -651,12 +730,17 @@ Your Task:
    - Create a clear summary and description with acceptance criteria
    - Generate description in markdown format
    - Assign to appropriate component/department
+   - PRIORITY: Carefully analyze the description to identify any explicitly mentioned assignees. For example, if it says "Ali should implement the login feature" or "This component should be handled by Mina", assign those tasks to those specific people.
+   - You MUST set the "assignee" field for each subtask based on names mentioned in the description
    - Estimate story points (0.5-8)
-   - Consider which team member is best suited (optional)
 3) Ensure subtasks are:
    - Concrete and actionable
    - Have clear success criteria
    - Properly sized for 1-2 days of work
+4) Rules for assignee extraction:
+   - If a person is directly mentioned with a task (e.g., "John will work on the API"), assign that specific task to them
+   - If the description has general assignments (e.g., "Frontend tasks go to Sara"), use that for all relevant components
+   - ONLY if no assignee can be determined from the description for a specific task, leave it for the automatic assignment based on skills
 
 {format_instructions}"""
 
@@ -780,72 +864,253 @@ Your Task:
 
                 # Distribute tasks based on complexity (story points)
                 for task in comp_tasks["subtasks"]:
-                    if (
-                        task.get("assignee") is None
-                    ):  # Only assign if not already assigned
-                        if task["story_points"] >= 5:  # Complex tasks
-                            if seniors:
-                                task["assignee"] = seniors[0]["username"]
-                        elif task["story_points"] >= 2:  # Medium tasks
-                            if mids:
-                                task["assignee"] = mids[0]["username"]
-                            elif seniors:
-                                task["assignee"] = seniors[0]["username"]
-                        else:  # Simple tasks
-                            if juniors:
-                                task["assignee"] = juniors[0]["username"]
-                            elif mids:
-                                task["assignee"] = mids[0]["username"]
-                            elif seniors:
-                                task["assignee"] = seniors[0]["username"]
-
-                        # If still no assignee, assign to department lead
-                        if not task.get("assignee") and leader:
-                            task["assignee"] = leader
+                    # Validate required fields first
+                    if "summary" not in task or not task["summary"]:
+                        task["summary"] = "Task needs description"
+                        LOGGER.warning(f"Missing summary in task under component {dept}, adding default summary")
+                    
+                    # Check if assignee has already been specified by the LLM from the description
+                    # Do NOT auto-assign tasks - leave them unassigned if no assignee was extracted
+                    if task.get("assignee") is None or task.get("assignee") == "":
+                        LOGGER.info(f"No assignee found in description for task: {task.get('summary')}, leaving unassigned")
+                        # Do not auto-assign; leave task unassigned
+                        if "assignee" in task:
+                            del task["assignee"]
+                    else:
+                        # Keep the explicitly mentioned assignee
+                        LOGGER.info(f"Using assignee '{task['assignee']}' extracted from description for task: {task.get('summary')}")
 
         return parsed_data
 
+    async def fetch_and_store_media(
+        self,
+        media_file,
+        session: aiohttp.ClientSession,
+        storage_list: List,
+        filename: str,
+    ) -> None:
+        """Fetch media from Telegram and store it for attachment to Jira.
 
-if __name__ == "__main__":
-    import asyncio
-    from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import (
-        JiraRepository,
-    )
-    from jira_telegram_bot.adapters.user_config import UserConfig
-    from jira_telegram_bot.settings import JIRA_SETTINGS
+        Args:
+            media_file: The media file object from Telegram
+            session: aiohttp client session
+            storage_list: List to store the fetched media in
+            filename: Name of the file to save
 
-    jira_repo = JiraRepository(
-        settings=JIRA_SETTINGS,
-    )
-    task_creator = AdvancedTaskCreation(
-        jira_repo=jira_repo,
-        user_config=UserConfig(),
-    )
-    description = """The task is to connect to the widget through a JavaScript snippet.
-    This story point belongs to the front-end department.
-    It is estimated to take 16 hours to prepare this task, which includes changes to the service connection
-    page with the ability to add a new section for connecting to the widget service.
-    On this page, I need to modify the built JavaScript snippet for the user who enters the chat page,
-    the plugin page. On the panel page, I should be able to copy the necessary code for his web clock
-    and place it in his web clock."""
+        Returns:
+            None
+        """
+        try:
+            file_url = media_file.file_path
+            async with session.get(file_url) as response:
+                if response.status == 200:
+                    buffer = BytesIO(await response.read())
+                    storage_list.append((filename, buffer))
+                    LOGGER.info(f"Successfully fetched media: {filename}")
+                else:
+                    LOGGER.error(
+                        f"Failed to fetch media: {filename}, status: {response.status}",
+                    )
+        except Exception as e:
+            LOGGER.error(f"Error fetching media: {e}")
 
-    # Example of using the new create_structured_user_story method
-    result = asyncio.run(
-        task_creator.create_structured_user_story(
-            description=description,
-            project_key="PARSCHAT",
-            epic_key="PARSCHAT-15",
-        ),
-    )
-    print(result.description)
+    async def process_media_group(
+        self,
+        messages: List[Any],
+        attachments: Dict[str, List],
+    ) -> None:
+        """Process a group of media messages.
 
-    # # Original example
-    # asyncio.run(
-    #     task_creator.create_tasks(
-    #         description=description,
-    #         project_key="PARSCHAT",
-    #         epic_key="PARSCHAT-15",
-    #         task_type="subtask",
-    #         parent_story_key="PARSCHAT-2296",  # Example parent key
-    #     ),
-    # )
+        Args:
+            messages: List of media messages
+            attachments: Dictionary to store attachments
+
+        Returns:
+            None
+        """
+        if not messages:
+            return
+
+        async with aiohttp.ClientSession() as session:
+            for idx, message in enumerate(messages):
+                if message.photo:
+                    media_file = await message.photo[-1].get_file()
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["images"],
+                        f"group_image_{idx}.jpg",
+                    )
+                elif message.video:
+                    media_file = await message.video.get_file()
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["videos"],
+                        f"group_video_{idx}.mp4",
+                    )
+                elif message.audio:
+                    media_file = await message.audio.get_file()
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["audio"],
+                        f"group_audio_{idx}.mp3",
+                    )
+                elif message.document:
+                    media_file = await message.document.get_file()
+                    filename = message.document.file_name or f"document_{idx}"
+                    await self.fetch_and_store_media(
+                        media_file,
+                        session,
+                        attachments["documents"],
+                        filename,
+                    )
+
+    async def process_single_media(
+        self,
+        message: Any,
+        attachments: Dict[str, List],
+    ) -> None:
+        """Process a single media message.
+
+        Args:
+            message: The media message
+            attachments: Dictionary to store attachments
+
+        Returns:
+            None
+        """
+        async with aiohttp.ClientSession() as session:
+            if message.photo:
+                media_file = await message.photo[-1].get_file()
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["images"],
+                    "single_image.jpg",
+                )
+            elif message.video:
+                media_file = await message.video.get_file()
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["videos"],
+                    "video.mp4",
+                )
+            elif message.audio:
+                media_file = await message.audio.get_file()
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["audio"],
+                    "audio.mp3",
+                )
+            elif message.document:
+                media_file = await message.document.get_file()
+                filename = message.document.file_name or "document"
+                await self.fetch_and_store_media(
+                    media_file,
+                    session,
+                    attachments["documents"],
+                    filename,
+                )
+
+    def _validate_tasks_data(
+        self,
+        tasks_data: Dict[str, Any],
+        project_info: Dict[str, Any],
+        task_type: str,
+    ) -> None:
+        """Validate and sanitize task data before task creation.
+        
+        This method checks for required fields and ensures components 
+        are valid departments from the project info.
+        
+        Args:
+            tasks_data: The task data to validate
+            project_info: The project information
+            task_type: Either "story" or "subtask"
+            
+        Returns:
+            None
+        """
+        departments = list(project_info["departments"].keys())
+        
+        if task_type == "story" and "stories" in tasks_data:
+            for i, story in enumerate(tasks_data["stories"]):
+                # Validate required story fields
+                if "summary" not in story or not story["summary"]:
+                    tasks_data["stories"][i]["summary"] = "Untitled Story"
+                    LOGGER.warning("Missing story summary, using default")
+                    
+                if "description" not in story:
+                    tasks_data["stories"][i]["description"] = "No description provided"
+                    
+                if "priority" not in story:
+                    tasks_data["stories"][i]["priority"] = "Medium"
+                    
+                if "story_points" not in story:
+                    tasks_data["stories"][i]["story_points"] = 3
+                    
+                # Validate component tasks
+                if "component_tasks" not in story or not story["component_tasks"]:
+                    # Create a default component task with the first department
+                    tasks_data["stories"][i]["component_tasks"] = [{
+                        "component": departments[0] if departments else "Default",
+                        "subtasks": [{
+                            "summary": "Implement " + story.get("summary", "requirements"),
+                            "description": "Implement the requirements described in the story.",
+                            "story_points": 3
+                        }]
+                    }]
+                    LOGGER.warning(f"Missing component tasks for story, creating default with {departments[0]}")
+                else:
+                    # Validate each component task
+                    for j, comp_task in enumerate(story["component_tasks"]):
+                        # Validate component is a valid department
+                        if "component" not in comp_task or comp_task["component"] not in departments:
+                            # Replace with first available department
+                            tasks_data["stories"][i]["component_tasks"][j]["component"] = departments[0] if departments else "Default"
+                            LOGGER.warning(f"Invalid component in task, replaced with {departments[0]}")
+                            
+                        # Validate subtasks
+                        if "subtasks" not in comp_task or not comp_task["subtasks"]:
+                            tasks_data["stories"][i]["component_tasks"][j]["subtasks"] = [{
+                                "summary": f"Implement {story.get('summary', 'requirements')} for {comp_task.get('component', 'department')}",
+                                "description": "Implement the requirements described in the story.",
+                                "story_points": 3
+                            }]
+                            LOGGER.warning(f"Missing subtasks for component {comp_task.get('component')}, creating default")
+                        else:
+                            # Validate each subtask
+                            for k, subtask in enumerate(comp_task["subtasks"]):
+                                if "summary" not in subtask or not subtask["summary"]:
+                                    tasks_data["stories"][i]["component_tasks"][j]["subtasks"][k]["summary"] = f"Subtask for {comp_task.get('component', 'department')}"
+                                    LOGGER.warning("Missing subtask summary, using default")
+                                    
+                                if "description" not in subtask:
+                                    tasks_data["stories"][i]["component_tasks"][j]["subtasks"][k]["description"] = "No description provided"
+                                    
+                                if "story_points" not in subtask:
+                                    tasks_data["stories"][i]["component_tasks"][j]["subtasks"][k]["story_points"] = 1
+        
+        elif task_type == "subtask" and "subtasks" in tasks_data:
+            for i, subtask in enumerate(tasks_data["subtasks"]):
+                # Validate required subtask fields
+                if "summary" not in subtask or not subtask["summary"]:
+                    tasks_data["subtasks"][i]["summary"] = "Untitled Subtask"
+                    LOGGER.warning("Missing subtask summary, using default")
+                    
+                if "description" not in subtask:
+                    tasks_data["subtasks"][i]["description"] = "No description provided"
+                    
+                if "story_points" not in subtask:
+                    tasks_data["subtasks"][i]["story_points"] = 1
+                    
+                # Validate component is a valid department
+                if "component" not in subtask or subtask["component"] not in departments:
+                    tasks_data["subtasks"][i]["component"] = departments[0] if departments else "Default"
+                    LOGGER.warning(f"Invalid component in subtask, replaced with {departments[0]}")
+        
+        LOGGER.info(f"Task data validation complete for {task_type}")

@@ -203,6 +203,7 @@ class JiraRepository(TaskManagerRepositoryInterface):
             query += f" AND {filters}"
         return self.search_for_issues(query)
 
+
     def build_issue_fields(self, task_data: TaskData) -> dict:
         issue_fields = {
             "project": {"key": task_data.project_key},
