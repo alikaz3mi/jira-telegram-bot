@@ -577,13 +577,16 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
 
 def create_task_data(username: str, parsed_fields: Dict[str, str]) -> TaskData:
     """Create TaskData object from parsed fields."""
+    user_cfg = user_config.get_user_config(username)
+    assignee_username = user_cfg.jira_username if user_cfg else None
+    
     return TaskData(
         project_key=JIRA_PROJECT_KEY,
         summary=parsed_fields["summary"],
         description=parsed_fields["description"],
         task_type=parsed_fields["task_type"],
         labels=[parsed_fields.get("labels", "")],
-        assignee=user_config.get_user_config(username).jira_username,
+        assignee=assignee_username,
     )
 
 

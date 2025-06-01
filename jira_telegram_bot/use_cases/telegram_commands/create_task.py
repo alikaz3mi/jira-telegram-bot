@@ -1513,7 +1513,7 @@ class JiraTaskCreation:
                         ),
                     )
                 except Exception as e:
-                    LOGGER.error("Failed to notify user about task creation: %s", e)
+                    LOGGER.error(f"Failed to notify user about task creation: {e}")
         except Exception as e:
             await message.reply_text(f"Failed to create task: {e}")
             return

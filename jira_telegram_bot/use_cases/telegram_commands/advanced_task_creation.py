@@ -170,7 +170,7 @@ class AdvancedTaskCreation:
                     summary=subtask["summary"],
                     description=subtask["description"],
                     components=[subtask["component"]],
-                    story_points=subtask["story_points"],
+                    story_points=subtask["story_points"] / 8,
                     assignee=subtask.get("assignee"),
                     task_type="Sub-task",
                     parent_issue_key=parent_story_key,
