@@ -1,0 +1,11 @@
+For attachment, check how create_task has implemented handling getting multiple attachments at once.
+
+Also, when the user want to select whether to define a new story or add subtask to new story, add another button called Edit a previously defined story. When the user select this, get all the tasks
+
+Modify the prompts of advance task creation so that
+
+Modify them so that they force to get the assignee from the given description. In the description, assignees will be mentioned. If it is not memntioned, then, assigne task based on the rest of the procedure.
+
+Modify this code and advance_task_creation.py so that the user can attach an attachment to the created story.
+
+

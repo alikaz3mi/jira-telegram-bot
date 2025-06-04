@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -42,12 +41,8 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
             List of project summaries
         """
         try:
-            # Get projects from task manager
-            projects_method = self.task_manager_repository.get_projects
-            if asyncio.iscoroutinefunction(projects_method) or hasattr(projects_method, '__await__'):
-                projects = await projects_method()
-            else:
-                projects = projects_method()
+            # Get projects from task manager - use synchronous method
+            projects = self.task_manager_repository.get_projects()
             
             # Filter by status if provided
             if status:
@@ -60,7 +55,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
             # Transform to project summaries
             project_summaries = []
             for project in projects:
-                project_key = project.key
+                project_key = project.get("key")
                 
                 # Get status counts for each project
                 status_data = await self.task_manager_repository.get_issues_by_status(
@@ -76,7 +71,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
                 project_summaries.append(
                     ProjectSummary(
                         key=project_key,
-                        name=project.name,
+                        name=project.get("name", ""),
                         task_count=total_count,
                         status_counts=status_counts,
                         last_updated=datetime.now()
@@ -127,7 +122,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
             # Create project summary
             project_summary = ProjectSummary(
                 key=project_key,
-                name=project.name,
+                name=project.get("name", ""),
                 task_count=total_count,
                 status_counts=status_counts,
                 last_updated=datetime.now()

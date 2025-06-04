@@ -171,7 +171,7 @@ class AdvancedTaskCreation:
                 summary=subtask["summary"],
                 description=subtask["description"],
                 components=[subtask["component"]],
-                story_points=subtask["story_points"],
+                story_points=subtask["story_points"] / 8,
                 assignee=subtask.get("assignee"),
                 task_type="Sub-task",
                 parent_issue_key=parent_story_key,
@@ -559,10 +559,7 @@ class AdvancedTaskCreation:
         Returns:
             Updated task data with assignments
         """
-        # Build team structure
-        dept_leads = {comp["name"]: comp["lead"] for comp in project_info["components"]}
         dept_members = {}
-
         for assignee in project_info["assignees"]:
             dept = assignee["department"]
             if dept not in dept_members:
@@ -574,7 +571,6 @@ class AdvancedTaskCreation:
                 },
             )
 
-        # Assign tasks based on skill levels
         for story in parsed_data["stories"]:
             for comp_tasks in story["component_tasks"]:
                 dept = comp_tasks["component"]
@@ -582,38 +578,16 @@ class AdvancedTaskCreation:
                     continue
 
                 members = dept_members[dept]
-                leader = dept_leads.get(dept)
-
-                # Group members by seniority
-                seniors = [m for m in members if m["role"] == "Senior Developer"]
-                mid_levels = [m for m in members if m["role"] == "Mid-level Developer"]
-                juniors = [m for m in members if m["role"] == "Junior Developer"]
-
-                # Distribute tasks based on complexity (story points)
                 for task in comp_tasks["subtasks"]:
-                    if (
-                        task.get("assignee") is None
-                    ):  # Only assign if not already assigned
-                        story_points = task["story_points"]
-
-                        if story_points >= 5:  # Complex tasks
-                            if seniors:
-                                task["assignee"] = seniors[0]["username"]
-                        elif story_points >= 2:  # Medium tasks
-                            if mid_levels:
-                                task["assignee"] = mid_levels[0]["username"]
-                            elif seniors:
-                                task["assignee"] = seniors[0]["username"]
-                        else:  # Simple tasks
-                            if juniors:
-                                task["assignee"] = juniors[0]["username"]
-                            elif mid_levels:
-                                task["assignee"] = mid_levels[0]["username"]
-                            elif seniors:
-                                task["assignee"] = seniors[0]["username"]
-
-                        # If still no assignee, assign to department lead
-                        if not task.get("assignee") and leader:
-                            task["assignee"] = leader
+                    if "summary" not in task or not task["summary"]:
+                        task["summary"] = "Task needs description"
+                        LOGGER.warning(f"Missing summary in task under component {dept}, adding default summary")
+                    
+                    if task.get("assignee") is None or task.get("assignee") == "":
+                        LOGGER.info(f"No assignee found in description for task: {task.get('summary')}, leaving unassigned")
+                        if "assignee" in task:
+                            del task["assignee"]
+                    else:
+                        LOGGER.info(f"Using assignee '{task['assignee']}' extracted from description for task: {task.get('summary')}")
 
         return parsed_data
