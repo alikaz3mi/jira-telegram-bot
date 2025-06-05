@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC
 from abc import abstractmethod
 from typing import Dict
+from typing import List
 from typing import Optional
 
 from jira_telegram_bot.entities.user_config import UserConfig as UserConfigEntity
@@ -65,5 +66,25 @@ class UserConfigInterface(ABC):
         Args:
             telegram_username: The username of the user
             user_cfg: The configuration to save
+        """
+        pass
+
+    @abstractmethod
+    def get_all_user_configs(self) -> Dict[str, UserConfigEntity]:
+        """
+        Get all user configurations.
+
+        Returns:
+            Dictionary mapping usernames to their configurations
+        """
+        pass
+
+    @abstractmethod
+    def get_group_chat_ids(self) -> List[int]:
+        """
+        Get all configured Telegram group chat IDs.
+
+        Returns:
+            List of group chat IDs where bot should send notifications
         """
         pass

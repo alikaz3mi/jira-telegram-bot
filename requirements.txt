@@ -23,3 +23,4 @@ lagom==2.7.5
 python-gitlab==5.6.0
 XlsxWriter==3.2.2
 jdatetime==5.2.0
+croniter==1.4.1

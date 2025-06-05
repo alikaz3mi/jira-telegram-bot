@@ -15,7 +15,10 @@ Implement an automated pipeline that **every N minutes** (configurable cron, con
    * Every Telegram group the bot is in, tagging assignees when possible.
 5. Idempotent: never send duplicate notifications for the same issue/day — **persist a simple log in a local file** (e.g. `data/notifier_log.jsonl`) through `FileNotificationLogRepository`.
 
+
+# 📖 
 ## 📝 Interactive variables
+
 * `${input:cron_schedule:CRON expression (e.g. "*/30 * * * *")}`
 * `${input:lookahead_days:Number of days ahead to consider (default 7)}`
 * `${input:jira_filter_jql:Additional JQL filter (optional)}`

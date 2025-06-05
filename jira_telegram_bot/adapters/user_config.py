@@ -71,3 +71,26 @@ class UserConfig(UserConfigInterface):
         }
         with open(self.user_config_path, "w") as file:
             json.dump(configs, file)
+
+    def get_all_user_configs(self):
+        """Get all user configurations."""
+        return self.user_config
+
+    def get_group_chat_ids(self):
+        """
+        Get all configured Telegram group chat IDs.
+        
+        Currently returns an empty list as group chats are not configured in user config.
+        This can be extended to support group chat configuration.
+        """
+        # TODO: Implement group chat configuration
+        # For now, return empty list or read from environment/config
+        import os
+        group_chat_ids_str = os.environ.get('TELEGRAM_GROUP_CHAT_IDS', '')
+        if group_chat_ids_str:
+            try:
+                return [int(chat_id.strip()) for chat_id in group_chat_ids_str.split(',') if chat_id.strip()]
+            except ValueError as e:
+                LOGGER.error(f"Error parsing group chat IDs: {e}")
+                return []
+        return []

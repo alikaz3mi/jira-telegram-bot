@@ -726,3 +726,50 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
             
         issues = self.search_for_issues(query)
         return {issue.key: issue.fields.status.name for issue in issues}
+
+    def get_issues_with_approaching_deadlines(
+        self, 
+        lookahead_days: int = 7,
+        additional_jql: Optional[str] = None,
+    ) -> List[Issue]:
+        """
+        Get issues with deadlines within the specified lookahead period.
+        
+        Args:
+            lookahead_days: Number of days to look ahead for deadlines
+            additional_jql: Additional JQL filter to apply
+            
+        Returns:
+            List of Jira issues with approaching deadlines
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Calculate date range
+            today = datetime.now().date()
+            future_date = today + timedelta(days=lookahead_days)
+            
+            # Build JQL query
+            jql_parts = [
+                "statusCategory != Done",
+                f"(duedate <= '{future_date}' OR customfield_10110 <= '{future_date}')",
+                "assignee is not EMPTY",
+            ]
+            
+            if additional_jql:
+                jql_parts.append(f"({additional_jql})")
+            
+            jql = " AND ".join(jql_parts)
+            jql += " ORDER BY duedate ASC, customfield_10110 ASC"
+            
+            LOGGER.info(f"Searching for deadline issues with JQL: {jql}")
+            
+            # Search for issues
+            issues = self.search_for_issues(jql, max_results=500)
+            
+            LOGGER.info(f"Found {len(issues)} issues with approaching deadlines")
+            return issues
+            
+        except Exception as e:
+            LOGGER.error(f"Error searching for deadline issues: {e}")
+            return []

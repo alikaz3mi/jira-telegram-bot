@@ -76,6 +76,11 @@ from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import
     UserAuthenticationInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
+from jira_telegram_bot.use_cases.interfaces.telegram_notifier_interface import TelegramNotifierInterface
+from jira_telegram_bot.use_cases.interfaces.notification_log_repository_interface import NotificationLogRepositoryInterface
+from jira_telegram_bot.use_cases.send_deadline_alerts_use_case import SendDeadlineAlertsUseCase
+from jira_telegram_bot.adapters.services.telegram.telegram_notifier import TelegramNotifier
+from jira_telegram_bot.adapters.repositories.file_storage.file_notification_log_repository import FileNotificationLogRepository
 
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
@@ -212,6 +217,29 @@ def configure_container() -> Container:
     container[UserAuthenticationInterface] = Singleton(
         lambda c: FileUserAuthenticationRepository(
             auth_file_path=str(config_dir / "allowed_users.json")
+        )
+    )
+    
+    # Deadline notifier dependencies
+    container[TelegramNotifierInterface] = Singleton(
+        lambda c: TelegramNotifier(
+            telegram_settings=c[TelegramConnectionSettings],
+            user_config_repository=c[UserConfigInterface],
+        )
+    )
+    
+    container[NotificationLogRepositoryInterface] = Singleton(
+        lambda c: FileNotificationLogRepository(
+            log_file_path=str(data_dir / "notifier_log.jsonl")
+        )
+    )
+    
+    container[SendDeadlineAlertsUseCase] = Singleton(
+        lambda c: SendDeadlineAlertsUseCase(
+            task_manager_repository=c[TaskManagerRepositoryInterface],
+            user_config_repository=c[UserConfigInterface],
+            telegram_notifier=c[TelegramNotifierInterface],
+            notification_log_repository=c[NotificationLogRepositoryInterface],
         )
     )
 

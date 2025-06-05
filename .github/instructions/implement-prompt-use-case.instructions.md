@@ -1,7 +1,7 @@
 ---
 mode: agent
 description: Scaffold a new AI-agent use-case (prompt, service, domain class, tests)
-tools: [terminalLastCommand, githubRepo]
+tools: [terminalLastCommand, codeBase, usages, testFailure, findTestFiles]
 ---
 
 # 🛠️ Goal  

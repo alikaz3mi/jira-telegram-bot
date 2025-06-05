@@ -129,3 +129,21 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     def create_task_data_from_jira_issue(self, issue) -> TaskData:
         pass
+
+    @abstractmethod
+    def get_issues_with_approaching_deadlines(
+        self, 
+        lookahead_days: int = 7,
+        additional_jql: Optional[str] = None,
+    ) -> List[Issue]:
+        """
+        Get issues with deadlines within the specified lookahead period.
+        
+        Args:
+            lookahead_days: Number of days to look ahead for deadlines
+            additional_jql: Additional JQL filter to apply
+            
+        Returns:
+            List of Jira issues with approaching deadlines
+        """
+        pass
