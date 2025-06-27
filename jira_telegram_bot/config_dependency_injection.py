@@ -82,6 +82,13 @@ from jira_telegram_bot.use_cases.send_deadline_alerts_use_case import SendDeadli
 from jira_telegram_bot.adapters.services.telegram.telegram_notifier import TelegramNotifier
 from jira_telegram_bot.adapters.repositories.file_storage.file_notification_log_repository import FileNotificationLogRepository
 
+# Daily report imports
+from jira_telegram_bot.adapters.ai_models.ai_agents.generate_progress_report_service import GenerateProgressReportService
+from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_repository import FileProgressReportRepository
+from jira_telegram_bot.adapters.stt.speech_recogniser import SpeechRecogniser
+from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
+from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface import ProgressReportRepositoryInterface
+
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
     """Read user configuration from specified path.
@@ -233,13 +240,38 @@ def configure_container() -> Container:
             log_file_path=str(data_dir / "notifier_log.jsonl")
         )
     )
-    
-    container[SendDeadlineAlertsUseCase] = Singleton(
+      container[SendDeadlineAlertsUseCase] = Singleton(
         lambda c: SendDeadlineAlertsUseCase(
             task_manager_repository=c[TaskManagerRepositoryInterface],
             user_config_repository=c[UserConfigInterface],
             telegram_notifier=c[TelegramNotifierInterface],
             notification_log_repository=c[NotificationLogRepositoryInterface],
+        )
+    )
+
+    # Daily report dependencies
+    container[ProgressReportRepositoryInterface] = Singleton(
+        lambda c: FileProgressReportRepository(
+            storage_path=str(data_dir / "storage" / "progress_reports.json")
+        )
+    )
+    
+    container[GenerateProgressReportService] = Singleton(
+        lambda c: GenerateProgressReportService(
+            llm_provider=c[LLMModelInterface]
+        )
+    )
+    
+    container[SpeechRecogniser] = Singleton(
+        lambda c: SpeechRecogniser(
+            speech_processor=c[SpeechProcessorInterface]
+        )
+    )
+    
+    container[GenerateProgressReportUseCase] = Singleton(
+        lambda c: GenerateProgressReportUseCase(
+            ai_service=c[GenerateProgressReportService],
+            repository=c[ProgressReportRepositoryInterface]
         )
     )
 

@@ -1,0 +1,70 @@
+system_prompt: |
+  You are an expert project management assistant specializing in parsing daily progress reports from team members. 
+  Your task is to analyze speech-to-text transcripts or text input from team members and generate structured progress reports for their assigned tasks.
+
+  Key guidelines:
+  - Extract specific progress information for each task mentioned
+  - Identify blockers, challenges, or issues preventing progress
+  - Estimate time spent based on the description provided
+  - If no specific task is mentioned, map the progress to the most relevant task based on context
+  - Be concise but capture all important details
+  - If information is unclear or missing, use reasonable assumptions based on context
+
+user_prompt: |
+  Please analyze the following progress report input and generate a structured output.
+
+  **Team Member:** {assignee}
+  **Sprint:** {sprint_label}
+  **Selected Task Keys:** {selected_issue_keys}
+  **Available Tasks in Sprint:** {task_summaries}
+
+  **Progress Report Input:**
+  {raw_transcript}
+
+  Generate a JSON response with the following structure for each task:
+  {{
+    "reports": [
+      {{
+        "issue_key": "TASK-123",
+        "progress": "Brief description of what was accomplished",
+        "blockers": "Any obstacles or issues encountered (or 'None' if no blockers)",
+        "time_spent": "Estimated time spent (e.g., '2h', '30m', '1d')"
+      }}
+    ]
+  }}
+
+  Rules:
+  - If specific tasks were selected, focus on those tasks
+  - If no tasks were selected, infer the most relevant tasks from the available sprint tasks
+  - Each task should have meaningful progress information
+  - Blockers should be specific and actionable when present
+  - Time estimates should be realistic based on the described work
+  - If the input doesn't mention specific tasks, map to the most relevant task based on keywords and context
+
+output_schema:
+  type: object
+  properties:
+    reports:
+      type: array
+      items:
+        type: object
+        properties:
+          issue_key:
+            type: string
+            description: The JIRA issue key
+          progress:
+            type: string
+            description: Description of progress made
+          blockers:
+            type: string
+            description: Any blockers or issues encountered
+          time_spent:
+            type: string
+            description: Estimated time spent on the task
+        required:
+          - issue_key
+          - progress
+          - blockers
+          - time_spent
+  required:
+    - reports

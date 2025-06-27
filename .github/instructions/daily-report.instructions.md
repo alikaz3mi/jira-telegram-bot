@@ -33,16 +33,15 @@ Create a feature that **once per day between 14:00-16:00 (local time)** randomly
 5. **Telegram Conversation Handler**
    * `jira_telegram_bot/frameworks/telegram/daily_report_handler.py`
      * State machine: prompt → task selection → receive voice/text → delegate to use case
-6. **Speech-to-Text Adapter**
-   * `jira_telegram_bot/adapters/stt/speech_recogniser.py` (wraps existing micro-service HTTP)
-7. **Dependency Injection & Wiring**
+
+6. **Dependency Injection & Wiring**
    * Bind all new interfaces & services
    * Register handler in bot startup
-8. **Docs**
+7. **Docs**
    * `docs/architecture/daily_report_flow.md` (sequence + statechart)
-9. **Tests**
+8. **Tests**
    * Mock STT & LLM; unit + integration; concurrency scenario with overlapping user prompts
-10. **CI / Quality Gates**
+9. **CI / Quality Gates**
     * Same standards: PEP-8, Clean Architecture, ≥ 90 % coverage
 
 ## 📤 Meta-commands
