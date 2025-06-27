@@ -9,15 +9,8 @@ from typing import Dict, Any
 from lagom import Container, Singleton
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.ai_models.ai_agents.board_summarizer_service import BoardSummarizerService
 from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import LangChainAiService
-from jira_telegram_bot.adapters.ai_models.ai_agents.story_decomposition_service import (
-    StoryDecompositionService,
-)
 from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
-
-from jira_telegram_bot.adapters.ai_models.ai_agents.story_generator_service import StoryGeneratorService
-from jira_telegram_bot.adapters.ai_models.ai_agents.subtask_creation_service import SubtaskCreationService
 from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import FilePromptCatalog
@@ -55,7 +48,7 @@ from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummariz
 from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
-from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AiServiceProtocol
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AIServiceProtocol
 from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
@@ -83,7 +76,6 @@ from jira_telegram_bot.adapters.services.telegram.telegram_notifier import Teleg
 from jira_telegram_bot.adapters.repositories.file_storage.file_notification_log_repository import FileNotificationLogRepository
 
 # Daily report imports
-from jira_telegram_bot.adapters.ai_models.ai_agents.generate_progress_report_service import GenerateProgressReportService
 from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_repository import FileProgressReportRepository
 from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
 from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface import ProgressReportRepositoryInterface
@@ -174,43 +166,13 @@ def configure_container() -> Container:
     )
     
     # AI Service bindings
-    container[AiServiceProtocol] = Singleton(
+    container[AIServiceProtocol] = Singleton(
         lambda c: LangChainAiService(
             c[LLMModelInterface]
         )
     )
-    
-    container[PromptCatalogProtocol] = Singleton(
+      container[PromptCatalogProtocol] = Singleton(
         lambda c: FilePromptCatalog()
-    )
-    
-    # Board Summarizer Service
-    container[BoardSummarizerService] = Singleton(
-        lambda c: BoardSummarizerService(
-            c[PromptCatalogProtocol],
-            c[AiServiceProtocol]
-        )
-    )
-    
-    container[StoryGenerator] = Singleton(
-        lambda c: StoryGeneratorService(
-            c[AiServiceProtocol],
-            c[PromptCatalogProtocol]
-        )
-    )
-    
-    container[StoryDecompositionInterface] = Singleton(
-        lambda c: StoryDecompositionService(
-            c[AiServiceProtocol],
-            c[PromptCatalogProtocol]
-        )
-    )
-    
-    container[SubtaskCreationInterface] = Singleton(
-        lambda c: SubtaskCreationService(
-            c[AiServiceProtocol],
-            c[PromptCatalogProtocol]
-        )
     )
     
     container[UserConfigInterface] = Singleton(
@@ -239,30 +201,24 @@ def configure_container() -> Container:
             log_file_path=str(data_dir / "notifier_log.jsonl")
         )
     )
-      container[SendDeadlineAlertsUseCase] = Singleton(
+    container[SendDeadlineAlertsUseCase] = Singleton(
         lambda c: SendDeadlineAlertsUseCase(
             task_manager_repository=c[TaskManagerRepositoryInterface],
             user_config_repository=c[UserConfigInterface],
             telegram_notifier=c[TelegramNotifierInterface],
             notification_log_repository=c[NotificationLogRepositoryInterface],
         )
-    )
-
-    # Daily report dependencies
+    )    # Daily report dependencies
     container[ProgressReportRepositoryInterface] = Singleton(
         lambda c: FileProgressReportRepository(
             storage_path=str(data_dir / "storage" / "progress_reports.json")
         )
     )
     
-    container[GenerateProgressReportService] = Singleton(
-        lambda c: GenerateProgressReportService(
-            llm_provider=c[LLMModelInterface]        )
-    )
-    
     container[GenerateProgressReportUseCase] = Singleton(
         lambda c: GenerateProgressReportUseCase(
-            ai_service=c[GenerateProgressReportService],
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
             repository=c[ProgressReportRepositoryInterface]
         )
     )
@@ -277,7 +233,8 @@ def configure_container() -> Container:
     # Board Summarizer Use Case
     container[BoardSummarizerUseCase] = Singleton(
         lambda c: BoardSummarizerUseCase(
-            summarizer_service=c[BoardSummarizerService],
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
             task_grouper=TaskGrouper()
         )
     )

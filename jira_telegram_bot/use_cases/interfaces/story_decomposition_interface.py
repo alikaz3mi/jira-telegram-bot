@@ -5,7 +5,7 @@ from typing import Dict
 from typing import Protocol
 
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
-    AiServiceProtocol,
+    AIServiceProtocol,
     PromptCatalogProtocol,
 )
 
@@ -16,7 +16,7 @@ class StoryDecompositionInterface(Protocol):
     def __init__(
         self,
         prompt_catalog: PromptCatalogProtocol,
-        ai_service: AiServiceProtocol,
+        ai_service: AIServiceProtocol,
     ):
         """
         Initialize the StoryDecompositionInterface with a prompt catalog and AI service.

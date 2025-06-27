@@ -10,12 +10,12 @@ from langchain.prompts import PromptTemplate
 from jira_telegram_bot.adapters.ai_models.utils import llm_result_correction_chain
 from jira_telegram_bot.entities.structured_prompt import StructuredPrompt
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
-    AiServiceProtocol,
+    AIServiceProtocol,
 )
 from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
 
 
-class LangChainAiService(AiServiceProtocol):
+class LangChainAiService(AIServiceProtocol):
     def __init__(self, model_registry: LLMModelInterface):
         self.model_registry = model_registry
 

@@ -1,4 +1,16 @@
-system_prompt: |
+# ── metadata ───────────────────────────────────────────
+id: generate_progress_report
+version: "2025-06-27"
+language: en
+author: progress_report_assistant
+temperature: 0.3
+model_hint: "gpt-4o-mini"
+model_engine: "openai"
+description: >
+  Generate structured progress reports from team member input (speech or text)
+
+# ── prompt template ───────────────────────────────────
+prompt: |
   You are an expert project management assistant specializing in parsing daily progress reports from team members. 
   Your task is to analyze speech-to-text transcripts or text input from team members and generate structured progress reports for their assigned tasks.
 
@@ -10,7 +22,6 @@ system_prompt: |
   - Be concise but capture all important details
   - If information is unclear or missing, use reasonable assumptions based on context
 
-user_prompt: |
   Please analyze the following progress report input and generate a structured output.
 
   **Team Member:** {assignee}
@@ -22,6 +33,11 @@ user_prompt: |
   {raw_transcript}
 
   Generate a JSON response with the following structure for each task:
+  {{
+    "reports": [
+      {{
+        "issue_key": "TASK-123",
+        "progress": "Brief description of what was accomplished",
   {{
     "reports": [
       {{
@@ -41,24 +57,42 @@ user_prompt: |
   - Time estimates should be realistic based on the described work
   - If the input doesn't mention specific tasks, map to the most relevant task based on keywords and context
 
-output_schema:
-  type: object
-  properties:
-    reports:
-      type: array
-      items:
-        type: object
-        properties:
-          issue_key:
-            type: string
-            description: The JIRA issue key
-          progress:
-            type: string
-            description: Description of progress made
-          blockers:
-            type: string
-            description: Any blockers or issues encountered
-          time_spent:
+# ── response schema ──────────────────────────────────
+schemas:
+  - name: reports
+    type: array
+    description: List of progress reports for tasks
+    items:
+      type: object
+      properties:
+        issue_key:
+          type: string
+          description: The JIRA issue key
+        progress:
+          type: string
+          description: Description of progress made
+        blockers:
+          type: string
+          description: Any blockers or issues encountered
+        time_spent:
+          type: string
+          description: Estimated time spent on the task
+      required:
+        - issue_key
+        - progress
+        - blockers
+        - time_spent
+
+# ── helpers ───────────────────────────────────────────
+input_variables:
+  - assignee
+  - sprint_label
+  - selected_issue_keys
+  - task_summaries
+  - raw_transcript
+few_shots: []
+output_style: >
+  JSON only – match schemas exactly.
             type: string
             description: Estimated time spent on the task
         required:

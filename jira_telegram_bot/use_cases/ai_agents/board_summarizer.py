@@ -5,28 +5,34 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List
 
+from jira_telegram_bot.entities.ai_agent_models.board_summarizer import BoardSummarizerInput
+from jira_telegram_bot.entities.ai_agent_models.board_summarizer import BoardSummarizerResult
+from jira_telegram_bot.entities.ai_agent_models.prompt_names import PromptNames
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.use_cases.interfaces.board_summarizer_service_interface import (
-    BoardSummarizerServiceInterface,
-)
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AIServiceProtocol
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import PromptCatalogProtocol
+from jira_telegram_bot.use_cases.interfaces.base_ai_agent_use_case import BaseAIAgentUseCase
 from jira_telegram_bot.use_cases.interfaces.task_grouper_interface import ITaskGrouper
 
 
-class BoardSummarizerUseCase:
+class BoardSummarizerUseCase(BaseAIAgentUseCase):
     """Use case for summarizing a Jira board's tasks grouped by components and epics."""
     
     def __init__(
         self,
-        summarizer_service: BoardSummarizerServiceInterface,
-        task_grouper: ITaskGrouper = None
+        prompt_catalog: PromptCatalogProtocol,
+        ai_service: AIServiceProtocol,
+        task_grouper: ITaskGrouper = None,
     ) -> None:
         """Initialize the use case with dependencies.
         
         Args:
-            summarizer_service: Service to generate summaries using AI
-            task_grouper: Component for grouping tasks by component and epic
+            prompt_catalog: Protocol for loading prompts.
+            ai_service: Protocol for AI service interactions.
+            task_grouper: Component for grouping tasks by component and epic.
         """
-        self._summarizer_service = summarizer_service
+        super().__init__(prompt_catalog, ai_service)
+        self.prompt_name = PromptNames.BOARD_SUMMARIZER
         self._task_grouper = task_grouper if task_grouper else TaskGrouper()
         
     async def execute(self, tasks: List[TaskData]) -> str:
@@ -44,10 +50,11 @@ class BoardSummarizerUseCase:
         # Convert grouped tasks to a string representation
         tasks_str = self._format_grouped_tasks(grouped_tasks)
         
-        # Generate summary using AI service
-        summary = await self._summarizer_service.run(tasks_str)
+        # Process with AI service
+        ai_inputs = {"grouped_tasks": tasks_str}
+        ai_response = await self._process_with_ai(ai_inputs)
         
-        return summary
+        return ai_response.get("summary", "")
         
     def _format_grouped_tasks(self, grouped_tasks: Dict[str, Dict[str, List[TaskData]]]) -> str:
         """Format grouped tasks into a string representation.

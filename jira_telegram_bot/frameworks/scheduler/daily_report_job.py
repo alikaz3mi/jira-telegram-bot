@@ -2,11 +2,10 @@ import asyncio
 from datetime import datetime, time
 from typing import List
 
-from jira_telegram_bot.adapters.repositories.jira.jira_issue_repository import JiraIssueRepository
+from jira_telegram_bot.use_cases.interfaces.telegram_notifier_interface import TelegramNotifierInterface
 from jira_telegram_bot.frameworks.scheduler.cron_job import CronJob
-from jira_telegram_bot.frameworks.telegram.telegram_service import TelegramService
 from jira_telegram_bot.use_cases.jira.get_sprint_issues_usecase import GetSprintIssuesUseCase
-from jira_telegram_bot.use_cases.telegram.get_chat_members_usecase import GetChatMembersUseCase
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
 
 
 class DailyReportJob(CronJob):
@@ -14,9 +13,9 @@ class DailyReportJob(CronJob):
 
     def __init__(
         self,
-        telegram_service: TelegramService,
+        telegram_notifier: TelegramNotifierInterface,
         get_sprint_issues_usecase: GetSprintIssuesUseCase,
-        get_chat_members_usecase: GetChatMembersUseCase,
+        user_config: UserConfigInterface,
         sprint_label: str,
         report_channel_id: str,
         prompt_start_hour: int = 14,
@@ -25,9 +24,9 @@ class DailyReportJob(CronJob):
         """Initialize the daily report job.
 
         Args:
-            telegram_service: Service for sending messages.
+            telegram_notifier: Service for sending Telegram notifications.
             get_sprint_issues_usecase: Use case for fetching sprint issues.
-            get_chat_members_usecase: Use case for getting chat members.
+            user_config: Interface for accessing user configuration.
             sprint_label: The current sprint label or JQL.
             report_channel_id: Channel ID for aggregated reports.
             prompt_start_hour: Hour to start sending prompts (24-hour format).
@@ -38,9 +37,9 @@ class DailyReportJob(CronJob):
             schedule="0 14-16 * * 1-5",  # Every hour between 14:00-16:00, Monday-Friday
             timezone="UTC"
         )
-        self._telegram_service = telegram_service
+        self._telegram_notifier = telegram_notifier
         self._get_sprint_issues_usecase = get_sprint_issues_usecase
-        self._get_chat_members_usecase = get_chat_members_usecase
+        self._user_config = user_config
         self._sprint_label = sprint_label
         self._report_channel_id = report_channel_id
         self._prompt_start_hour = prompt_start_hour
@@ -66,20 +65,18 @@ class DailyReportJob(CronJob):
             self.logger.error(f"Daily report job failed: {str(e)}")
 
     async def _get_team_members(self) -> List[str]:
-        """Get team members from the report channel.
+        """Get team members from user configuration.
 
         Returns:
             List of team member usernames.
         """
         try:
-            members = await self._get_chat_members_usecase.execute(
-                chat_id=self._report_channel_id
-            )
+            user_configs = self._user_config.get_all_user_configs()
             
-            # Filter out bots and return usernames
+            # Return all telegram usernames from user configs
             return [
-                member.username for member in members
-                if member.username and not member.is_bot
+                config.telegram_username for config in user_configs.values()
+                if config.telegram_username
             ]
             
         except Exception as e:
@@ -93,26 +90,51 @@ class DailyReportJob(CronJob):
             username: The team member's username.
         """
         try:
+            # Get user config to find chat ID
+            user_config = self._user_config.get_user_config(username)
+            if not user_config or not user_config.telegram_user_chat_id:
+                self.logger.warning(f"No chat ID found for user {username}")
+                return
+
             # Get user's assigned tasks in the current sprint
-            assigned_tasks = await self._get_user_assigned_tasks(username)
+            assigned_tasks = await self._get_user_assigned_tasks(user_config.jira_username)
             
             message = self._create_progress_prompt_message(username, assigned_tasks)
             
-            # Send direct message to the user
-            await self._telegram_service.send_message(
-                chat_id=f"@{username}",
-                text=message,
-                reply_markup=self._create_progress_prompt_keyboard()
+            # Send direct message to the user using telegram notifier
+            # Note: We'll need to create a simple alert-like message structure
+            # This is a simplified approach - in production you might want a dedicated method
+            await self._send_message_via_notifier(
+                user_config.telegram_user_chat_id,
+                message
             )
             
         except Exception as e:
             self.logger.warning(f"Could not send prompt to {username}: {str(e)}")
 
-    async def _get_user_assigned_tasks(self, username: str) -> List[str]:
+    async def _send_message_via_notifier(self, chat_id: int, message: str) -> None:
+        """Send a simple message using the telegram notifier.
+        
+        Args:
+            chat_id: Telegram chat ID
+            message: Message text to send
+        """
+        # This is a workaround since TelegramNotifier is designed for deadline alerts
+        # In production, you might want to add a general message sending method to the interface
+        try:
+            # We'll use the notifier's internal method if available
+            if hasattr(self._telegram_notifier, '_send_message'):
+                await self._telegram_notifier._send_message(chat_id, message)
+            else:
+                self.logger.warning("Telegram notifier doesn't support direct message sending")
+        except Exception as e:
+            self.logger.error(f"Failed to send message to {chat_id}: {str(e)}")
+
+    async def _get_user_assigned_tasks(self, jira_username: str) -> List[str]:
         """Get tasks assigned to a specific user in the current sprint.
 
         Args:
-            username: The team member's username.
+            jira_username: The team member's Jira username.
 
         Returns:
             List of assigned task keys.
@@ -125,13 +147,13 @@ class DailyReportJob(CronJob):
             # Filter tasks assigned to the user
             user_tasks = [
                 issue.key for issue in sprint_issues
-                if issue.assignee and issue.assignee.lower() == username.lower()
+                if issue.assignee and issue.assignee.lower() == jira_username.lower()
             ]
             
             return user_tasks
             
         except Exception as e:
-            self.logger.warning(f"Could not get assigned tasks for {username}: {str(e)}")
+            self.logger.warning(f"Could not get assigned tasks for {jira_username}: {str(e)}")
             return []
 
     def _create_progress_prompt_message(self, username: str, assigned_tasks: List[str]) -> str:

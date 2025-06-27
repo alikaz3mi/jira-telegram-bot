@@ -24,7 +24,7 @@ from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSetti
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
-    AiServiceProtocol,
+    AIServiceProtocol,
 )
 from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
@@ -206,7 +206,7 @@ def startup() -> None:
         LOGGER.info("Initialized Jira repository connection")
         
         # Initialize AI services
-        ai_service = container[AiServiceProtocol]
+        ai_service = container[AIServiceProtocol]
         LOGGER.info("Initialized AI service")
         
         # Initialize speech processor service
@@ -237,7 +237,7 @@ async def shutdown() -> None:
             LOGGER.info("Closed Jira repository connection")
         
         # Clean up AI service connections if needed
-        ai_service = container[AiServiceProtocol]
+        ai_service = container[AIServiceProtocol]
         if hasattr(ai_service, 'close') and callable(getattr(ai_service, 'close')):
             await ai_service.close()
             LOGGER.info("Closed AI service connection")

@@ -19,7 +19,7 @@ class PromptCatalogProtocol(Protocol):
         pass
 
 
-class AiServiceProtocol(Protocol):
+class AIServiceProtocol(Protocol):
     """Runs an LLM call given a prompt spec and user inputs."""
 
     async def run(
