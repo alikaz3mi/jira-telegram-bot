@@ -85,7 +85,6 @@ from jira_telegram_bot.adapters.repositories.file_storage.file_notification_log_
 # Daily report imports
 from jira_telegram_bot.adapters.ai_models.ai_agents.generate_progress_report_service import GenerateProgressReportService
 from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_repository import FileProgressReportRepository
-from jira_telegram_bot.adapters.stt.speech_recogniser import SpeechRecogniser
 from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
 from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface import ProgressReportRepositoryInterface
 
@@ -258,14 +257,7 @@ def configure_container() -> Container:
     
     container[GenerateProgressReportService] = Singleton(
         lambda c: GenerateProgressReportService(
-            llm_provider=c[LLMModelInterface]
-        )
-    )
-    
-    container[SpeechRecogniser] = Singleton(
-        lambda c: SpeechRecogniser(
-            speech_processor=c[SpeechProcessorInterface]
-        )
+            llm_provider=c[LLMModelInterface]        )
     )
     
     container[GenerateProgressReportUseCase] = Singleton(

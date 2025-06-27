@@ -5,7 +5,7 @@ from typing import List, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CommandHandler, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 
-from jira_telegram_bot.adapters.stt.speech_recogniser import SpeechRecogniser
+from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import SpeechProcessorInterface
 from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
 from jira_telegram_bot.use_cases.jira.get_sprint_issues_usecase import GetSprintIssuesUseCase
 
@@ -21,7 +21,7 @@ class DailyReportHandler:
         self,
         generate_progress_report_usecase: GenerateProgressReportUseCase,
         get_sprint_issues_usecase: GetSprintIssuesUseCase,
-        speech_recogniser: SpeechRecogniser,
+        speech_processor: SpeechProcessorInterface,
         sprint_label: str,
         report_channel_id: str,
     ):
@@ -30,13 +30,13 @@ class DailyReportHandler:
         Args:
             generate_progress_report_usecase: Use case for generating progress reports.
             get_sprint_issues_usecase: Use case for fetching sprint issues.
-            speech_recogniser: Service for speech-to-text conversion.
+            speech_processor: Service for speech-to-text conversion.
             sprint_label: The current sprint label.
             report_channel_id: Channel ID for aggregated reports.
         """
         self._generate_progress_report_usecase = generate_progress_report_usecase
         self._get_sprint_issues_usecase = get_sprint_issues_usecase
-        self._speech_recogniser = speech_recogniser
+        self._speech_processor = speech_processor
         self._sprint_label = sprint_label
         self._report_channel_id = report_channel_id
 
@@ -321,8 +321,9 @@ class DailyReportHandler:
                 temp_file_path = temp_file.name
             
             try:
-                # Transcribe voice to text
-                transcript = await self._speech_recogniser.transcribe_voice_message(temp_file_path)
+                # Transcribe voice to text using the speech processor interface
+                result = await self._speech_processor.process_voice_message(temp_file_path)
+                transcript = result.text
                 
                 if not transcript:
                     await update.message.reply_text("❌ Could not transcribe your voice message. Please try again or use text input.")

@@ -36,10 +36,11 @@ The Daily Report feature implements an automated system for collecting daily pro
   - Maps unstructured input to specific JIRA tasks
 
 #### Speech-to-Text
-- **`SpeechRecogniser`** (`adapters/stt/speech_recogniser.py`)
-  - Adapter for existing SpeechProcessor
+- **`SpeechProcessor`** (`adapters/ai_models/speech_to_text.py`)
+  - Implements SpeechProcessorInterface
   - Handles voice message transcription
   - Supports multiple audio formats (OGG, MP3, WAV, M4A)
+  - Integrated with OpenAI for speech-to-text conversion
 
 #### Repository
 - **`FileProgressReportRepository`** (`adapters/repositories/file_storage/file_progress_report_repository.py`)
@@ -78,7 +79,7 @@ DailyReportJob
 ```
 User Input (Voice/Text)
 ├── DailyReportHandler receives message
-├── SpeechRecogniser transcribes (if voice)
+├── SpeechProcessor transcribes (if voice)
 ├── Optional task selection interface
 └── Forwards to processing pipeline
 ```
