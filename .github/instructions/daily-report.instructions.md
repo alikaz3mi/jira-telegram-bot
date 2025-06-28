@@ -18,15 +18,13 @@ Create a feature that **once per day between 14:00-16:00 (local time)** randomly
 
 ## 🔄 Workflow
 1. **Prompt Template**  
-   * Path: `jira_telegram_bot/adapters/ai_models/ai_agents/prompts/generate_progress_report.yaml`
+   * Path: `jira_telegram_bot/adapters/ai_models/prompts/generate_progress_report.yaml`
    * Inputs: `raw_transcript`, `selected_issue_keys`, `assignee`, `sprint_label`, `list of task_summaries and their descriptions`
    * Output schema: `{"issue_key": str, "progress": str, "blockers": strl, "time_spent": str }` (JSON)
-2. **AI-Agent Service**  
-   * File: `jira_telegram_bot/adapters/ai_models/ai_agents/generate_progress_report_service.py`
-   * Implements `AiAgentServiceInterface` → loads prompt → calls LLM → parses JSON via `StructuredOutputParser`
 3. **Domain Use Case**  
    * `GenerateProgressReportUseCase` in `use_cases/ai_agents`
-     * Validates STT output, calls service, persists results through `ProgressReportRepositoryInterface`
+   * Implements `AiAgentServiceInterface` → loads prompt → calls LLM → parses JSON via `StructuredOutputParser`
+   * Validates STT output, calls service, persists results through `ProgressReportRepositoryInterface`
 4. **Scheduler**  
    * `jira_telegram_bot/frameworks/scheduler/daily_report_job.py`
      * Uses APScheduler `CronTrigger(hour=14, hour=15, minute='*')` with a random delay

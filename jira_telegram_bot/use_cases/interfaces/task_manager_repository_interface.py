@@ -147,3 +147,39 @@ class TaskManagerRepositoryInterface(ABC):
             List of Jira issues with approaching deadlines
         """
         pass
+
+    @abstractmethod
+    def search_issues(
+        self, 
+        jql: str,
+        start_at: int = 0,
+        max_results: int = 100,
+        expand: Optional[str] = None,
+    ) -> List[Issue]:
+        """
+        Search for issues using JQL.
+        
+        Args:
+            jql: JQL query string
+            start_at: Starting index for pagination
+            max_results: Maximum number of results to return
+            expand: Comma-separated list of fields to expand
+            
+        Returns:
+            List of matching Jira issues
+        """
+        pass
+
+    @abstractmethod
+    def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
+        """
+        Get a single issue with expanded fields.
+        
+        Args:
+            issue_key: The issue key
+            expand: Comma-separated list of fields to expand
+            
+        Returns:
+            Jira issue with expanded fields or None
+        """
+        pass

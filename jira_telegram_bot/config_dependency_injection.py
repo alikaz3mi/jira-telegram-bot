@@ -80,6 +80,16 @@ from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_r
 from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
 from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface import ProgressReportRepositoryInterface
 
+# Jira Report imports
+from jira_telegram_bot.adapters.services.jira_data_service import JiraDataService
+from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
+from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
+from jira_telegram_bot.use_cases.generate_jira_report_use_case import GenerateJiraReportUseCase
+from jira_telegram_bot.use_cases.scheduled_report_use_case import ScheduledReportUseCase
+from jira_telegram_bot.use_cases.interfaces.jira_data_service_interface import JiraDataServiceInterface
+from jira_telegram_bot.use_cases.interfaces.jira_report_repository_interface import JiraReportRepositoryInterface
+from jira_telegram_bot.use_cases.interfaces.scheduler_service_interface import SchedulerServiceInterface
+
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
     """Read user configuration from specified path.
@@ -171,7 +181,7 @@ def configure_container() -> Container:
             c[LLMModelInterface]
         )
     )
-      container[PromptCatalogProtocol] = Singleton(
+    container[PromptCatalogProtocol] = Singleton(
         lambda c: FilePromptCatalog()
     )
     
@@ -303,6 +313,34 @@ def configure_container() -> Container:
         lambda c: ProjectStatusEndpoint(
             get_project_status_use_case=c[GetProjectStatusUseCase],
             update_project_tracking_use_case=c[UpdateProjectTrackingUseCase],
+        )
+    )
+    
+    # Jira Report dependencies
+    container[JiraDataServiceInterface] = Singleton(
+        lambda c: JiraDataService(c[TaskManagerRepositoryInterface])
+    )
+    
+    container[JiraReportRepositoryInterface] = Singleton(
+        lambda c: JiraReportRepository()
+    )
+    
+    container[SchedulerServiceInterface] = Singleton(
+        lambda c: APSchedulerService()
+    )
+    
+    container[GenerateJiraReportUseCase] = Singleton(
+        lambda c: GenerateJiraReportUseCase(
+            jira_service=c[JiraDataServiceInterface],
+            report_repository=c[JiraReportRepositoryInterface],
+        )
+    )
+    
+    container[ScheduledReportUseCase] = Singleton(
+        lambda c: ScheduledReportUseCase(
+            report_use_case=c[GenerateJiraReportUseCase],
+            scheduler_service=c[SchedulerServiceInterface],
+            project_keys=["PARSCHAT", "PCT"],  # Configure as needed
         )
     )
     

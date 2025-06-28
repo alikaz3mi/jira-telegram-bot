@@ -495,3 +495,50 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error searching for deadline issues: {e}")
             return []
+
+    def search_issues(
+        self, 
+        jql: str,
+        start_at: int = 0,
+        max_results: int = 100,
+        expand: Optional[str] = None,
+    ) -> List[Issue]:
+        """
+        Search for issues using JQL.
+        
+        Args:
+            jql: JQL query string
+            start_at: Starting index for pagination
+            max_results: Maximum number of results to return
+            expand: Comma-separated list of fields to expand
+            
+        Returns:
+            List of matching Jira issues
+        """
+        try:
+            return self.jira.search_issues(
+                jql,
+                startAt=start_at,
+                maxResults=max_results,
+                expand=expand,
+            )
+        except Exception as e:
+            LOGGER.error(f"Error searching issues with JQL '{jql}': {e}")
+            return []
+
+    def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
+        """
+        Get a single issue with expanded fields.
+        
+        Args:
+            issue_key: The issue key
+            expand: Comma-separated list of fields to expand
+            
+        Returns:
+            Jira issue with expanded fields or None
+        """
+        try:
+            return self.jira.issue(issue_key, expand=expand)
+        except Exception as e:
+            LOGGER.error(f"Error getting issue '{issue_key}' with expand '{expand}': {e}")
+            return None

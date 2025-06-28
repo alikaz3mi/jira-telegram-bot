@@ -24,3 +24,35 @@ services:
     restart: always
     ports:
       - "2315:2315"
+
+  jira-report-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jira_report_scheduler
+    volumes:
+      - .:/app
+    command: >
+      python3 scripts/run_scheduled_reports.py
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+
+  postgres:
+    image: postgres:15
+    container_name: jira_postgres
+    environment:
+      POSTGRES_DB: jira_reports
+      POSTGRES_USER: jira_user
+      POSTGRES_PASSWORD: jira_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+
+volumes:
+  postgres_data:
