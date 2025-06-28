@@ -41,7 +41,7 @@ class GetProjectStatusUseCase(ProjectStatusInterface):
             List of project summaries
         """
         try:
-            # Get projects from task manager - use synchronous method
+            # Get projects from task manager - synchronous method
             projects = self.task_manager_repository.get_projects()
             
             # Filter by status if provided

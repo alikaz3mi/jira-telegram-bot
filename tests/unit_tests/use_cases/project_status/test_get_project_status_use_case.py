@@ -2,7 +2,7 @@
 
 import unittest
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from jira_telegram_bot.entities.api_schemas.project_status import (
     ProjectDetailResponse,
@@ -21,7 +21,7 @@ class TestGetProjectStatusUseCase(unittest.IsolatedAsyncioTestCase):
         try:
             self.task_manager_repository = AsyncMock()
             # Add required methods to the mock
-            self.task_manager_repository.get_projects = AsyncMock()
+            self.task_manager_repository.get_projects = Mock()  # Synchronous method
             self.task_manager_repository.get_project = AsyncMock()
             self.task_manager_repository.get_issues_by_status = AsyncMock()
             self.task_manager_repository.get_active_sprint = AsyncMock()

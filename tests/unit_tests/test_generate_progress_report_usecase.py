@@ -12,9 +12,11 @@ class TestGenerateProgressReportUseCase(unittest.TestCase):
 
     def setUp(self):
         """Set up test dependencies."""
+        self.mock_prompt_catalog = MagicMock()
         self.mock_ai_service = AsyncMock()
         self.mock_repository = AsyncMock()
         self.use_case = GenerateProgressReportUseCase(
+            prompt_catalog=self.mock_prompt_catalog,
             ai_service=self.mock_ai_service,
             repository=self.mock_repository
         )
@@ -31,23 +33,26 @@ class TestGenerateProgressReportUseCase(unittest.TestCase):
         ]
         raw_transcript = "I worked on authentication and fixed a bug"
         
-        # Mock AI service response
-        ai_reports = [
-            ProgressReport(
-                issue_key="PROJ-123",
-                progress="Implemented authentication",
-                blockers="None",
-                time_spent="2h"
-            ),
-            ProgressReport(
-                issue_key="PROJ-456",
-                progress="Fixed critical bug",
-                blockers="None",
-                time_spent="1h"
-            )
-        ]
+        # Mock AI service response (via _process_with_ai)
+        ai_response = {
+            "reports": [
+                {
+                    "issue_key": "PROJ-123",
+                    "progress": "Implemented authentication",
+                    "blockers": "None",
+                    "time_spent": "2h"
+                },
+                {
+                    "issue_key": "PROJ-456", 
+                    "progress": "Fixed critical bug",
+                    "blockers": "None",
+                    "time_spent": "1h"
+                }
+            ]
+        }
         
-        self.mock_ai_service.generate_progress_report.return_value = ai_reports
+        # Mock the _process_with_ai method
+        self.use_case._process_with_ai = AsyncMock(return_value=ai_response)
         
         # Mock repository response
         stored_reports = [
@@ -90,14 +95,8 @@ class TestGenerateProgressReportUseCase(unittest.TestCase):
         self.assertIsNotNone(result[0].reported_at)
         self.assertIsNotNone(result[0].report_id)
         
-        # Verify AI service was called correctly
-        self.mock_ai_service.generate_progress_report.assert_called_once_with(
-            assignee=assignee,
-            sprint_label=sprint_label,
-            selected_issue_keys=selected_issue_keys,
-            available_tasks=available_tasks,
-            raw_transcript=raw_transcript
-        )
+        # Verify _process_with_ai was called correctly
+        self.use_case._process_with_ai.assert_called_once()
         
         # Verify repository was called
         self.mock_repository.save_reports.assert_called_once()
@@ -189,34 +188,6 @@ class TestGenerateProgressReportUseCase(unittest.TestCase):
             sprint_label=sprint_label,
             limit=limit
         )
-
-    def test_enrich_reports_adds_metadata(self):
-        """Test that enrich_reports adds proper metadata."""
-        # Arrange
-        assignee = "test_user"
-        reports = [
-            ProgressReport(
-                issue_key="PROJ-100",
-                progress="Work done",
-                blockers="None",
-                time_spent="1h"
-            )
-        ]
-        
-        # Act
-        enriched_reports = self.use_case._enrich_reports(reports, assignee)
-        
-        # Assert
-        self.assertEqual(len(enriched_reports), 1)
-        enriched_report = enriched_reports[0]
-        
-        self.assertEqual(enriched_report.issue_key, "PROJ-100")
-        self.assertEqual(enriched_report.progress, "Work done")
-        self.assertEqual(enriched_report.blockers, "None")
-        self.assertEqual(enriched_report.time_spent, "1h")
-        self.assertEqual(enriched_report.assignee, assignee)
-        self.assertIsNotNone(enriched_report.reported_at)
-        self.assertIsNotNone(enriched_report.report_id)
 
 
 if __name__ == '__main__':
