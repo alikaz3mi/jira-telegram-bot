@@ -13,7 +13,7 @@ from jira_telegram_bot.entities.deadline_alert import DeadlineAlert
 from jira_telegram_bot.use_cases.send_deadline_alerts_use_case import SendDeadlineAlertsUseCase
 
 
-class TestSendDeadlineAlertsUseCase(unittest.TestCase):
+class TestSendDeadlineAlertsUseCase(unittest.IsolatedAsyncioTestCase):
     """Test cases for SendDeadlineAlertsUseCase."""
     
     def setUp(self):

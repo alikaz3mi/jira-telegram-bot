@@ -9,7 +9,7 @@ from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import
 )
 
 
-class TestUserAuthenticationInterface(unittest.TestCase):
+class TestUserAuthenticationInterface(unittest.IsolatedAsyncioTestCase):
     """Test cases for the UserAuthenticationInterface."""
 
     def setUp(self) -> None:

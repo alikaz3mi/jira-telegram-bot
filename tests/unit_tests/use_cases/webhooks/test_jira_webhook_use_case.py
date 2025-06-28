@@ -7,7 +7,7 @@ from jira_telegram_bot.entities.api_schemas import WebhookResponse
 from jira_telegram_bot.use_cases.webhooks.jira_webhook_use_case import JiraWebhookUseCase
 
 
-class TestJiraWebhookUseCase(unittest.TestCase):
+class TestJiraWebhookUseCase(unittest.IsolatedAsyncioTestCase):
     """Test suite for JiraWebhookUseCase."""
     
     def setUp(self):
