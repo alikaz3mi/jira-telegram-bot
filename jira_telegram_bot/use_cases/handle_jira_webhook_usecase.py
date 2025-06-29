@@ -4,9 +4,13 @@ from typing import Any
 from typing import Dict
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.jira_status_constants import JiraStatusConstants
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
+    TaskManagerRepositoryInterface,
 )
 from jira_telegram_bot.utils.data_store import get_mapping_by_issue_key
 
@@ -20,10 +24,12 @@ class HandleJiraWebhookUseCase:
 
     def __init__(self, 
                 jira_settings: JiraConnectionSettings,
-                 telegram_gateway: NotificationGatewayInterface
+                 telegram_gateway: NotificationGatewayInterface,
+                 jira_repository: TaskManagerRepositoryInterface
                  ):
         self.jira_settings = jira_settings
         self._telegram_gateway = telegram_gateway
+        self._jira_repository = jira_repository
 
     def run(self, webhook_body: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -162,6 +168,31 @@ class HandleJiraWebhookUseCase:
                 from_str = change_item.get("fromString", "")
                 to_str = change_item.get("toString", "")
                 if from_str and to_str:
+                    # Check permission for review to done transition
+                    if not self._check_transition_permission(issue_data, webhook_body, from_str, to_str):
+                        user_display_name = webhook_body.get("user", {}).get("displayName", "Unknown")
+                        self._revert_status_and_comment(issue_data["key"], from_str, user_display_name)
+                        
+                        msg = (
+                            f"**Jira Event - Action Reverted**\n"
+                            f"Issue *{issue_data['key']}* was reverted from '{to_str}' back to '{from_str}'.\n"
+                            f"Only the reporter or Jira administrators can move issues from Review to Done."
+                        )
+                        self._send_notifications(
+                            channel_chat_id,
+                            group_chat_id,
+                            reply_message_id,
+                            msg,
+                        )
+                        return {
+                            "status": "reverted",
+                            "message": f"Status change reverted for {issue_data['key']} due to insufficient permissions",
+                        }
+                    
+                    # If transitioning to done, update time estimate to zero
+                    if to_str.lower() == JiraStatusConstants.DONE.value.lower():
+                        self._update_time_estimate_to_zero(issue_data["key"])
+                    
                     msg = (
                         f"**Jira Event**\n"
                         f"Issue *{issue_data['key']}* moved from '{from_str}' to '{to_str}'."
@@ -178,6 +209,63 @@ class HandleJiraWebhookUseCase:
                     }
 
         return {"status": "ignored", "message": "Issue updated, no relevant event."}
+
+    def _check_transition_permission(self, issue_data: Dict[str, Any], webhook_body: Dict[str, Any], from_status: str, to_status: str) -> bool:
+        """
+        Check if the user has permission to transition from review to done.
+        Only the reporter or Jira admin can move from review to done.
+        """
+        if from_status.lower() != JiraStatusConstants.REVIEW.value.lower():
+            return True
+            
+        if to_status.lower() != JiraStatusConstants.DONE.value.lower():
+            return True
+            
+        user = webhook_body.get("user", {})
+        user_name = user.get("name", "")
+        
+        if not user_name:
+            return False
+            
+        issue_reporter = issue_data.get("fields", {}).get("reporter", {}).get("name", "")
+        
+        # Check if user is the reporter
+        if user_name == issue_reporter:
+            return True
+            
+        # Check if user is Jira admin
+        return self._jira_repository.is_user_jira_admin(user_name)
+
+    def _revert_status_and_comment(self, issue_key: str, original_status: str, user_display_name: str) -> None:
+        """
+        Revert the issue status back to the original status and add a comment.
+        """
+        try:
+            # Transition back to original status
+            self._jira_repository.transition_task(issue_key, original_status)
+            
+            # Add comment explaining the reversion
+            comment = (
+                f"Issue was reverted to '{original_status}' by system. "
+                f"Only the reporter or Jira administrators can move issues from Review to Done. "
+                f"User {user_display_name} does not have permission for this action."
+            )
+            self._jira_repository.add_comment(issue_key, comment)
+            
+            LOGGER.info(f"Reverted issue {issue_key} to {original_status} due to insufficient permissions")
+            
+        except Exception as e:
+            LOGGER.error(f"Error reverting status for issue {issue_key}: {e}")
+
+    def _update_time_estimate_to_zero(self, issue_key: str) -> None:
+        """
+        Update the remaining time estimate to zero when issue is moved to done.
+        """
+        try:
+            self._jira_repository.update_time_estimate(issue_key, "0h")
+            LOGGER.info(f"Updated remaining time estimate to 0h for issue {issue_key}")
+        except Exception as e:
+            LOGGER.error(f"Error updating time estimate for issue {issue_key}: {e}")
 
     def _send_notifications(
         self,

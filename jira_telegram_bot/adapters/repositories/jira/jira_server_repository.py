@@ -449,6 +449,45 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             LOGGER.error(f"Error fetching issue {issue_key}: {e}")
             return None
 
+    def is_user_jira_admin(self, username: str) -> bool:
+        """
+        Check if a user has Jira administrator privileges.
+        """
+        try:
+            user = self.jira.user(username)
+            groups = self.jira.groups_for_user(username)
+            admin_groups = ["jira-administrators", "jira-software-users", "administrators"]
+            return any(group.get("name", "").lower() in [g.lower() for g in admin_groups] for group in groups)
+        except Exception as e:
+            LOGGER.error(f"Error checking admin status for user {username}: {e}")
+            return False
+
+    def get_available_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+        """
+        Get available transitions for an issue.
+        """
+        try:
+            transitions = self.jira.transitions(issue_key)
+            return [{"id": t["id"], "name": t["name"]} for t in transitions]
+        except Exception as e:
+            LOGGER.error(f"Error getting transitions for issue {issue_key}: {e}")
+            return []
+
+    def update_time_estimate(self, issue_key: str, remaining_estimate: str) -> None:
+        """
+        Update the remaining time estimate for an issue.
+        """
+        try:
+            fields = {
+                "timetracking": {
+                    "remainingEstimate": remaining_estimate
+                }
+            }
+            self.update_issue_from_fields(issue_key, fields)
+            LOGGER.info(f"Updated remaining estimate for {issue_key} to {remaining_estimate}")
+        except Exception as e:
+            LOGGER.error(f"Error updating time estimate for issue {issue_key}: {e}")
+
     def get_issues_with_approaching_deadlines(
         self, 
         lookahead_days: int = 7,
@@ -465,35 +504,13 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             List of Jira issues with approaching deadlines
         """
         try:
-            from datetime import datetime, timedelta
-            
-            # Calculate date range
-            today = datetime.now().date()
-            future_date = today + timedelta(days=lookahead_days)
-            
-            # Build JQL query
-            jql_parts = [
-                "statusCategory != Done",
-                f"(duedate <= '{future_date}' OR customfield_10110 <= '{future_date}')",
-                "assignee is not EMPTY",
-            ]
-            
+            jql = f"duedate <= {lookahead_days}d AND resolution = Unresolved"
             if additional_jql:
-                jql_parts.append(f"({additional_jql})")
+                jql += f" AND {additional_jql}"
             
-            jql = " AND ".join(jql_parts)
-            jql += " ORDER BY duedate ASC, customfield_10110 ASC"
-            
-            LOGGER.info(f"Searching for deadline issues with JQL: {jql}")
-            
-            # Search for issues
-            issues = self.search_for_issues(jql, max_results=500)
-            
-            LOGGER.info(f"Found {len(issues)} issues with approaching deadlines")
-            return issues
-            
+            return self.search_for_issues(jql)
         except Exception as e:
-            LOGGER.error(f"Error searching for deadline issues: {e}")
+            LOGGER.error(f"Error fetching issues with approaching deadlines: {e}")
             return []
 
     def search_issues(
@@ -520,7 +537,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 jql,
                 startAt=start_at,
                 maxResults=max_results,
-                expand=expand,
+                expand=expand
             )
         except Exception as e:
             LOGGER.error(f"Error searching issues with JQL '{jql}': {e}")
@@ -540,5 +557,5 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         try:
             return self.jira.issue(issue_key, expand=expand)
         except Exception as e:
-            LOGGER.error(f"Error getting issue '{issue_key}' with expand '{expand}': {e}")
+            LOGGER.error(f"Error fetching issue {issue_key} with expand '{expand}': {e}")
             return None

@@ -119,6 +119,43 @@ class TaskManagerRepositoryInterface(ABC):
         pass
 
     @abstractmethod
+    def is_user_jira_admin(self, username: str) -> bool:
+        """
+        Check if a user has Jira administrator privileges.
+        
+        Args:
+            username: Jira username to check
+            
+        Returns:
+            True if user is Jira admin, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_available_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+        """
+        Get available transitions for an issue.
+        
+        Args:
+            issue_key: The issue key
+            
+        Returns:
+            List of transitions with id and name
+        """
+        pass
+
+    @abstractmethod
+    def update_time_estimate(self, issue_key: str, remaining_estimate: str) -> None:
+        """
+        Update the remaining time estimate for an issue.
+        
+        Args:
+            issue_key: The issue key
+            remaining_estimate: New remaining estimate (e.g., "0h", "2d")
+        """
+        pass
+
+    @abstractmethod
     def get_issue(self, issue_key: str) -> Optional[Issue]:
         pass
 

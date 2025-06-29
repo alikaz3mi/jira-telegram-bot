@@ -259,6 +259,7 @@ def configure_container() -> Container:
         lambda c: HandleJiraWebhookUseCase(
             jira_settings=c[JiraConnectionSettings],
             telegram_gateway=c[NotificationGatewayInterface],
+            jira_repository=c[TaskManagerRepositoryInterface],
         )
     )
     
