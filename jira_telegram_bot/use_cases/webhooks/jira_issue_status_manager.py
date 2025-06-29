@@ -70,6 +70,8 @@ class JiraIssueStatusManager:
         Returns:
             True if time estimate should be updated
         """
+        if not to_status:
+            return False
         return to_status.lower() == JiraStatusConstants.DONE.value.lower()
     
     def _build_reversion_comment(self, original_status: str, user_display_name: str) -> str:
