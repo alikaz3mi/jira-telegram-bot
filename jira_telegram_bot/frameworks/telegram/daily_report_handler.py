@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CommandHandler, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import SpeechProcessorInterface
+from jira_telegram_bot.entities.jira.issue import JiraIssue
 from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
 from jira_telegram_bot.use_cases.jira.get_sprint_issues_usecase import GetSprintIssuesUseCase
 
