@@ -80,6 +80,10 @@ from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_r
 from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
 from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface import ProgressReportRepositoryInterface
 
+# User story generation imports
+from jira_telegram_bot.use_cases.ai_agents.generate_user_story import GenerateUserStoryUseCase as AIGenerateUserStoryUseCase
+from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
+
 # Jira Report imports
 from jira_telegram_bot.adapters.services.jira_data_service import JiraDataService
 from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
@@ -185,6 +189,14 @@ def configure_container() -> Container:
         lambda c: FilePromptCatalog()
     )
     
+    # AI Agent Use Cases
+    container[AIGenerateUserStoryUseCase] = Singleton(
+        lambda c: AIGenerateUserStoryUseCase(
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
+        )
+    )
+    
     container[UserConfigInterface] = Singleton(
         lambda c: UserConfig(
             user_config_path=str(data_dir / "storage" / "user_config.json")
@@ -230,6 +242,13 @@ def configure_container() -> Container:
             prompt_catalog=c[PromptCatalogProtocol],
             ai_service=c[AIServiceProtocol],
             repository=c[ProgressReportRepositoryInterface]
+        )
+    )
+    
+    # User story generation use case (wrapper)
+    container[GenerateUserStoryUseCase] = Singleton(
+        lambda c: GenerateUserStoryUseCase(
+            ai_generate_user_story=c[AIGenerateUserStoryUseCase],
         )
     )
 

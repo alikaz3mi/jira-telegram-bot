@@ -3,7 +3,6 @@
 # shellcheck disable=SC1091
 source activate base
 
-cd /home/ali/project/jirabot || exit
 conda activate base
 
 # Run the new scheduled report service

@@ -41,18 +41,18 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
 
-  postgres:
-    image: postgres:15
-    container_name: jira_postgres
-    environment:
-      POSTGRES_DB: jira_reports
-      POSTGRES_USER: jira_user
-      POSTGRES_PASSWORD: jira_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: always
+  # postgres:
+  #   image: postgres:15
+  #   container_name: jira_postgres
+  #   environment:
+  #     POSTGRES_DB: jira_reports
+  #     POSTGRES_USER: jira_user
+  #     POSTGRES_PASSWORD: jira_password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   restart: always
 
 volumes:
   postgres_data:

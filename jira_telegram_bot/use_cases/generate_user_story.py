@@ -1,23 +1,53 @@
 from __future__ import annotations
 
+from jira_telegram_bot.entities.ai_agent_models.generate_user_story import GenerateUserStoryInput
 from jira_telegram_bot.entities.task import UserStory
-from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
+from jira_telegram_bot.entities.user_story_generation_request import UserStoryGenerationRequest
+from jira_telegram_bot.use_cases.ai_agents.generate_user_story_usecase import GenerateUserStoryUseCase as AIGenerateUserStoryUseCase
 
 
 class GenerateUserStoryUseCase:
     """
-    Use case for creating a user story.
+    Use case for creating a user story using AI agents.
     """
 
-    def __init__(self, story_generator: StoryGenerator):
-        self.story_generator = story_generator
+    def __init__(self, ai_generate_user_story: AIGenerateUserStoryUseCase):
+        """Initialize with AI agent use case.
+        
+        Args:
+            ai_generate_user_story: AI agent use case for generating user stories.
+        """
+        self.ai_generate_user_story = ai_generate_user_story
 
-    async def __call__(self, raw_text: str, project: str) -> UserStory:
+    async def __call__(self, request: UserStoryGenerationRequest) -> UserStory:
+        """Generate a user story from the provided request.
+        
+        Args:
+            request: User story generation request entity.
+            
+        Returns:
+            Generated user story.
         """
-        Generate a user story from raw text and project name.
-        """
-        user_story = await self.story_generator.generate(
-            raw_text=raw_text,
-            project=project,
+        # Create input for AI agent
+        input_data = GenerateUserStoryInput(
+            raw_text=request.raw_text,
+            project_key=request.project,
+            project_context=request.product_area,
         )
-        return user_story
+        
+        # Execute AI agent use case
+        result = await self.ai_generate_user_story.execute(input_data)
+        
+        # Convert AI result to UserStory entity
+        return UserStory(
+            project_key=request.project,
+            summary=result.user_story.summary,
+            description=result.user_story.description,
+            components=result.user_story.components,
+            labels=result.user_story.labels,
+            story_points=float(result.user_story.story_points or 3),
+            priority=result.user_story.priority,
+            task_type="Story",
+            epic_link=result.user_story.epic_link,
+            assignee=result.user_story.assignee_suggestion,
+        )
