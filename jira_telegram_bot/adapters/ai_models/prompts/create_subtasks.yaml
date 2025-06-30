@@ -45,15 +45,13 @@ prompt: |
 
 # ── response schema for StructuredOutputParser ─────────────────────────────
 schemas:
-  - name: subtasks
+  - name: result
     type: json
     description: >
-      Array of subtask objects. Each subtask has:
-      summary (string),
-      description (string),
-      story_points (number between 0.5-8),
-      component (string),
-      assignee (string, optional)
+      Object containing:
+      subtasks (array): List of subtask objects, each with summary (string), description (string), story_points (float 0.5-8), component (string), assignee (string), priority (string), acceptance_criteria (array of strings)
+      total_story_points (float): Sum of all subtask story points
+      components_involved (array): List of unique components/departments involved
 
 # ── optional helper sections ───────────────────────────────────────────────
 input_variables:             # what the template expects

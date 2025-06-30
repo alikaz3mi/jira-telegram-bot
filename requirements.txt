@@ -26,4 +26,4 @@ jdatetime==5.2.0
 croniter==6.0.0
 apscheduler~=3.11.0
 psycopg2-binary==2.9.10
---no-deps chromatrace==0.2.11
+chromatrace==0.2.13

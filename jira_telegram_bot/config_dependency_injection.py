@@ -84,6 +84,10 @@ from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface
 from jira_telegram_bot.use_cases.ai_agents.generate_user_story import GenerateUserStoryUseCase as AIGenerateUserStoryUseCase
 from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
 
+# Story decomposition and subtask creation imports
+from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecompositionUseCase
+from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
+
 # Jira Report imports
 from jira_telegram_bot.adapters.services.jira_data_service import JiraDataService
 from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
@@ -197,6 +201,20 @@ def configure_container() -> Container:
         )
     )
     
+    container[StoryDecompositionUseCase] = Singleton(
+        lambda c: StoryDecompositionUseCase(
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
+        )
+    )
+    
+    container[CreateSubtasksUseCase] = Singleton(
+        lambda c: CreateSubtasksUseCase(
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
+        )
+    )
+    
     container[UserConfigInterface] = Singleton(
         lambda c: UserConfig(
             user_config_path=str(data_dir / "storage" / "user_config.json")
@@ -250,6 +268,21 @@ def configure_container() -> Container:
         lambda c: GenerateUserStoryUseCase(
             ai_generate_user_story=c[AIGenerateUserStoryUseCase],
         )
+    )
+    
+    # Bind StoryGenerator interface to the wrapper use case
+    container[StoryGenerator] = Singleton(
+        lambda c: c[GenerateUserStoryUseCase]
+    )
+    
+    # Bind StoryDecompositionInterface to the AI agent use case
+    container[StoryDecompositionInterface] = Singleton(
+        lambda c: c[StoryDecompositionUseCase]
+    )
+    
+    # Bind SubtaskCreationInterface to the AI agent use case
+    container[SubtaskCreationInterface] = Singleton(
+        lambda c: c[CreateSubtasksUseCase]
     )
 
     # B) Bind basic USE CASES
