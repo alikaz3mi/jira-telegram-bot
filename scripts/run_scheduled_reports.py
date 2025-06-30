@@ -30,7 +30,7 @@ class ScheduledReportRunner:
             
             # Setup scheduled reports with 30-minute intervals
             await self._scheduled_report_use_case.setup_scheduled_reports(
-                interval_minutes=30
+                interval_minutes=1
             )
             
             # Start the scheduler

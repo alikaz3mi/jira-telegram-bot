@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: telegram_bot
+    image: jira_telegram_bot:v2
     volumes:
       - .:/app
     command: >
@@ -35,8 +36,6 @@ services:
     command: >
       python3 scripts/run_scheduled_reports.py
     restart: always
-    depends_on:
-      - postgres
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
