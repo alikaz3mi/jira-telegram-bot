@@ -5,6 +5,7 @@ from datetime import datetime
 from datetime import timedelta
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import Mock
 from unittest.mock import patch
 
 from jira import Issue
@@ -18,10 +19,10 @@ class TestSendDeadlineAlertsUseCase(unittest.IsolatedAsyncioTestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.task_manager_repository = AsyncMock()
-        self.user_config_repository = AsyncMock()
-        self.telegram_notifier = AsyncMock()
-        self.notification_log_repository = AsyncMock()
+        self.task_manager_repository = Mock()  # Sync methods
+        self.user_config_repository = Mock()   # Sync methods  
+        self.telegram_notifier = AsyncMock()   # Async methods
+        self.notification_log_repository = AsyncMock()  # Async methods
         
         self.use_case = SendDeadlineAlertsUseCase(
             task_manager_repository=self.task_manager_repository,
@@ -43,27 +44,40 @@ class TestSendDeadlineAlertsUseCase(unittest.IsolatedAsyncioTestCase):
         """Create a mock Jira issue."""
         issue = MagicMock(spec=Issue)
         issue.key = key
-        issue.fields.summary = summary
-        issue.fields.status.name = status
-        issue.fields.project.key = project_key
+        
+        # Create fields mock properly
+        fields_mock = MagicMock()
+        fields_mock.summary = summary
+        fields_mock.duedate = due_date
+        fields_mock.customfield_10110 = None  # Target end field
+        
+        # Set up status
+        status_mock = MagicMock()
+        status_mock.name = status
+        fields_mock.status = status_mock
+        
+        # Set up project
+        project_mock = MagicMock()
+        project_mock.key = project_key
+        fields_mock.project = project_mock
         
         # Set up assignee
         if assignee:
-            issue.fields.assignee = MagicMock()
-            issue.fields.assignee.name = assignee
+            assignee_mock = MagicMock()
+            assignee_mock.name = assignee
+            fields_mock.assignee = assignee_mock
         else:
-            issue.fields.assignee = None
+            fields_mock.assignee = None
         
         # Set up priority
         if priority:
-            issue.fields.priority = MagicMock()
-            issue.fields.priority.name = priority
+            priority_mock = MagicMock()
+            priority_mock.name = priority
+            fields_mock.priority = priority_mock
         else:
-            issue.fields.priority = None
+            fields_mock.priority = None
         
-        # Set up due date
-        issue.fields.duedate = due_date
-        issue.fields.customfield_10110 = None  # Target end field
+        issue.fields = fields_mock
         
         # Mock issue URL
         issue._options = {"server": "https://test.atlassian.net"}
