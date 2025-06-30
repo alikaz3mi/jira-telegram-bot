@@ -1,12 +1,18 @@
-FROM python:3.11.11-slim
+FROM python:3.11.11-slim as builder
 
-RUN apt-get update && apt-get install -y curl ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    build-essential \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY requirements.txt setup.py ./
+COPY jira_telegram_bot/__init__.py ./jira_telegram_bot/
 
-COPY . /app
 
-
+RUN pip install setuptools
 RUN pip install --no-cache-dir -e .
 RUN mkdir -p /app/data/storage && \
     for year in {1404..1407}; do \
@@ -15,5 +21,4 @@ RUN mkdir -p /app/data/storage && \
     done
 
 
-# Run bot.py when the container launches
 CMD ["/bin/bash"]

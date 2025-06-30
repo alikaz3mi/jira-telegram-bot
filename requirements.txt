@@ -26,4 +26,11 @@ jdatetime==5.2.0
 croniter==6.0.0
 apscheduler~=3.11.0
 psycopg2-binary==2.9.10
-chromatrace==0.2.13
+# --no-deps chromatrace==0.2.13
+django==5.1.1
+asyncio==3.4.3
+socketio==0.2.1
+python-socketio==5.11.4
+python-socketio[client]==5.11.4
+python-multipart==0.0.10
+httpx==0.27.2
