@@ -288,6 +288,7 @@ class JiraDataService(JiraDataServiceInterface):
             return None
         
         try:
-            return pd.to_datetime(date_str)
+            parsed_dt = pd.to_datetime(date_str)
+            return parsed_dt.to_pydatetime() if hasattr(parsed_dt, 'to_pydatetime') else parsed_dt
         except Exception:
             return None

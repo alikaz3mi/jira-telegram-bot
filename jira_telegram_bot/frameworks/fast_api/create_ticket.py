@@ -31,13 +31,15 @@ from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
 )
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
 from jira_telegram_bot.use_cases.ai_agents.create_ticketing_issue import (
     parse_jira_prompt,
 )
 
 
+JIRA_SETTINGS = JiraConnectionSettings()
+TELEGRAM_SETTINGS = TelegramConnectionSettings()
 app = FastAPI()
 telegram_post_data_store = TelegramPostDataStore()
 jira_repository = JiraServerRepository(JIRA_SETTINGS)
@@ -526,7 +528,6 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
             f"No Jira issue found for original message_id={original_message_id}",
         )
         return {"status": "error", "message": "No matching Jira issue found"}
-you
 
 async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
     """Handle comments in group chats."""

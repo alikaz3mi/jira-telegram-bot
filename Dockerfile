@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     build-essential \
     python3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -12,8 +13,11 @@ COPY requirements.txt setup.py ./
 COPY jira_telegram_bot/__init__.py ./jira_telegram_bot/
 
 
-RUN pip install setuptools
 RUN pip install --no-cache-dir -e .
+# RUN pip install -r requirements.txt
+RUN pip install --no-deps  chromatrace==0.2.13
+# RUN pip install setuptools
+# RUN pip install --no-deps -e .
 RUN mkdir -p /app/data/storage && \
     for year in {1404..1407}; do \
         curl "https://persian-calendar-api.sajjadth.workers.dev/?year=$year" -o "/app/data/storage/$year.json" && \

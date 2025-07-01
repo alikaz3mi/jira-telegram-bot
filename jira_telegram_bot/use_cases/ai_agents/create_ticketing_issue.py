@@ -6,7 +6,9 @@ from langchain.output_parsers import ResponseSchema, StructuredOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 
-from jira_telegram_bot.settings import OPENAI_SETTINGS
+from jira_telegram_bot.settings.openai_settings import OpenAISettings
+
+OPENAI_SETTINGS = OpenAISettings()
 
 
 def parse_jira_prompt(content: str) -> Dict[str, str]:
