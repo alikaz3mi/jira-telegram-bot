@@ -40,7 +40,6 @@ from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings, JiraConnectionType
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
-from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
 from jira_telegram_bot.settings.telegram_settings import (
     TelegramWebhookConnectionSettings,
@@ -140,7 +139,6 @@ def configure_container() -> Container:
     container[GitlabSettings] = Singleton(lambda: GitlabSettings())
     container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     container[JiraBoardSettings] = Singleton(lambda: JiraBoardSettings())
-    container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     
     # Add GoogleSheetsSettings if it exists
     try:
