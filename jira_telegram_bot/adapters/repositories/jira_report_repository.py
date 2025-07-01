@@ -24,7 +24,7 @@ from jira_telegram_bot.entities.jira_report import JiraIssueDetail
 from jira_telegram_bot.entities.jira_report import LinkedIssue
 from jira_telegram_bot.entities.jira_report import ProjectReport
 from jira_telegram_bot.entities.jira_report import WorklogEntry
-from jira_telegram_bot.settings import POSTGRES_SETTINGS
+from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.use_cases.interfaces.jira_report_repository_interface import JiraReportRepositoryInterface
 
 Base = declarative_base()
@@ -66,19 +66,20 @@ class JiraTaskModel(Base):
 class JiraReportRepository(JiraReportRepositoryInterface):
     """PostgreSQL implementation of Jira report repository."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: PostgresSettings) -> None:
         """Initialize the repository with database connection."""
+        self.settings = settings
         self._engine = self._create_engine()
         self._session_maker = sessionmaker(bind=self._engine)
         self._ensure_schema_exists()
 
     def _create_engine(self):
         """Create SQLAlchemy engine with PostgreSQL connection."""
-        encoded_password = urllib.parse.quote_plus(POSTGRES_SETTINGS.db_password)
+        encoded_password = urllib.parse.quote_plus(self.settings.db_password)
         database_url = (
-            f"postgresql://{POSTGRES_SETTINGS.db_user}:"
-            f"{encoded_password}@{POSTGRES_SETTINGS.db_host}:"
-            f"{POSTGRES_SETTINGS.db_port}/{POSTGRES_SETTINGS.db_name}"
+            f"postgresql://{self.settings.db_user}:"
+            f"{encoded_password}@{self.settings.db_host}:"
+            f"{self.settings.db_port}/{self.settings.db_name}"
         )
         return create_engine(database_url)
 

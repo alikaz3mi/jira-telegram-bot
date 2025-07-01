@@ -38,6 +38,7 @@ from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
 from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings, JiraConnectionType
+from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
@@ -139,6 +140,7 @@ def configure_container() -> Container:
     container[GitlabSettings] = Singleton(lambda: GitlabSettings())
     container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     container[JiraBoardSettings] = Singleton(lambda: JiraBoardSettings())
+    container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     
     # Add GoogleSheetsSettings if it exists
     try:
@@ -375,7 +377,7 @@ def configure_container() -> Container:
     )
     
     container[JiraReportRepositoryInterface] = Singleton(
-        lambda c: JiraReportRepository()
+        lambda c: JiraReportRepository(c[PostgresSettings])
     )
     
     container[SchedulerServiceInterface] = Singleton(
