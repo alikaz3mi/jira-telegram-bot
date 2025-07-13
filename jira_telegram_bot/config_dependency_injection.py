@@ -147,12 +147,9 @@ def configure_container() -> Container:
     container[GitlabSettings] = Singleton(lambda: GitlabSettings())
     container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     container[JiraBoardSettings] = Singleton(lambda: JiraBoardSettings())
+    container[GoogleSheetsConnectionSettings] = Singleton(lambda: GoogleSheetsConnectionSettings())
     
-    # Add GoogleSheetsSettings if it exists
     try:
-        container[GoogleSheetsConnectionSettings] = Singleton(lambda: GoogleSheetsConnectionSettings())
-
-        # Google Sheets Client
         container[GoogleSheetClient] = Singleton(
             lambda: GoogleSheetClient(container[GoogleSheetsConnectionSettings])
         )
@@ -167,6 +164,7 @@ def configure_container() -> Container:
     jira_mode = os.environ.get("JIRA_MODE", "").lower()
     
     if jira_mode == "mock":
+        # TODO: remove this part and jira mode too. 
         # Import here to avoid circular imports
         from jira_telegram_bot.adapters.repositories.jira.mock_jira_repository import MockJiraRepository
         container[TaskManagerRepositoryInterface] = Singleton(lambda: MockJiraRepository())
@@ -412,7 +410,7 @@ def configure_container() -> Container:
     
     # Current Stories dependencies
     container[CurrentStoriesServiceInterface] = Singleton(
-        lambda c: CurrentStoriesService(c[GoogleSheetsConnectionSettings])
+        lambda c: CurrentStoriesService(c[GoogleSheetsConnectionSettings], c[GoogleSheetClient])
     )
     
     container[XlsxReportServiceInterface] = Singleton(

@@ -73,6 +73,7 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         # Authenticate using the service account JSON token.
         try:
             self.settings = settings
+            LOGGER.info(f"settings = {self.settings}")
             self.credentials = ServiceAccountCredentials.from_json_keyfile_name(
                 settings.token_path,
                 scope,
@@ -170,316 +171,277 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             LOGGER.error(f"Error writing to worksheet '{worksheet_name}': {e}")
             raise
 
-
-class SheetRepository:
-    """Repository for interacting with Google Sheets data."""
-
-    def __init__(self, sheet_client: ISheetClient):
-        """
-        Initialize the repository with a sheet client.
-
-        Args:
-            sheet_client: An implementation of ISheetClient
-        """
-        self.sheet_client = sheet_client
-
-    def get_sheet_records(
-        self,
+    async def add_sheet_enhancements(
+        self, 
         sheet_id: str,
-        worksheet_index: int = 0,
-    ) -> List[Dict[str, Any]]:
-        """
-        Retrieve all records from a worksheet by index.
-
-        Args:
-            sheet_id: The ID of the Google Sheet
-            worksheet_index: Index of the worksheet (default: 0)
-
-        Returns:
-            List of records as dictionaries
-        """
-        try:
-            worksheet = self.sheet_client.get_worksheet(sheet_id, worksheet_index)
-            records = worksheet.get_all_records()
-            LOGGER.debug(
-                f"Retrieved {len(records)} records from worksheet index {worksheet_index}",
-            )
-            return records
-        except Exception as e:
-            LOGGER.error(f"Error retrieving sheet records: {e}")
-            return []
-
-    def get_assignment_records(
-        self,
-        sheet_id: str,
-        worksheet_name: str = "Assignments",
-    ) -> List[Dict[str, Any]]:
-        """
-        Get records from the assignments worksheet in the specified sheet.
-
-        Args:
-            sheet_id: The ID of the Google Sheet
-            worksheet_name: Name of the worksheet containing assignments (default: "Assignments")
-
-        Returns:
-            List of assignment records
-        """
-        try:
-            if isinstance(self.sheet_client, GoogleSheetClient):
-                # Directly use client property if available
-                worksheet = self.sheet_client.get_worksheet_by_name(
-                    sheet_id,
-                    worksheet_name,
-                )
-            else:
-                # Fallback for other implementations
-                spreadsheet = self.sheet_client.client.open_by_key(sheet_id)
-                worksheet = spreadsheet.worksheet(worksheet_name)
-
-            records = worksheet.get_all_records()
-            LOGGER.debug(
-                f"Retrieved {len(records)} assignment records from worksheet '{worksheet_name}'",
-            )
-            return records
-        except Exception as e:
-            LOGGER.error(f"Error fetching assignment records: {e}")
-            return []
-
-    def create_jira_tasks_from_assignments(
-        self,
-        sheet_id: str,
-        jira_repository: JiraServerRepository,
-        worksheet_name: str = "Assignments",
-        project_key: Optional[str] = None,
-        default_task_type: str = "Task",
-    ) -> List[str]:
-        """
-        Create Jira tasks from assignments in the Google Sheet.
-
-        Args:
-            sheet_id: The ID of the Google Sheet
-            jira_repository: JiraRepository instance to create tasks
-            worksheet_name: Name of the worksheet containing assignments
-            project_key: Optional project key override
-            default_task_type: Default task type if not specified in sheet
-
-        Returns:
-            List of created issue keys
-        """
-        assignments = self.get_assignment_records(sheet_id, worksheet_name)
-        created_issues = []
-
-        if not assignments:
-            LOGGER.warning(f"No assignments found in worksheet '{worksheet_name}'")
-            return []
-
-        LOGGER.info(f"Found {len(assignments)} assignments to process")
-
-        for idx, assignment in enumerate(assignments):
-            # Skip rows that are marked as "Skip" or don't have required fields
-            if (
-                not assignment.get("Summary")
-                or assignment.get("Skip", "").lower() == "yes"
-            ):
-                continue
-
-            task_data = self._create_task_data(
-                assignment,
-                project_key,
-                default_task_type,
-            )
-
-            # Set sprint if available
-            if assignment.get("Sprint") and task_data.project_key:
-                self._set_sprint_for_task(
-                    task_data,
-                    jira_repository,
-                    assignment.get("Sprint"),
-                )
-
-            # Create the Jira task
-            try:
-                LOGGER.info(
-                    f"Creating task {idx+1}/{len(assignments)}: {task_data.summary}",
-                )
-                issue = jira_repository.create_task(task_data)
-                created_issues.append(issue.key)
-                LOGGER.info(f"Created issue {issue.key}")
-            except Exception as e:
-                LOGGER.error(f"Error creating task '{task_data.summary}': {e}")
-
-        return created_issues
-
-    def _create_task_data(
-        self,
-        assignment: Dict[str, Any],
-        project_key: Optional[str] = None,
-        default_task_type: str = "Task",
-    ) -> TaskData:
-        """
-        Create a TaskData object from an assignment record.
-
-        Args:
-            assignment: Assignment record from Google Sheet
-            project_key: Optional project key override
-            default_task_type: Default task type
-
-        Returns:
-            TaskData object
-        """
-        task_data = TaskData(
-            project_key=project_key or assignment.get("Project"),
-            summary=assignment.get("Summary", ""),
-            description=assignment.get("Description", ""),
-            components=self._split_comma_separated(assignment.get("Component", "")),
-            task_type=assignment.get("Type", default_task_type),
-            story_points=float(assignment.get("Story Points", 0))
-            if assignment.get("Story Points")
-            else None,
-            assignee=assignment.get("Assignee"),
-            priority=assignment.get("Priority"),
-            epic_link=assignment.get("Epic"),
-            labels=self._split_comma_separated(assignment.get("Labels", "")),
-        )
-
-        # Set release/fix version if available
-        if assignment.get("Release"):
-            task_data.release = assignment.get("Release")
-
-        return task_data
-
-    def _set_sprint_for_task(
-        self,
-        task_data: TaskData,
-        jira_repository: JiraServerRepository,
-        sprint_name: str,
+        worksheet_name: str, 
+        data_rows: int
     ):
-        """
-        Set the sprint ID for a task based on sprint name.
-
+        """Add enhancements like filters, conditional formatting, and freeze panes.
+        
         Args:
-            task_data: The TaskData object to update
-            jira_repository: JiraRepository instance
-            sprint_name: Name of the sprint to find
+            sheet_id: The Google Sheet ID
+            worksheet_name: Name of the worksheet
+            data_rows: Number of data rows
         """
-        board_id = jira_repository.get_board_id(task_data.project_key)
-        if board_id:
-            sprints = jira_repository.get_sprints(board_id)
-            for sprint in sprints:
-                if sprint.name == sprint_name:
-                    task_data.sprint_id = sprint.id
-                    LOGGER.debug(
-                        f"Found sprint ID {sprint.id} for sprint '{sprint_name}'",
-                    )
-                    break
-            if not task_data.sprint_id:
-                LOGGER.warning(
-                    f"Could not find sprint '{sprint_name}' for project {task_data.project_key}",
-                )
+        try:
+            # Get the worksheet
+            spreadsheet = self.client.open_by_key(sheet_id)
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            
+            # Prepare batch requests
+            requests = []
+            
+            # 1. Freeze header row
+            requests.append({
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": worksheet.id,
+                        "gridProperties": {
+                            "frozenRowCount": 1
+                        }
+                    },
+                    "fields": "gridProperties.frozenRowCount"
+                }
+            })
+            
+            # 2. Add auto filter
+            requests.append({
+                "setBasicFilter": {
+                    "filter": {
+                        "range": {
+                            "sheetId": worksheet.id,
+                            "startRowIndex": 0,
+                            "endRowIndex": data_rows + 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 13
+                        }
+                    }
+                }
+            })
+            
+            # 3. Add conditional formatting for Story Status
+            self._add_status_conditional_formatting(requests, worksheet.id, data_rows)
+            
+            # 4. Add conditional formatting for Priority
+            self._add_priority_conditional_formatting(requests, worksheet.id, data_rows)
+            
+            # 5. Create filter views for common groupings
+            self._create_filter_views(requests, worksheet.id, data_rows)
+            
+            # Execute all requests
+            if requests:
+                spreadsheet.batch_update({"requests": requests})
+                LOGGER.info(f"Added enhancements to worksheet: {worksheet_name}")
+                
+        except Exception as e:
+            LOGGER.warning(f"Failed to add sheet enhancements: {e}")
 
-    def _split_comma_separated(self, value: str) -> List[str]:
-        """
-        Split a comma-separated string into a list of trimmed values.
-
+    def _add_status_conditional_formatting(self, requests: list, sheet_id: int, data_rows: int):
+        """Add conditional formatting for Story Status column.
+        
         Args:
-            value: Comma-separated string
-
-        Returns:
-            List of trimmed values
+            requests: List to append requests to
+            sheet_id: ID of the worksheet
+            data_rows: Number of data rows
         """
-        return [item.strip() for item in value.split(",") if item.strip()]
+        status_colors = {
+            "Done": {"red": 0.8, "green": 1, "blue": 0.8},       # Light green
+            "In Progress": {"red": 1, "green": 1, "blue": 0.8},  # Light yellow
+            "To Do": {"red": 1, "green": 0.8, "blue": 0.8},      # Light red
+            "Blocked": {"red": 1, "green": 0.6, "blue": 0.6}     # Red
+        }
+        
+        for i, (status, color) in enumerate(status_colors.items()):
+            requests.append({
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{
+                            "sheetId": sheet_id,
+                            "startRowIndex": 1,
+                            "endRowIndex": data_rows + 1,
+                            "startColumnIndex": 2,  # Story Status column
+                            "endColumnIndex": 3
+                        }],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "TEXT_EQ",
+                                "values": [{"userEnteredValue": status}]
+                            },
+                            "format": {
+                                "backgroundColor": color
+                            }
+                        }
+                    },
+                    "index": i
+                }
+            })
 
+    def _add_priority_conditional_formatting(self, requests: list, sheet_id: int, data_rows: int):
+        """Add conditional formatting for Priority column.
+        
+        Args:
+            requests: List to append requests to
+            sheet_id: ID of the worksheet
+            data_rows: Number of data rows
+        """
+        priority_colors = {
+            "Highest": {"red": 0.9, "green": 0.2, "blue": 0.2},  # Dark red
+            "High": {"red": 1, "green": 0.5, "blue": 0.5},       # Light red
+            "Medium": {"red": 1, "green": 1, "blue": 0.5},       # Yellow
+            "Low": {"red": 0.8, "green": 1, "blue": 0.8},        # Light green
+            "Lowest": {"red": 0.6, "green": 1, "blue": 0.6}      # Green
+        }
+        
+        status_color_count = 4  # Number of status colors to offset priority colors
+        
+        for i, (priority, color) in enumerate(priority_colors.items()):
+            requests.append({
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{
+                            "sheetId": sheet_id,
+                            "startRowIndex": 1,
+                            "endRowIndex": data_rows + 1,
+                            "startColumnIndex": 4,  # Priority column
+                            "endColumnIndex": 5
+                        }],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "TEXT_EQ",
+                                "values": [{"userEnteredValue": priority}]
+                            },
+                            "format": {
+                                "backgroundColor": color
+                            }
+                        }
+                    },
+                    "index": i + status_color_count
+                }
+            })
 
-# --- Dummy Classes for Testing Purposes ---
+    def _create_filter_views(self, requests: list, sheet_id: int, data_rows: int):
+        """Create predefined filter views for common use cases.
+        
+        Args:
+            requests: List to append filter view requests to
+            sheet_id: ID of the worksheet
+            data_rows: Number of data rows
+        """
+        # Filter view 1: In Progress stories
+        requests.append({
+            "addFilterView": {
+                "filter": {
+                    "title": "📋 In Progress Stories",
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": data_rows + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 13
+                    },
+                    "criteria": {
+                        2: {  # Story Status column
+                            "condition": {
+                                "type": "TEXT_EQ",
+                                "values": [{"userEnteredValue": "In Progress"}]
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        
+        # Filter view 2: High Priority stories
+        requests.append({
+            "addFilterView": {
+                "filter": {
+                    "title": "🔥 High Priority Stories",
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": data_rows + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 13
+                    },
+                    "criteria": {
+                        4: {  # Priority column
+                            "condition": {
+                                "type": "ONE_OF_LIST",
+                                "values": [
+                                    {"userEnteredValue": "Highest"},
+                                    {"userEnteredValue": "High"}
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        
+        # Filter view 3: Stories with remaining work
+        requests.append({
+            "addFilterView": {
+                "filter": {
+                    "title": "⏱️ Stories with Remaining Work",
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": data_rows + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 13
+                    },
+                    "criteria": {
+                        3: {  # Remaining hours column
+                            "condition": {
+                                "type": "NUMBER_GREATER",
+                                "values": [{"userEnteredValue": "0"}]
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        
+        # Filter view 4: Recently created stories (less than 2 weeks)
+        requests.append({
+            "addFilterView": {
+                "filter": {
+                    "title": "🆕 Recently Created Stories",
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": data_rows + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 13
+                    },
+                    "criteria": {
+                        12: {  # Weeks passed column
+                            "condition": {
+                                "type": "NUMBER_LESS_THAN_EQ",
+                                "values": [{"userEnteredValue": "2"}]
+                            }
+                        }
+                    }
+                }
+            }
+        })
 
-
-class DummyWorksheet:
-    def get_all_records(self):
-        # Returns dummy data for testing.
-        return [{"Name": "Alice", "Age": 30}, {"Name": "Bob", "Age": 25}]
-
-
-class DummySheetClient(ISheetClient):
-    def get_worksheet(self, sheet_id: str, worksheet_index: int = 0):
-        # Returns a dummy worksheet instead of connecting to Google Sheets.
-        return DummyWorksheet()
-
-    def get_worksheet_by_name(self, sheet_id: str, worksheet_name: str):
-        # Returns a dummy worksheet instead of connecting to Google Sheets.
-        return DummyWorksheet()
-
-    @property
-    def client(self):
-        return self
-
-
-# --- Unit Tests ---
-
-
-class TestSheetRepository(unittest.TestCase):
-    def test_get_sheet_records(self):
-        dummy_client = DummySheetClient()
-        repository = SheetRepository(dummy_client)
-        records = repository.get_sheet_records("dummy_sheet_id")
-        expected = [{"Name": "Alice", "Age": 30}, {"Name": "Bob", "Age": 25}]
-        self.assertEqual(records, expected)
-
-
-# --- Main Function for Actual Usage ---
-
-
-async def create_tasks_from_sheet(
-    jira_repository, 
-    sheet_client: GoogleSheetClient, 
-    sheet_id: str, 
-    worksheet_name: str = "Assignments"
-) -> List[str]:
-    """
-    Create Jira tasks from assignments in a Google Sheet.
-
-    Args:
-        jira_repository: JiraRepository instance to create tasks
-        sheet_client: GoogleSheetClient instance
-        sheet_id: The ID of the Google Sheet
-        worksheet_name: Name of the worksheet containing assignments
-
-    Returns:
-        List of created issue keys
-    """
-    try:
-        # Initialize the repository
-        repository = SheetRepository(sheet_client)
-
-        # Create tasks from the assignments
-        created_issues = repository.create_jira_tasks_from_assignments(
-            sheet_id=sheet_id,
-            jira_repository=jira_repository,
-            worksheet_name=worksheet_name,
-            project_key=None,  # This can be specified in the sheet
-        )
-
-        LOGGER.info(
-            f"Successfully created {len(created_issues)} tasks: {', '.join(created_issues)}",
-        )
-        return created_issues
-    except Exception as e:
-        LOGGER.error(f"An error occurred: {e}")
-        return []
-
-
-def main():
-    """Main function for running as a script."""
-    # This main function should be updated to use dependency injection
-    # when this module is properly integrated with the application
-    LOGGER.warning(
-        "This main function requires proper dependency injection setup. "
-        "Use the dependency injection container instead."
-    )
-
-
-if __name__ == "__main__":
-    # Uncomment the next line to run tests
-    # unittest.main()
-
-    # Run the main function for actual usage
-    main()
+    def write_hyperlink_formula(self, worksheet, row: int, col: int, url: str, text: str):
+        """Write a hyperlink formula to a specific cell.
+        
+        Args:
+            worksheet: The worksheet object
+            row: Row number (1-indexed)
+            col: Column number (1-indexed)
+            url: The URL to link to
+            text: The display text for the link
+        """
+        try:
+            # Use the proper hyperlink formula without quotes to avoid text interpretation
+            formula = f'=HYPERLINK("{url}","{text}")'
+            worksheet.update_cell(row, col, formula)
+        except Exception as e:
+            LOGGER.error(f"Failed to write hyperlink formula: {e}")
+            # Fallback to plain text if formula fails
+            worksheet.update_cell(row, col, text)

@@ -16,7 +16,9 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
     This service handles current stories business logic and Google Sheets integration.
     """
     
-    def __init__(self, google_sheets_settings: GoogleSheetsConnectionSettings):
+    def __init__(self, google_sheets_settings: GoogleSheetsConnectionSettings,
+                 google_client: Optional[GoogleSheetClient] = None
+                 ):
         """Initialize the service.
         
         Args:
@@ -50,7 +52,7 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
         sprint_name: str,
         jira_base_url: str
     ) -> bool:
-        """Save current stories report to Google Sheets.
+        """Save current stories report to Google Sheets with enhanced views.
         
         Args:
             report: The current stories report data
@@ -66,7 +68,7 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
             # Prepare data for Google Sheets
             headers = [
                 "Issue Link",
-                "Issue Name",
+                "Issue Name", 
                 "Story Status",
                 "Remaining",
                 "Priority",
@@ -80,14 +82,13 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
                 "Weeks Passed"
             ]
             
-            # Prepare rows data with hyperlinks
+            # Prepare rows data - we'll add hyperlinks after writing the data
             rows_data = []
             for story in report.stories:
-                issue_url = f"{jira_base_url}/browse/{story.issue_number}"
                 remaining = story.remaining_hours if story.remaining_hours is not None else 0
                 
                 row = [
-                    f'=HYPERLINK("{issue_url}","{story.issue_number}")',  # Hyperlink formula
+                    story.issue_number,  # Plain text first, we'll convert to hyperlink later
                     story.issue_name or "",
                     story.story_status or "",
                     remaining,
@@ -103,13 +104,28 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
                 ]
                 rows_data.append(row)
             
-            # Write to Google Sheets
+            # Write basic data to Google Sheets
             await google_client.write_to_worksheet(
                 worksheet_name=sprint_name,
                 headers=headers,
                 data=rows_data,
                 clear_existing=True,
                 sheet_id=self.google_sheets_settings.sheet_id
+            )
+            
+            # Add hyperlinks to the Issue Link column
+            await self._add_issue_hyperlinks(
+                google_client, 
+                sprint_name, 
+                report.stories, 
+                jira_base_url
+            )
+            
+            # Add sheet enhancements using the new method from GoogleSheetClient
+            await google_client.add_sheet_enhancements(
+                sheet_id=self.google_sheets_settings.sheet_id,
+                worksheet_name=sprint_name,
+                data_rows=len(rows_data)
             )
             
             LOGGER.info(f"Successfully saved current stories report to Google Sheets: {sprint_name}")
@@ -126,5 +142,41 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
             GoogleSheetClient instance
         """
         if self._google_client is None:
-            self._google_client = GoogleSheetClient(self.google_sheets_settings.token_path)
+            self._google_client = GoogleSheetClient(self.google_sheets_settings)
         return self._google_client
+    
+    async def _add_issue_hyperlinks(
+        self, 
+        google_client: GoogleSheetClient, 
+        sprint_name: str, 
+        stories: List, 
+        jira_base_url: str
+    ):
+        """Add hyperlinks to the Issue Link column.
+        
+        Args:
+            google_client: The Google Sheets client
+            sprint_name: Name of the worksheet
+            stories: List of story items
+            jira_base_url: Base URL for Jira issues
+        """
+        try:
+            # Get the worksheet
+            spreadsheet = google_client.client.open_by_key(self.google_sheets_settings.sheet_id)
+            worksheet = spreadsheet.worksheet(sprint_name)
+            
+            # Add hyperlinks for each story (starting from row 2, since row 1 is headers)
+            for i, story in enumerate(stories, start=2):
+                issue_url = f"{jira_base_url}/browse/{story.issue_number}"
+                google_client.write_hyperlink_formula(
+                    worksheet, 
+                    row=i, 
+                    col=1,  # First column (Issue Link)
+                    url=issue_url, 
+                    text=story.issue_number
+                )
+            
+            LOGGER.info(f"Added hyperlinks for {len(stories)} stories in {sprint_name}")
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to add hyperlinks: {e}")

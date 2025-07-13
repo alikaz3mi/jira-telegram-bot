@@ -189,7 +189,7 @@ class GetCurrentStoriesHandler:
             google_sheets_success = await self.get_current_stories_use_case.save_to_google_sheets(
                 report, 
                 report.sprint_name,
-                self.jira_settings.server_url
+                self.jira_settings.domain
             )
             
             filename = f"current_stories_{project_key}_{report.sprint_name.replace(' ', '_')}.xlsx"
