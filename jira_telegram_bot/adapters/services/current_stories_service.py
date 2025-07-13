@@ -7,6 +7,7 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.current_stories_report import CurrentStoriesReport
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
 from jira_telegram_bot.adapters.google_sheet import GoogleSheetClient
+from jira_telegram_bot.adapters.services.current_stories_google_sheets_enhancer import CurrentStoriesGoogleSheetsEnhancer
 from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
 
 
@@ -26,6 +27,7 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
         """
         self.google_sheets_settings = google_sheets_settings
         self._google_client = None
+        self._enhancer = None
     
     
     def create_assignee_abbreviation(self, assignee_name: str) -> str:
@@ -121,11 +123,12 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
                 jira_base_url
             )
             
-            # Add sheet enhancements using the new method from GoogleSheetClient
-            await google_client.add_sheet_enhancements(
-                sheet_id=self.google_sheets_settings.sheet_id,
-                worksheet_name=sprint_name,
-                data_rows=len(rows_data)
+            # Add sheet enhancements using the enhancer
+            enhancer = await self._get_enhancer()
+            await enhancer.enhance_current_stories_sheet(
+                self.google_sheets_settings.sheet_id,
+                sprint_name,
+                report
             )
             
             LOGGER.info(f"Successfully saved current stories report to Google Sheets: {sprint_name}")
@@ -180,3 +183,14 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
             
         except Exception as e:
             LOGGER.warning(f"Failed to add hyperlinks: {e}")
+    
+    async def _get_enhancer(self):
+        """Get or create the current stories Google Sheets enhancer.
+        
+        Returns:
+            CurrentStoriesGoogleSheetsEnhancer instance
+        """
+        if not hasattr(self, '_enhancer') or self._enhancer is None:
+            google_client = await self._get_google_client()
+            self._enhancer = CurrentStoriesGoogleSheetsEnhancer(google_client)
+        return self._enhancer

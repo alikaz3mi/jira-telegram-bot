@@ -163,7 +163,7 @@ class GetCurrentStoriesUseCase:
         creation_date_jalali = await self._convert_to_jalali(story.fields.created)
         real_start_date_jalali = await self._get_real_start_date_jalali(story)
         complete_date_jalali = await self._get_complete_date_jalali(story)
-        weeks_passed = await self._calculate_weeks_passed(story.fields.created)
+        weeks_passed = await self._calculate_weeks_passed(story)
         
         return CurrentStoryItem(
             issue_number=story.key,
@@ -402,26 +402,58 @@ class GetCurrentStoriesUseCase:
             LOGGER.warning(f"Failed to get complete date for story {story.key}: {e}")
             return None
     
-    async def _calculate_weeks_passed(self, created_date: Optional[str]) -> Optional[float]:
-        """Calculate weeks passed since creation date.
+    async def _calculate_weeks_passed(self, story) -> Optional[float]:
+        """Calculate weeks passed based on story status.
+        
+        For completed stories: weeks between creation date and complete date
+        For non-completed stories: weeks between real start date and now
         
         Args:
-            created_date: ISO format creation date string
+            story: Jira story issue
             
         Returns:
             Number of weeks passed as float
         """
-        if not created_date:
-            return None
-            
         try:
-            created_dt = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
-            now = datetime.now(created_dt.tzinfo)
-            delta = now - created_dt
-            return round(delta.days / 7.0, 1)
+            creation_date = story.fields.created
+            if not creation_date:
+                return None
+            
+            # Check if story is complete
+            story_status = story.fields.status.name.lower() if story.fields.status else ""
+            is_complete = any(status in story_status for status in ["done", "closed", "resolved", "complete"])
+            
+            if is_complete:
+                # Calculate between creation and completion date
+                complete_date_str = await self._get_complete_date_iso(story)
+                if complete_date_str:
+                    created_dt = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
+                    complete_dt = datetime.fromisoformat(complete_date_str.replace('Z', '+00:00'))
+                    delta = complete_dt - created_dt
+                    return round(delta.days / 7.0, 1)
+                else:
+                    # Fallback to creation to now if no complete date found
+                    created_dt = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
+                    now = datetime.now(created_dt.tzinfo)
+                    delta = now - created_dt
+                    return round(delta.days / 7.0, 1)
+            else:
+                # Calculate between start date and now
+                start_date_str = await self._get_real_start_date_iso(story)
+                if start_date_str:
+                    start_dt = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
+                    now = datetime.now(start_dt.tzinfo)
+                    delta = now - start_dt
+                    return round(delta.days / 7.0, 1)
+                else:
+                    # Fallback to creation to now if no start date found
+                    created_dt = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
+                    now = datetime.now(created_dt.tzinfo)
+                    delta = now - created_dt
+                    return round(delta.days / 7.0, 1)
             
         except Exception as e:
-            LOGGER.warning(f"Failed to calculate weeks passed for date {created_date}: {e}")
+            LOGGER.warning(f"Failed to calculate weeks passed for story {story.key}: {e}")
             return None
     
     async def generate_xlsx_report(self, report: CurrentStoriesReport) -> BytesIO:
@@ -454,3 +486,67 @@ class GetCurrentStoriesUseCase:
         return await self.current_stories_service.save_to_google_sheets(
             report, sprint_name, jira_base_url
         )
+    
+    async def _get_real_start_date_iso(self, story) -> Optional[str]:
+        """Get the real start date (first transition to in-progress) in ISO format.
+        
+        Args:
+            story: Jira story issue
+            
+        Returns:
+            ISO date string when first moved to in-progress
+        """
+        try:
+            # Get issue with changelog
+            full_story = self.task_manager_repository.get_issue_with_expand(
+                story.key, "changelog"
+            )
+            
+            if not full_story or not hasattr(full_story, 'changelog'):
+                return None
+            
+            # Look for first transition to "In Progress" status
+            for history in full_story.changelog.histories:
+                for item in history.items:
+                    if (item.field == 'status' and 
+                        item.toString and 
+                        'progress' in item.toString.lower()):
+                        return history.created
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to get real start date for story {story.key}: {e}")
+            return None
+    
+    async def _get_complete_date_iso(self, story) -> Optional[str]:
+        """Get the completion date (transition to done) in ISO format.
+        
+        Args:
+            story: Jira story issue
+            
+        Returns:
+            ISO date string when moved to done
+        """
+        try:
+            # Get issue with changelog
+            full_story = self.task_manager_repository.get_issue_with_expand(
+                story.key, "changelog"
+            )
+            
+            if not full_story or not hasattr(full_story, 'changelog'):
+                return None
+            
+            # Look for transition to "Done" status
+            for history in full_story.changelog.histories:
+                for item in history.items:
+                    if (item.field == 'status' and 
+                        item.toString and 
+                        'done' in item.toString.lower()):
+                        return history.created
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to get complete date for story {story.key}: {e}")
+            return None

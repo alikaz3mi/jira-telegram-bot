@@ -171,262 +171,6 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             LOGGER.error(f"Error writing to worksheet '{worksheet_name}': {e}")
             raise
 
-    async def add_sheet_enhancements(
-        self, 
-        sheet_id: str,
-        worksheet_name: str, 
-        data_rows: int
-    ):
-        """Add enhancements like filters, conditional formatting, and freeze panes.
-        
-        Args:
-            sheet_id: The Google Sheet ID
-            worksheet_name: Name of the worksheet
-            data_rows: Number of data rows
-        """
-        try:
-            # Get the worksheet
-            spreadsheet = self.client.open_by_key(sheet_id)
-            worksheet = spreadsheet.worksheet(worksheet_name)
-            
-            # Prepare batch requests
-            requests = []
-            
-            # 1. Freeze header row
-            requests.append({
-                "updateSheetProperties": {
-                    "properties": {
-                        "sheetId": worksheet.id,
-                        "gridProperties": {
-                            "frozenRowCount": 1
-                        }
-                    },
-                    "fields": "gridProperties.frozenRowCount"
-                }
-            })
-            
-            # 2. Add auto filter
-            requests.append({
-                "setBasicFilter": {
-                    "filter": {
-                        "range": {
-                            "sheetId": worksheet.id,
-                            "startRowIndex": 0,
-                            "endRowIndex": data_rows + 1,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": 13
-                        }
-                    }
-                }
-            })
-            
-            # 3. Add conditional formatting for Story Status
-            self._add_status_conditional_formatting(requests, worksheet.id, data_rows)
-            
-            # 4. Add conditional formatting for Priority
-            self._add_priority_conditional_formatting(requests, worksheet.id, data_rows)
-            
-            # 5. Create filter views for common groupings
-            self._create_filter_views(requests, worksheet.id, data_rows)
-            
-            # Execute all requests
-            if requests:
-                spreadsheet.batch_update({"requests": requests})
-                LOGGER.info(f"Added enhancements to worksheet: {worksheet_name}")
-                
-        except Exception as e:
-            LOGGER.warning(f"Failed to add sheet enhancements: {e}")
-
-    def _add_status_conditional_formatting(self, requests: list, sheet_id: int, data_rows: int):
-        """Add conditional formatting for Story Status column.
-        
-        Args:
-            requests: List to append requests to
-            sheet_id: ID of the worksheet
-            data_rows: Number of data rows
-        """
-        status_colors = {
-            "Done": {"red": 0.8, "green": 1, "blue": 0.8},       # Light green
-            "In Progress": {"red": 1, "green": 1, "blue": 0.8},  # Light yellow
-            "To Do": {"red": 1, "green": 0.8, "blue": 0.8},      # Light red
-            "Blocked": {"red": 1, "green": 0.6, "blue": 0.6}     # Red
-        }
-        
-        for i, (status, color) in enumerate(status_colors.items()):
-            requests.append({
-                "addConditionalFormatRule": {
-                    "rule": {
-                        "ranges": [{
-                            "sheetId": sheet_id,
-                            "startRowIndex": 1,
-                            "endRowIndex": data_rows + 1,
-                            "startColumnIndex": 2,  # Story Status column
-                            "endColumnIndex": 3
-                        }],
-                        "booleanRule": {
-                            "condition": {
-                                "type": "TEXT_EQ",
-                                "values": [{"userEnteredValue": status}]
-                            },
-                            "format": {
-                                "backgroundColor": color
-                            }
-                        }
-                    },
-                    "index": i
-                }
-            })
-
-    def _add_priority_conditional_formatting(self, requests: list, sheet_id: int, data_rows: int):
-        """Add conditional formatting for Priority column.
-        
-        Args:
-            requests: List to append requests to
-            sheet_id: ID of the worksheet
-            data_rows: Number of data rows
-        """
-        priority_colors = {
-            "Highest": {"red": 0.9, "green": 0.2, "blue": 0.2},  # Dark red
-            "High": {"red": 1, "green": 0.5, "blue": 0.5},       # Light red
-            "Medium": {"red": 1, "green": 1, "blue": 0.5},       # Yellow
-            "Low": {"red": 0.8, "green": 1, "blue": 0.8},        # Light green
-            "Lowest": {"red": 0.6, "green": 1, "blue": 0.6}      # Green
-        }
-        
-        status_color_count = 4  # Number of status colors to offset priority colors
-        
-        for i, (priority, color) in enumerate(priority_colors.items()):
-            requests.append({
-                "addConditionalFormatRule": {
-                    "rule": {
-                        "ranges": [{
-                            "sheetId": sheet_id,
-                            "startRowIndex": 1,
-                            "endRowIndex": data_rows + 1,
-                            "startColumnIndex": 4,  # Priority column
-                            "endColumnIndex": 5
-                        }],
-                        "booleanRule": {
-                            "condition": {
-                                "type": "TEXT_EQ",
-                                "values": [{"userEnteredValue": priority}]
-                            },
-                            "format": {
-                                "backgroundColor": color
-                            }
-                        }
-                    },
-                    "index": i + status_color_count
-                }
-            })
-
-    def _create_filter_views(self, requests: list, sheet_id: int, data_rows: int):
-        """Create predefined filter views for common use cases.
-        
-        Args:
-            requests: List to append filter view requests to
-            sheet_id: ID of the worksheet
-            data_rows: Number of data rows
-        """
-        # Filter view 1: In Progress stories
-        requests.append({
-            "addFilterView": {
-                "filter": {
-                    "title": "📋 In Progress Stories",
-                    "range": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": 0,
-                        "endRowIndex": data_rows + 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 13
-                    },
-                    "criteria": {
-                        2: {  # Story Status column
-                            "condition": {
-                                "type": "TEXT_EQ",
-                                "values": [{"userEnteredValue": "In Progress"}]
-                            }
-                        }
-                    }
-                }
-            }
-        })
-        
-        # Filter view 2: High Priority stories
-        requests.append({
-            "addFilterView": {
-                "filter": {
-                    "title": "🔥 High Priority Stories",
-                    "range": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": 0,
-                        "endRowIndex": data_rows + 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 13
-                    },
-                    "criteria": {
-                        4: {  # Priority column
-                            "condition": {
-                                "type": "ONE_OF_LIST",
-                                "values": [
-                                    {"userEnteredValue": "Highest"},
-                                    {"userEnteredValue": "High"}
-                                ]
-                            }
-                        }
-                    }
-                }
-            }
-        })
-        
-        # Filter view 3: Stories with remaining work
-        requests.append({
-            "addFilterView": {
-                "filter": {
-                    "title": "⏱️ Stories with Remaining Work",
-                    "range": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": 0,
-                        "endRowIndex": data_rows + 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 13
-                    },
-                    "criteria": {
-                        3: {  # Remaining hours column
-                            "condition": {
-                                "type": "NUMBER_GREATER",
-                                "values": [{"userEnteredValue": "0"}]
-                            }
-                        }
-                    }
-                }
-            }
-        })
-        
-        # Filter view 4: Recently created stories (less than 2 weeks)
-        requests.append({
-            "addFilterView": {
-                "filter": {
-                    "title": "🆕 Recently Created Stories",
-                    "range": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": 0,
-                        "endRowIndex": data_rows + 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 13
-                    },
-                    "criteria": {
-                        12: {  # Weeks passed column
-                            "condition": {
-                                "type": "NUMBER_LESS_THAN_EQ",
-                                "values": [{"userEnteredValue": "2"}]
-                            }
-                        }
-                    }
-                }
-            }
-        })
-
     def write_hyperlink_formula(self, worksheet, row: int, col: int, url: str, text: str):
         """Write a hyperlink formula to a specific cell.
         
@@ -445,3 +189,158 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             LOGGER.error(f"Failed to write hyperlink formula: {e}")
             # Fallback to plain text if formula fails
             worksheet.update_cell(row, col, text)
+    
+    def add_conditional_formatting(
+        self, 
+        sheet_id: str, 
+        worksheet_name: str, 
+        column_index: int, 
+        conditions: Dict[str, Dict[str, float]]
+    ):
+        """Add conditional formatting to a column.
+        
+        Args:
+            sheet_id: The Google Sheet ID
+            worksheet_name: Name of the worksheet
+            column_index: Column index (0-based)
+            conditions: Dict mapping values to color RGB dicts
+        """
+        try:
+            spreadsheet = self.client.open_by_key(sheet_id)
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            
+            requests = []
+            for i, (value, color) in enumerate(conditions.items()):
+                requests.append({
+                    "addConditionalFormatRule": {
+                        "rule": {
+                            "ranges": [{
+                                "sheetId": worksheet.id,
+                                "startRowIndex": 1,
+                                "endRowIndex": 1000,
+                                "startColumnIndex": column_index,
+                                "endColumnIndex": column_index + 1
+                            }],
+                            "booleanRule": {
+                                "condition": {
+                                    "type": "TEXT_EQ",
+                                    "values": [{"userEnteredValue": value}]
+                                },
+                                "format": {
+                                    "backgroundColor": color
+                                }
+                            }
+                        },
+                        "index": i
+                    }
+                })
+            
+            if requests:
+                spreadsheet.batch_update({"requests": requests})
+                LOGGER.info(f"Added conditional formatting to column {column_index}")
+                
+        except Exception as e:
+            LOGGER.error(f"Failed to add conditional formatting: {e}")
+    
+    def create_filter_view(
+        self, 
+        sheet_id: str, 
+        worksheet_name: str, 
+        view_name: str, 
+        filter_criteria: Dict[int, Dict]
+    ):
+        """Create a filter view with specific criteria.
+        
+        Args:
+            sheet_id: The Google Sheet ID
+            worksheet_name: Name of the worksheet
+            view_name: Name for the filter view
+            filter_criteria: Dict mapping column indices to filter conditions
+        """
+        try:
+            spreadsheet = self.client.open_by_key(sheet_id)
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            
+            requests = [{
+                "addFilterView": {
+                    "filter": {
+                        "title": view_name,
+                        "range": {
+                            "sheetId": worksheet.id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1000,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 13
+                        },
+                        "criteria": filter_criteria
+                    }
+                }
+            }]
+            
+            spreadsheet.batch_update({"requests": requests})
+            LOGGER.info(f"Created filter view: {view_name}")
+            
+        except Exception as e:
+            LOGGER.error(f"Failed to create filter view: {e}")
+    
+    def freeze_rows(self, sheet_id: str, worksheet_name: str, frozen_row_count: int = 1):
+        """Freeze header rows.
+        
+        Args:
+            sheet_id: The Google Sheet ID
+            worksheet_name: Name of the worksheet
+            frozen_row_count: Number of rows to freeze
+        """
+        try:
+            spreadsheet = self.client.open_by_key(sheet_id)
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            
+            requests = [{
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": worksheet.id,
+                        "gridProperties": {
+                            "frozenRowCount": frozen_row_count
+                        }
+                    },
+                    "fields": "gridProperties.frozenRowCount"
+                }
+            }]
+            
+            spreadsheet.batch_update({"requests": requests})
+            LOGGER.info(f"Froze {frozen_row_count} rows")
+            
+        except Exception as e:
+            LOGGER.error(f"Failed to freeze rows: {e}")
+    
+    def add_auto_filter(self, sheet_id: str, worksheet_name: str, data_rows: int):
+        """Add auto filter to the worksheet.
+        
+        Args:
+            sheet_id: The Google Sheet ID
+            worksheet_name: Name of the worksheet
+            data_rows: Number of data rows
+        """
+        try:
+            spreadsheet = self.client.open_by_key(sheet_id)
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            
+            requests = [{
+                "setBasicFilter": {
+                    "filter": {
+                        "range": {
+                            "sheetId": worksheet.id,
+                            "startRowIndex": 0,
+                            "endRowIndex": data_rows + 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 13
+                        }
+                    }
+                }
+            }]
+            
+            spreadsheet.batch_update({"requests": requests})
+            LOGGER.info("Added auto filter")
+            
+        except Exception as e:
+            LOGGER.error(f"Failed to add auto filter: {e}")
