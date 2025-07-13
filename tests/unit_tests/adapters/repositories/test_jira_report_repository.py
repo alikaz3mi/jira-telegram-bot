@@ -10,6 +10,7 @@ from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraR
 from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraTaskModel
 from jira_telegram_bot.entities.jira_report import ProjectReport
 from tests.samples.jira_report_test_factory import JiraReportTestFactory
+from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 
 
 class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
@@ -20,7 +21,7 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
         with patch('jira_telegram_bot.adapters.repositories.jira_report_repository.create_engine'), \
              patch('jira_telegram_bot.adapters.repositories.jira_report_repository.sessionmaker'), \
              patch.object(JiraReportRepository, '_ensure_schema_exists'):
-            self.repository = JiraReportRepository()
+            self.repository = JiraReportRepository(PostgresSettings())
             self.mock_session = MagicMock()
             self.repository._session_maker.return_value = self.mock_session
 
@@ -217,7 +218,7 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
         mock_quote_plus.return_value = "encoded_password"
         
         with patch.object(JiraReportRepository, '_ensure_schema_exists'):
-            repository = JiraReportRepository()
+            repository = JiraReportRepository(PostgresSettings())
         
         mock_create_engine.assert_called()
         call_args = mock_create_engine.call_args[0][0]

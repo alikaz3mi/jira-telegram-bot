@@ -98,6 +98,11 @@ from jira_telegram_bot.use_cases.interfaces.jira_data_service_interface import J
 from jira_telegram_bot.use_cases.interfaces.jira_report_repository_interface import JiraReportRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.scheduler_service_interface import SchedulerServiceInterface
 
+# Current Stories imports
+from jira_telegram_bot.adapters.services.current_stories_service import CurrentStoriesService
+from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
+from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
+
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
     """Read user configuration from specified path.
@@ -394,6 +399,18 @@ def configure_container() -> Container:
             report_use_case=c[GenerateJiraReportUseCase],
             scheduler_service=c[SchedulerServiceInterface],
             project_keys=["PARSCHAT", "PCT"],  # Configure as needed
+        )
+    )
+    
+    # Current Stories dependencies
+    container[CurrentStoriesServiceInterface] = Singleton(
+        lambda c: CurrentStoriesService()
+    )
+    
+    container[GetCurrentStoriesUseCase] = Singleton(
+        lambda c: GetCurrentStoriesUseCase(
+            task_manager_repository=c[TaskManagerRepositoryInterface],
+            current_stories_service=c[CurrentStoriesServiceInterface],
         )
     )
     

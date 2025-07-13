@@ -27,6 +27,9 @@ from jira_telegram_bot.frameworks.telegram.task_transition_handler import (
 from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
     UserSettingsHandler,
 )
+from jira_telegram_bot.frameworks.telegram.get_current_stories_handler import (
+    GetCurrentStoriesHandler,
+)
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
 from jira_telegram_bot.use_cases.telegram_commands.board_summary_generator import BoardSummaryGenerator
 from jira_telegram_bot.use_cases.telegram_commands.create_task import JiraTaskCreation
@@ -34,6 +37,7 @@ from jira_telegram_bot.use_cases.telegram_commands.task_get_users_time import Ta
 from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
 from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTaskTransition
 from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
+from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 
 filterwarnings(
@@ -59,7 +63,8 @@ async def help_command(update, context):
         "5. **/setting** - Update user settings\n"
         "6. **/get_users_time** - Get users' time spent on tasks\n"
         "7. **/advanced_task** - Create multiple related tasks using AI-powered task breakdown\n"
-        "8. **/cancel** - Cancel the current running operation"
+        "8. **/get_current_stories** - Get current stories in a sprint as XLSX report\n"
+        "9. **/cancel** - Cancel the current running operation"
     )
     await update.message.reply_text(help_text)
     LOGGER.info("Displayed help information")
@@ -130,6 +135,7 @@ def setup_and_run():
     task_get_users_time_use_case = container[TaskGetUsersTime]
     board_summary_generator_use_case = container[BoardSummaryGenerator]
     advanced_task_creation_use_case = container[AdvancedTaskCreation]
+    get_current_stories_use_case = container[GetCurrentStoriesUseCase]
     speech_processor = container[SpeechProcessor]
 
     # Create handlers
@@ -145,6 +151,9 @@ def setup_and_run():
         advanced_task_creation_use_case,
         speech_processor,
     )
+    get_current_stories_handler = GetCurrentStoriesHandler(
+        get_current_stories_use_case
+    )
 
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(task_creation_handler.get_handler())
@@ -154,6 +163,7 @@ def setup_and_run():
     application.add_handler(user_settings_handler.get_handler())
     application.add_handler(task_get_users_time_handler.get_handler())
     application.add_handler(advanced_task_creation_handler.get_handler())
+    application.add_handler(get_current_stories_handler.get_handler())
     application.add_error_handler(error)
     startup()
     

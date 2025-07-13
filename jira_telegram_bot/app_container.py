@@ -20,6 +20,7 @@ from jira_telegram_bot.use_cases.telegram_commands.task_get_users_time import Ta
 from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
 from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTaskTransition
 from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
+from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
@@ -47,6 +48,35 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
 )
 from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
     ProjectInfoRepositoryInterface,
+)
+
+# Telegram handlers
+from jira_telegram_bot.frameworks.telegram.advanced_task_creation_handler import (
+    AdvancedTaskCreationHandler,
+)
+from jira_telegram_bot.frameworks.telegram.board_summary_generator_handler import (
+    BoardSummaryGeneratorHandler,
+)
+from jira_telegram_bot.frameworks.telegram.daily_report_handler import (
+    DailyReportHandler,
+)
+from jira_telegram_bot.frameworks.telegram.task_creation_handler import (
+    TaskCreationHandler,
+)
+from jira_telegram_bot.frameworks.telegram.task_get_users_time_handler import (
+    TaskGetUsersTimeHandler,
+)
+from jira_telegram_bot.frameworks.telegram.task_status_handler import (
+    TaskStatusHandler,
+)
+from jira_telegram_bot.frameworks.telegram.task_transition_handler import (
+    TaskTransitionHandler,
+)
+from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
+    UserSettingsHandler,
+)
+from jira_telegram_bot.frameworks.telegram.get_current_stories_handler import (
+    GetCurrentStoriesHandler,
 )
 from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint
@@ -147,6 +177,44 @@ def setup_container() -> Container:
     # Make SpeechProcessor available directly from container
     child_container[SpeechProcessor] = Singleton(
         lambda c: c[SpeechProcessorInterface]
+    )
+    
+    # Configure Telegram handlers
+    child_container[TaskCreationHandler] = Singleton(
+        lambda c: TaskCreationHandler(c[JiraTaskCreation])
+    )
+    
+    child_container[TaskStatusHandler] = Singleton(
+        lambda c: TaskStatusHandler(c[TaskStatus])
+    )
+    
+    child_container[TaskTransitionHandler] = Singleton(
+        lambda c: TaskTransitionHandler(c[JiraTaskTransition])
+    )
+    
+    child_container[UserSettingsHandler] = Singleton(
+        lambda c: UserSettingsHandler(c[UserSettingsConversation])
+    )
+    
+    child_container[TaskGetUsersTimeHandler] = Singleton(
+        lambda c: TaskGetUsersTimeHandler(c[TaskGetUsersTime])
+    )
+    
+    child_container[BoardSummaryGeneratorHandler] = Singleton(
+        lambda c: BoardSummaryGeneratorHandler(c[BoardSummaryGenerator])
+    )
+    
+    child_container[AdvancedTaskCreationHandler] = Singleton(
+        lambda c: AdvancedTaskCreationHandler(
+            c[AdvancedTaskCreation],
+            c[SpeechProcessor]
+        )
+    )
+    
+    child_container[GetCurrentStoriesHandler] = Singleton(
+        lambda c: GetCurrentStoriesHandler(
+            get_current_stories_use_case=c[GetCurrentStoriesUseCase],
+        )
     )
     
     # Get the endpoint registry
