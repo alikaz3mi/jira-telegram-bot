@@ -68,26 +68,19 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
             workbook: XlsxWriter workbook
             worksheet: XlsxWriter worksheet
         """
-    def _setup_worksheet_formatting(self, workbook, worksheet):
-        """Setup worksheet formatting and column widths.
-        
-        Args:
-            workbook: XlsxWriter workbook
-            worksheet: XlsxWriter worksheet
-        """
-        worksheet.set_column('A:A', 5)   # # column
+        worksheet.set_column('A:A', 15)  # Issue number column
         worksheet.set_column('B:B', 40)  # Issue name column
-        worksheet.set_column('C:C', 20)  # Epic column
-        worksheet.set_column('D:D', 25)  # Label/Feature column
-        worksheet.set_column('E:E', 15)  # Assignee column
-        worksheet.set_column('F:F', 12)  # Remaining column
+        worksheet.set_column('C:C', 15)  # Story status column
+        worksheet.set_column('D:D', 12)  # Remaining hours column
+        worksheet.set_column('E:E', 12)  # Priority column
+        worksheet.set_column('F:F', 15)  # Assignee column
         worksheet.set_column('G:G', 15)  # Release column
-        worksheet.set_column('H:H', 12)  # Priority column
-        worksheet.set_column('I:I', 15)  # Progress column
-        worksheet.set_column('J:J', 15)  # Story Status column
-        worksheet.set_column('K:K', 12)  # Review Tasks column
-        worksheet.set_column('L:L', 12)  # Done Tasks column
-        worksheet.set_column('M:M', 12)  # Other Tasks column
+        worksheet.set_column('H:H', 25)  # Label/Feature column
+        worksheet.set_column('I:I', 20)  # Epic column
+        worksheet.set_column('J:J', 15)  # Creation date column
+        worksheet.set_column('K:K', 15)  # Real start date column
+        worksheet.set_column('L:L', 15)  # Complete date column
+        worksheet.set_column('M:M', 12)  # Weeks passed column
     
     def _write_headers(self, worksheet):
         """Write header row to worksheet.
@@ -96,19 +89,19 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
             worksheet: XlsxWriter worksheet
         """
         headers = [
-            "#",
-            "Issue name",
-            "Epic\n(grey badge)",
-            "Label / Feature\n(coloured badge)",
-            "Assignee (abbr.)",
-            "Remaining (hours)",
-            "Release",
-            "Priority",
-            "Progress",
+            "Issue Number",
+            "Issue Name",
             "Story Status",
-            "Review Tasks",
-            "Done Tasks",
-            "Other Tasks"
+            "Remaining",
+            "Priority",
+            "Assignee (abbr.)",
+            "Release",
+            "Label / Feature",
+            "Epic",
+            "Creation Date",
+            "Real Start Date",
+            "Complete Date",
+            "Weeks Passed"
         ]
         
         for col, header in enumerate(headers):
@@ -122,16 +115,18 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
             stories: List of CurrentStoryItem objects
         """
         for row, story in enumerate(stories, 1):
-            worksheet.write(row, 0, story.story_number)
+            worksheet.write(row, 0, story.issue_number)
             worksheet.write(row, 1, story.issue_name)
-            worksheet.write(row, 2, story.epic_name or "")
-            worksheet.write(row, 3, story.label_feature or "")
-            worksheet.write(row, 4, ", ".join(story.assignees_abbr))
-            worksheet.write(row, 5, story.remaining_hours or "0h")
+            worksheet.write(row, 2, story.story_status or "")
+            # Write remaining hours as number only (no 'h' suffix)
+            remaining = story.remaining_hours if story.remaining_hours is not None else 0
+            worksheet.write(row, 3, remaining)
+            worksheet.write(row, 4, story.priority or "")
+            worksheet.write(row, 5, ", ".join(story.assignees_abbr))
             worksheet.write(row, 6, story.release or "")
-            worksheet.write(row, 7, story.priority or "")
-            worksheet.write(row, 8, story.progress or "")
-            worksheet.write(row, 9, story.story_status or "")
-            worksheet.write(row, 10, story.review_tasks_count)
-            worksheet.write(row, 11, story.done_tasks_count)
-            worksheet.write(row, 12, story.other_tasks_count)
+            worksheet.write(row, 7, story.label_feature or "")
+            worksheet.write(row, 8, story.epic_name or "")
+            worksheet.write(row, 9, story.creation_date_jalali or "")
+            worksheet.write(row, 10, story.real_start_date_jalali or "")
+            worksheet.write(row, 11, story.complete_date_jalali or "")
+            worksheet.write(row, 12, story.weeks_passed or "")

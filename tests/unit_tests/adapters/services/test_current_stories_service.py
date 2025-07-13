@@ -17,19 +17,19 @@ class TestCurrentStoriesService(unittest.TestCase):
         """Test successful XLSX generation."""
         # Arrange
         story_item = CurrentStoryItem(
-            story_number=1,
-            epic="Test Epic",
-            label_feature="feature",
-            assignees_abbr=["AK", "MM"],
-            remaining="2d",
-            release="v1.0",
+            issue_number="TEST-1",
             issue_name="Test Story",
-            priority="High",
-            progress="In Progress",
             story_status="In Progress",
-            review_tasks_count=2,
-            done_tasks_count=3,
-            other_tasks_count=1
+            remaining_hours=8.5,
+            priority="High",
+            assignees_abbr=["AK", "MM"],
+            release="v1.0",
+            label_feature="feature",
+            epic_name="Test Epic",
+            creation_date_jalali="1403/04/15",
+            real_start_date_jalali="1403/04/16",
+            complete_date_jalali=None,
+            weeks_passed=2.5
         )
         
         report = CurrentStoriesReport(

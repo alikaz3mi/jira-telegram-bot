@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+import requests
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.current_stories_report import CurrentStoriesReport, CurrentStoryItem
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
+from jira_telegram_bot.utils.jalali_georgian_calendar import JalaliGregorianCalendar
 
 
 class GetCurrentStoriesUseCase:
@@ -90,8 +93,8 @@ class GetCurrentStoriesUseCase:
         sprint_name = await self._get_sprint_name(project_key, sprint_id)
         
         story_items = []
-        for idx, story in enumerate(stories, 1):
-            story_item = await self._create_story_item(story, idx)
+        for story in stories:
+            story_item = await self._create_story_item(story)
             story_items.append(story_item)
         
         return CurrentStoriesReport(
@@ -121,12 +124,11 @@ class GetCurrentStoriesUseCase:
         
         return f"Sprint {sprint_id}"
     
-    async def _create_story_item(self, story, story_number: int) -> CurrentStoryItem:
+    async def _create_story_item(self, story) -> CurrentStoryItem:
         """Create story item from Jira issue.
         
         Args:
             story: Jira story issue
-            story_number: Sequential number for the story
             
         Returns:
             CurrentStoryItem instance
@@ -151,26 +153,28 @@ class GetCurrentStoriesUseCase:
         if story.fields.priority:
             priority = story.fields.priority.name
         
-        progress = story.fields.status.name if story.fields.status else None
         story_status = story.fields.status.name if story.fields.status else None
         
-        # Calculate task counts from subtasks
-        task_counts = await self._get_task_counts_from_subtasks(story)
+        # Calculate dates
+        creation_date_jalali = await self._convert_to_jalali(story.fields.created)
+        real_start_date_jalali = await self._get_real_start_date_jalali(story)
+        complete_date_jalali = await self._get_complete_date_jalali(story)
+        weeks_passed = await self._calculate_weeks_passed(story.fields.created)
         
         return CurrentStoryItem(
-            story_number=story_number,
+            issue_number=story.key,
             issue_name=story.fields.summary,
-            epic_name=epic_name,
-            label_feature=label_feature,
-            assignees_abbr=assignees_abbr,
-            remaining_hours=remaining_hours,
-            release=release,
-            priority=priority,
-            progress=progress,
             story_status=story_status,
-            review_tasks_count=task_counts["review"],
-            done_tasks_count=task_counts["done"],
-            other_tasks_count=task_counts["other"]
+            remaining_hours=remaining_hours,
+            priority=priority,
+            assignees_abbr=assignees_abbr,
+            release=release,
+            label_feature=label_feature,
+            epic_name=epic_name,
+            creation_date_jalali=creation_date_jalali,
+            real_start_date_jalali=real_start_date_jalali,
+            complete_date_jalali=complete_date_jalali,
+            weeks_passed=weeks_passed
         )
     
     async def _get_epic_name(self, story) -> Optional[str]:
@@ -239,7 +243,7 @@ class GetCurrentStoriesUseCase:
             if total_remaining_seconds > 0:
                 return round(total_remaining_seconds / 3600.0, 2)
             
-            return None
+            return 0  # Return 0 instead of None for no remaining time
             
         except Exception as e:
             LOGGER.warning(f"Failed to calculate remaining hours for story {story.key}: {e}")
@@ -304,3 +308,143 @@ class GetCurrentStoriesUseCase:
                     task_counts["other"] += 1
         
         return task_counts
+    
+    async def _convert_to_jalali(self, date_string: Optional[str]) -> Optional[str]:
+        """Convert Jira date string to Jalali calendar format.
+        
+        Args:
+            date_string: ISO format date string from Jira
+            
+        Returns:
+            Jalali date string or None
+        """
+        if not date_string:
+            return None
+            
+        try:
+            # Parse the ISO date string
+            dt = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
+            
+            # Get calendar data for the month
+            calendar_json = await self._get_calendar_data(dt.year, dt.month)
+            if not calendar_json:
+                return None
+                
+            calendar = JalaliGregorianCalendar(calendar_json)
+            
+            # Convert to Jalali
+            jalali_day = calendar.jalali_from_gregorian(dt.day)
+            if jalali_day:
+                return f"{calendar._header['jalali']}/{jalali_day:02d}"
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to convert date {date_string} to Jalali: {e}")
+            return None
+    
+    async def _get_calendar_data(self, year: int, month: int) -> Optional[Dict]:
+        """Get calendar data from API for date conversion.
+        
+        Args:
+            year: Gregorian year
+            month: Gregorian month
+            
+        Returns:
+            Calendar JSON data or None
+        """
+        try:
+            url = f"https://calendar-api.heydarihamed.ir/api/calendar/{year}/{month}"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            LOGGER.warning(f"Failed to get calendar data for {year}/{month}: {e}")
+            return None
+    
+    async def _get_real_start_date_jalali(self, story) -> Optional[str]:
+        """Get the real start date (first transition to in-progress) in Jalali.
+        
+        Args:
+            story: Jira story issue
+            
+        Returns:
+            Jalali date string when first moved to in-progress
+        """
+        try:
+            # Get issue with changelog
+            full_story = self.task_manager_repository.get_issue_with_expand(
+                story.key, "changelog"
+            )
+            
+            if not full_story or not hasattr(full_story, 'changelog'):
+                return None
+            
+            # Look for first transition to "In Progress" status
+            for history in full_story.changelog.histories:
+                for item in history.items:
+                    if (item.field == 'status' and 
+                        item.toString and 
+                        'progress' in item.toString.lower()):
+                        return await self._convert_to_jalali(history.created)
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to get real start date for story {story.key}: {e}")
+            return None
+    
+    async def _get_complete_date_jalali(self, story) -> Optional[str]:
+        """Get the completion date (transition to done) in Jalali.
+        
+        Args:
+            story: Jira story issue
+            
+        Returns:
+            Jalali date string when moved to done
+        """
+        try:
+            # Get issue with changelog
+            full_story = self.task_manager_repository.get_issue_with_expand(
+                story.key, "changelog"
+            )
+            
+            if not full_story or not hasattr(full_story, 'changelog'):
+                return None
+            
+            # Look for transition to "Done" status
+            for history in full_story.changelog.histories:
+                for item in history.items:
+                    if (item.field == 'status' and 
+                        item.toString and 
+                        'done' in item.toString.lower()):
+                        return await self._convert_to_jalali(history.created)
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to get complete date for story {story.key}: {e}")
+            return None
+    
+    async def _calculate_weeks_passed(self, created_date: Optional[str]) -> Optional[float]:
+        """Calculate weeks passed since creation date.
+        
+        Args:
+            created_date: ISO format creation date string
+            
+        Returns:
+            Number of weeks passed as float
+        """
+        if not created_date:
+            return None
+            
+        try:
+            created_dt = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
+            now = datetime.now(created_dt.tzinfo)
+            delta = now - created_dt
+            return round(delta.days / 7.0, 1)
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to calculate weeks passed for date {created_date}: {e}")
+            return None

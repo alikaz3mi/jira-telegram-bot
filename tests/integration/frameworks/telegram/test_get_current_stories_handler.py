@@ -44,26 +44,25 @@ class TestGetCurrentStoriesHandler(unittest.IsolatedAsyncioTestCase):
         mock_projects = [{"key": "TEST", "name": "Test Project"}]
         mock_sprints = [{"id": "123", "name": "Sprint 1"}]
         mock_story_item = CurrentStoryItem(
-            story_number=1,
-            epic="Test Epic",
-            label_feature="feature",
-            assignees_abbr=["AK"],
-            remaining="2d",
-            release="v1.0",
+            issue_number="TEST-1",
             issue_name="Test Story",
-            priority="High",
-            progress="In Progress",
             story_status="In Progress",
-            review_tasks_count=1,
-            done_tasks_count=2,
-            other_tasks_count=0
+            remaining_hours=8.5,
+            priority="High",
+            assignees_abbr=["AK"],
+            release="v1.0",
+            label_feature="feature",
+            epic_name="Test Epic",
+            creation_date_jalali="1403/04/15",
+            real_start_date_jalali="1403/04/16",
+            complete_date_jalali=None,
+            weeks_passed=2.5
         )
         mock_report = CurrentStoriesReport(
             project_key="TEST",
             sprint_name="Sprint 1",
             stories=[mock_story_item]
         )
-        
         self.use_case.get_projects.return_value = mock_projects
         self.use_case.get_sprints_for_project.return_value = mock_sprints
         self.use_case.generate_current_stories_report.return_value = mock_report
