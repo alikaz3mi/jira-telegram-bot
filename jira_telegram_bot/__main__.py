@@ -151,9 +151,7 @@ def setup_and_run():
         advanced_task_creation_use_case,
         speech_processor,
     )
-    get_current_stories_handler = GetCurrentStoriesHandler(
-        get_current_stories_use_case
-    )
+    get_current_stories_handler = container[GetCurrentStoriesHandler]
 
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(task_creation_handler.get_handler())
