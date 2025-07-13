@@ -21,6 +21,12 @@ class WorklogEntry(BaseModel):
     started: datetime = Field(description="When the work was started")
     comment: Optional[str] = Field(default=None, description="Worklog comment")
 
+    class Config:
+        """Pydantic model configuration."""
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
 
 class LinkedIssue(BaseModel):
     """Represents a linked issue in Jira."""
@@ -61,6 +67,12 @@ class JiraIssueDetail(BaseModel):
     worklog_entries: List[WorklogEntry] = Field(default_factory=list, description="Worklog entries")
     linked_issues: List[LinkedIssue] = Field(default_factory=list, description="Linked issues")
 
+    class Config:
+        """Pydantic model configuration."""
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
 
 class ProjectReport(BaseModel):
     """Aggregated project report data."""
@@ -69,3 +81,9 @@ class ProjectReport(BaseModel):
     generated_at: datetime = Field(description="Report generation timestamp")
     total_issues: int = Field(description="Total number of issues")
     issues: List[JiraIssueDetail] = Field(description="List of all issues")
+
+    class Config:
+        """Pydantic model configuration."""
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }

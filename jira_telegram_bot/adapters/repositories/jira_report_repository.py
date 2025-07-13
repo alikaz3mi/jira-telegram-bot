@@ -4,6 +4,7 @@ from __future__ import annotations
 import urllib
 from datetime import datetime
 from typing import List
+import json
 
 import pandas as pd
 from sqlalchemy import Column
@@ -173,6 +174,38 @@ class JiraReportRepository(JiraReportRepositoryInterface):
         finally:
             session.close()
 
+    def _serialize_worklog_entry(self, entry: WorklogEntry) -> dict:
+        """Serialize WorklogEntry to dict with datetime conversion.
+        
+        Args:
+            entry: WorklogEntry to serialize.
+            
+        Returns:
+            Dictionary with datetime objects converted to ISO strings.
+        """
+        # Use mode='json' to ensure proper datetime serialization
+        return entry.model_dump(mode='json')
+
+    def _deserialize_worklog_entry(self, data: dict) -> WorklogEntry:
+        """Deserialize dict to WorklogEntry with datetime conversion.
+        
+        Args:
+            data: Dictionary with datetime fields as ISO strings.
+            
+        Returns:
+            WorklogEntry instance.
+        """
+        # Convert ISO format strings back to datetime objects
+        for field in ['created', 'updated', 'started']:
+            if field in data and data[field] is not None:
+                if isinstance(data[field], str):
+                    try:
+                        data[field] = datetime.fromisoformat(data[field].replace('Z', '+00:00'))
+                    except ValueError:
+                        # Fallback for invalid date strings
+                        data[field] = datetime.now()
+        return WorklogEntry(**data)
+
     def _convert_to_model(self, issue: JiraIssueDetail) -> JiraTaskModel:
         """Convert issue entity to SQLAlchemy model.
         
@@ -182,8 +215,8 @@ class JiraReportRepository(JiraReportRepositoryInterface):
         Returns:
             SQLAlchemy model instance.
         """
-        worklog_data = [entry.model_dump() for entry in issue.worklog_entries]
-        linked_data = [link.model_dump() for link in issue.linked_issues]
+        worklog_data = [self._serialize_worklog_entry(entry) for entry in issue.worklog_entries]
+        linked_data = [link.model_dump(mode='json') for link in issue.linked_issues]
 
         return JiraTaskModel(
             key=issue.key,
@@ -226,7 +259,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
         worklog_entries = []
         if model.worklog_entries:
             worklog_entries = [
-                WorklogEntry(**entry) for entry in model.worklog_entries
+                self._deserialize_worklog_entry(entry) for entry in model.worklog_entries
             ]
 
         linked_issues = []
