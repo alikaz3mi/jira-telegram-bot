@@ -9,12 +9,12 @@ class CurrentStoryItem(BaseModel):
     
     Args:
         story_number: Sequential number for the story
-        epic: Epic name with grey badge
+        issue_name: Story/issue name
+        epic_name: Epic name (not ID)
         label_feature: Label/Feature with colored badge
         assignees_abbr: Abbreviated assignee names from subtasks
-        remaining: Remaining work estimate
+        remaining_hours: Remaining work estimate in hours
         release: Release version
-        issue_name: Story/issue name
         priority: Priority level
         progress: Progress indicator
         story_status: Status of the story itself
@@ -23,12 +23,12 @@ class CurrentStoryItem(BaseModel):
         other_tasks_count: Number of tasks in other statuses
     """
     story_number: int = Field(description="Sequential story number")
-    epic: Optional[str] = Field(default=None, description="Epic name")
+    issue_name: str = Field(description="Story/issue name")
+    epic_name: Optional[str] = Field(default=None, description="Epic name")
     label_feature: Optional[str] = Field(default=None, description="Label or feature name")
     assignees_abbr: List[str] = Field(default_factory=list, description="Abbreviated assignee names")
-    remaining: Optional[str] = Field(default=None, description="Remaining work estimate")
+    remaining_hours: Optional[float] = Field(default=None, description="Remaining work estimate in hours")
     release: Optional[str] = Field(default=None, description="Release version")
-    issue_name: str = Field(description="Story/issue name")
     priority: Optional[str] = Field(default=None, description="Priority level")
     progress: Optional[str] = Field(default=None, description="Progress indicator")
     story_status: Optional[str] = Field(default=None, description="Status of the story itself")

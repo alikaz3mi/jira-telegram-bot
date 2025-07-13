@@ -133,9 +133,7 @@ class GetCurrentStoriesUseCase:
         """
         assignees_abbr = await self._get_assignees_from_subtasks(story)
         
-        epic_name = None
-        if hasattr(story.fields, 'customfield_10100') and story.fields.customfield_10100:
-            epic_name = story.fields.customfield_10100
+        epic_name = await self._get_epic_name(story)
         
         label_feature = None
         if story.fields.labels:
@@ -143,9 +141,7 @@ class GetCurrentStoriesUseCase:
         elif story.fields.components:
             label_feature = ", ".join([c.name for c in story.fields.components])
         
-        remaining = None
-        if hasattr(story.fields, 'timetracking') and story.fields.timetracking:
-            remaining = getattr(story.fields.timetracking, 'remainingEstimate', None)
+        remaining_hours = await self._calculate_remaining_hours(story)
         
         release = None
         if story.fields.fixVersions:
@@ -163,12 +159,12 @@ class GetCurrentStoriesUseCase:
         
         return CurrentStoryItem(
             story_number=story_number,
-            epic=epic_name,
+            issue_name=story.fields.summary,
+            epic_name=epic_name,
             label_feature=label_feature,
             assignees_abbr=assignees_abbr,
-            remaining=remaining,
+            remaining_hours=remaining_hours,
             release=release,
-            issue_name=story.fields.summary,
             priority=priority,
             progress=progress,
             story_status=story_status,
@@ -176,6 +172,78 @@ class GetCurrentStoriesUseCase:
             done_tasks_count=task_counts["done"],
             other_tasks_count=task_counts["other"]
         )
+    
+    async def _get_epic_name(self, story) -> Optional[str]:
+        """Get epic name (not ID) for a story.
+        
+        Args:
+            story: Jira story issue
+            
+        Returns:
+            Epic name or None
+        """
+        try:
+            epic_link = None
+            if hasattr(story.fields, 'customfield_10100') and story.fields.customfield_10100:
+                epic_link = story.fields.customfield_10100
+            
+            if epic_link:
+                epic_issue = self.task_manager_repository.get_issue(epic_link)
+                if epic_issue:
+                    return epic_issue.fields.summary
+            
+            return None
+        except Exception as e:
+            LOGGER.warning(f"Failed to get epic name for story {story.key}: {e}")
+            return None
+    
+    async def _calculate_remaining_hours(self, story) -> Optional[float]:
+        """Calculate remaining hours from time tracking of story and its subtasks.
+        
+        Args:
+            story: Jira story issue
+            
+        Returns:
+            Total remaining hours as float
+        """
+        total_remaining_seconds = 0
+        
+        try:
+            # Get story's own remaining estimate
+            if hasattr(story.fields, 'timetracking') and story.fields.timetracking:
+                remaining_estimate = getattr(story.fields.timetracking, 'remainingEstimateSeconds', 0)
+                if remaining_estimate:
+                    total_remaining_seconds += remaining_estimate
+            
+            # Get remaining estimates from subtasks
+            if hasattr(story.fields, 'subtasks') and story.fields.subtasks:
+                for subtask in story.fields.subtasks:
+                    try:
+                        full_subtask = self.task_manager_repository.get_issue_with_expand(
+                            subtask.key, "timetracking"
+                        )
+                        if (full_subtask and 
+                            hasattr(full_subtask.fields, 'timetracking') and 
+                            full_subtask.fields.timetracking):
+                            subtask_remaining = getattr(
+                                full_subtask.fields.timetracking, 
+                                'remainingEstimateSeconds', 
+                                0
+                            )
+                            if subtask_remaining:
+                                total_remaining_seconds += subtask_remaining
+                    except Exception as e:
+                        LOGGER.warning(f"Failed to get time tracking for subtask {subtask.key}: {e}")
+            
+            # Convert seconds to hours
+            if total_remaining_seconds > 0:
+                return round(total_remaining_seconds / 3600.0, 2)
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.warning(f"Failed to calculate remaining hours for story {story.key}: {e}")
+            return None
     
     async def _get_assignees_from_subtasks(self, story) -> List[str]:
         """Get abbreviated assignee names from subtasks.

@@ -150,11 +150,12 @@ class TestGetCurrentStoriesUseCase(unittest.TestCase):
         
         story_item = result.stories[0]
         self.assertEqual(story_item.story_number, 1)
-        self.assertEqual(story_item.epic, "Test Epic")
-        self.assertEqual(story_item.label_feature, "feature")
         self.assertEqual(story_item.issue_name, "Test Story")
+        self.assertEqual(story_item.epic_name, "Test Epic")
+        self.assertEqual(story_item.label_feature, "feature")
         self.assertEqual(story_item.priority, "High")
         self.assertEqual(story_item.progress, "In Progress")
+        self.assertEqual(story_item.story_status, "In Progress")
         self.assertEqual(story_item.story_status, "In Progress")
         self.assertEqual(story_item.review_tasks_count, 0)
         self.assertEqual(story_item.done_tasks_count, 0)

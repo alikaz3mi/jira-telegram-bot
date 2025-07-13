@@ -69,13 +69,16 @@ class GetCurrentStoriesHandler:
                 return ConversationHandler.END
             
             keyboard = []
-            for project in projects:
-                keyboard.append([
-                    InlineKeyboardButton(
+            # Group projects into rows of 3
+            for i in range(0, len(projects), 3):
+                row = []
+                for j in range(i, min(i + 3, len(projects))):
+                    project = projects[j]
+                    row.append(InlineKeyboardButton(
                         f"{project['name']} ({project['key']})",
                         callback_data=f"project:{project['key']}"
-                    )
-                ])
+                    ))
+                keyboard.append(row)
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(

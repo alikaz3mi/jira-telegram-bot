@@ -68,13 +68,20 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
             workbook: XlsxWriter workbook
             worksheet: XlsxWriter worksheet
         """
+    def _setup_worksheet_formatting(self, workbook, worksheet):
+        """Setup worksheet formatting and column widths.
+        
+        Args:
+            workbook: XlsxWriter workbook
+            worksheet: XlsxWriter worksheet
+        """
         worksheet.set_column('A:A', 5)   # # column
-        worksheet.set_column('B:B', 20)  # Epic column
-        worksheet.set_column('C:C', 25)  # Label/Feature column
-        worksheet.set_column('D:D', 15)  # Assignee column
-        worksheet.set_column('E:E', 12)  # Remaining column
-        worksheet.set_column('F:F', 15)  # Release column
-        worksheet.set_column('G:G', 40)  # Issue name column
+        worksheet.set_column('B:B', 40)  # Issue name column
+        worksheet.set_column('C:C', 20)  # Epic column
+        worksheet.set_column('D:D', 25)  # Label/Feature column
+        worksheet.set_column('E:E', 15)  # Assignee column
+        worksheet.set_column('F:F', 12)  # Remaining column
+        worksheet.set_column('G:G', 15)  # Release column
         worksheet.set_column('H:H', 12)  # Priority column
         worksheet.set_column('I:I', 15)  # Progress column
         worksheet.set_column('J:J', 15)  # Story Status column
@@ -90,12 +97,12 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
         """
         headers = [
             "#",
+            "Issue name",
             "Epic\n(grey badge)",
             "Label / Feature\n(coloured badge)",
             "Assignee (abbr.)",
-            "Remaining",
+            "Remaining (hours)",
             "Release",
-            "Issue name",
             "Priority",
             "Progress",
             "Story Status",
@@ -116,12 +123,12 @@ class CurrentStoriesService(CurrentStoriesServiceInterface):
         """
         for row, story in enumerate(stories, 1):
             worksheet.write(row, 0, story.story_number)
-            worksheet.write(row, 1, story.epic or "")
-            worksheet.write(row, 2, story.label_feature or "")
-            worksheet.write(row, 3, ", ".join(story.assignees_abbr))
-            worksheet.write(row, 4, story.remaining or "")
-            worksheet.write(row, 5, story.release or "")
-            worksheet.write(row, 6, story.issue_name)
+            worksheet.write(row, 1, story.issue_name)
+            worksheet.write(row, 2, story.epic_name or "")
+            worksheet.write(row, 3, story.label_feature or "")
+            worksheet.write(row, 4, ", ".join(story.assignees_abbr))
+            worksheet.write(row, 5, story.remaining_hours or "0h")
+            worksheet.write(row, 6, story.release or "")
             worksheet.write(row, 7, story.priority or "")
             worksheet.write(row, 8, story.progress or "")
             worksheet.write(row, 9, story.story_status or "")
