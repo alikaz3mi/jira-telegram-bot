@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes, CommandHandler, ConversationHandler, Call
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 
 
 class GetCurrentStoriesHandler:
@@ -24,13 +25,16 @@ class GetCurrentStoriesHandler:
     def __init__(
         self,
         get_current_stories_use_case: GetCurrentStoriesUseCase,
+        jira_settings: JiraConnectionSettings,
     ):
         """Initialize the handler.
         
         Args:
             get_current_stories_use_case: Use case for current stories business logic
+            jira_settings: Jira connection settings for getting base URL
         """
         self.get_current_stories_use_case = get_current_stories_use_case
+        self.jira_settings = jira_settings
     
     def get_handler(self) -> ConversationHandler:
         """Get the conversation handler for this command.
@@ -178,12 +182,19 @@ class GetCurrentStoriesHandler:
                 )
                 return ConversationHandler.END
             
-            xlsx_data = await self.get_current_stories_use_case.current_stories_service.generate_stories_xlsx(
-                report
+            # Generate XLSX file
+            xlsx_data = await self.get_current_stories_use_case.generate_xlsx_report(report)
+            
+            # Save to Google Sheets
+            google_sheets_success = await self.get_current_stories_use_case.save_to_google_sheets(
+                report, 
+                report.sprint_name,
+                self.jira_settings.server_url
             )
             
             filename = f"current_stories_{project_key}_{report.sprint_name.replace(' ', '_')}.xlsx"
             
+            # Send XLSX file
             await context.bot.send_document(
                 chat_id=query.message.chat_id,
                 document=xlsx_data,
@@ -197,12 +208,20 @@ class GetCurrentStoriesHandler:
                 parse_mode="Markdown"
             )
             
-            await query.edit_message_text(
+            # Create status message
+            status_message = (
                 f"✅ Current stories report generated successfully!\n\n"
                 f"**Project:** {project_key}\n"
                 f"**Sprint:** {report.sprint_name}\n"
-                f"**Stories:** {len(report.stories)} found"
+                f"**Stories:** {len(report.stories)} found\n"
             )
+            
+            if google_sheets_success:
+                status_message += f"📄 Report saved to Google Sheets: '{report.sprint_name}'"
+            else:
+                status_message += "⚠️ Failed to save to Google Sheets (XLSX file still available)"
+            
+            await query.edit_message_text(status_message)
             
             return ConversationHandler.END
             

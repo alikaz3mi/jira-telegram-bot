@@ -22,6 +22,7 @@ from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTa
 from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
@@ -214,6 +215,7 @@ def setup_container() -> Container:
     child_container[GetCurrentStoriesHandler] = Singleton(
         lambda c: GetCurrentStoriesHandler(
             get_current_stories_use_case=c[GetCurrentStoriesUseCase],
+            jira_settings=c[JiraConnectionSettings],
         )
     )
     

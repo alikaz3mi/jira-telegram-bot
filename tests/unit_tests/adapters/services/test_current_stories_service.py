@@ -1,9 +1,10 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from io import BytesIO
 
 from jira_telegram_bot.entities.current_stories_report import CurrentStoriesReport, CurrentStoryItem
 from jira_telegram_bot.adapters.services.current_stories_service import CurrentStoriesService
+from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
 
 
 class TestCurrentStoriesService(unittest.TestCase):
@@ -11,10 +12,16 @@ class TestCurrentStoriesService(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures for each test."""
-        self.service = CurrentStoriesService()
+        # Create mock settings
+        self.mock_settings = MagicMock(spec=GoogleSheetsConnectionSettings)
+        self.mock_settings.token_path = "/path/to/token.json"
+        self.mock_settings.sheet_id = "test_sheet_id"
+        self.mock_settings.worksheet_name = "test_worksheet"
+        
+        self.service = CurrentStoriesService(self.mock_settings)
     
-    async def test_generate_stories_xlsx_success(self):
-        """Test successful XLSX generation."""
+    async def test_save_to_google_sheets_success(self):
+        """Test successful Google Sheets saving."""
         # Arrange
         story_item = CurrentStoryItem(
             issue_number="TEST-1",
@@ -38,12 +45,19 @@ class TestCurrentStoriesService(unittest.TestCase):
             stories=[story_item]
         )
         
+        # Mock the Google client
+        mock_google_client = AsyncMock()
+        mock_google_client.write_to_worksheet = AsyncMock()
+        self.service._google_client = mock_google_client
+        
         # Act
-        result = await self.service.generate_stories_xlsx(report)
+        result = await self.service.save_to_google_sheets(
+            report, "Sprint 1", "https://jira.example.com"
+        )
         
         # Assert
-        self.assertIsInstance(result, BytesIO)
-        self.assertGreater(result.getvalue().__len__(), 0)
+        self.assertTrue(result)
+        mock_google_client.write_to_worksheet.assert_called_once()
     
     def test_create_assignee_abbreviation_underscore_format(self):
         """Test assignee abbreviation creation with underscore format."""

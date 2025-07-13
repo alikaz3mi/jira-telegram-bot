@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
+from io import BytesIO
 import jdatetime
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.current_stories_report import CurrentStoriesReport, CurrentStoryItem
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
+from jira_telegram_bot.use_cases.interfaces.xlsx_report_service_interface import XlsxReportServiceInterface
 
 
 class GetCurrentStoriesUseCase:
@@ -21,15 +23,18 @@ class GetCurrentStoriesUseCase:
         self,
         task_manager_repository: TaskManagerRepositoryInterface,
         current_stories_service: CurrentStoriesServiceInterface,
+        xlsx_report_service: XlsxReportServiceInterface,
     ):
         """Initialize the use case.
         
         Args:
             task_manager_repository: Repository for task management operations
             current_stories_service: Service for current stories operations
+            xlsx_report_service: Service for XLSX report generation
         """
         self.task_manager_repository = task_manager_repository
         self.current_stories_service = current_stories_service
+        self.xlsx_report_service = xlsx_report_service
     
     async def get_projects(self) -> List[Dict[str, str]]:
         """Get available projects.
@@ -418,3 +423,34 @@ class GetCurrentStoriesUseCase:
         except Exception as e:
             LOGGER.warning(f"Failed to calculate weeks passed for date {created_date}: {e}")
             return None
+    
+    async def generate_xlsx_report(self, report: CurrentStoriesReport) -> BytesIO:
+        """Generate XLSX file from current stories report.
+        
+        Args:
+            report: The current stories report data
+            
+        Returns:
+            BytesIO containing the XLSX file
+        """
+        return await self.xlsx_report_service.generate_current_stories_xlsx(report)
+    
+    async def save_to_google_sheets(
+        self, 
+        report: CurrentStoriesReport, 
+        sprint_name: str,
+        jira_base_url: str
+    ) -> bool:
+        """Save current stories report to Google Sheets.
+        
+        Args:
+            report: The current stories report data
+            sprint_name: Name of the sprint (used as sheet name)
+            jira_base_url: Base URL for creating Jira issue links
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return await self.current_stories_service.save_to_google_sheets(
+            report, sprint_name, jira_base_url
+        )

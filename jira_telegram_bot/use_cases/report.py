@@ -19,13 +19,18 @@ from tqdm import tqdm
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.settings import POSTGRES_SETTINGS
+# NOTE: This file contains legacy code that doesn't follow Clean Architecture.
+# It should be refactored to use dependency injection properly.
 
-DB_USER = POSTGRES_SETTINGS.db_user
-DB_PASSWORD = POSTGRES_SETTINGS.db_password
-DB_HOST = POSTGRES_SETTINGS.db_host
-DB_PORT = POSTGRES_SETTINGS.db_port
-DB_NAME = POSTGRES_SETTINGS.db_name
+from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
+
+# Legacy direct instantiation - should be injected via DI
+_postgres_settings = PostgresSettings()
+DB_USER = _postgres_settings.db_user
+DB_PASSWORD = _postgres_settings.db_password
+DB_HOST = _postgres_settings.db_host
+DB_PORT = _postgres_settings.db_port
+DB_NAME = _postgres_settings.db_name
 
 encoded_password = urllib.parse.quote_plus(DB_PASSWORD)
 

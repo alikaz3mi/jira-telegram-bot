@@ -100,8 +100,11 @@ from jira_telegram_bot.use_cases.interfaces.scheduler_service_interface import S
 
 # Current Stories imports
 from jira_telegram_bot.adapters.services.current_stories_service import CurrentStoriesService
+from jira_telegram_bot.adapters.services.xlsx_report_service import XlsxReportService
+from jira_telegram_bot.adapters.google_sheet import GoogleSheetClient
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
+from jira_telegram_bot.use_cases.interfaces.xlsx_report_service_interface import XlsxReportServiceInterface
 
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
@@ -148,6 +151,11 @@ def configure_container() -> Container:
     # Add GoogleSheetsSettings if it exists
     try:
         container[GoogleSheetsConnectionSettings] = Singleton(lambda: GoogleSheetsConnectionSettings())
+
+        # Google Sheets Client
+        container[GoogleSheetClient] = Singleton(
+            lambda: GoogleSheetClient(container[GoogleSheetsConnectionSettings])
+        )
     except Exception as e:
         LOGGER.warning(f"GoogleSheetsConnectionSettings not registered: {e}")
     
@@ -404,13 +412,18 @@ def configure_container() -> Container:
     
     # Current Stories dependencies
     container[CurrentStoriesServiceInterface] = Singleton(
-        lambda c: CurrentStoriesService()
+        lambda c: CurrentStoriesService(c[GoogleSheetsConnectionSettings])
+    )
+    
+    container[XlsxReportServiceInterface] = Singleton(
+        lambda c: XlsxReportService()
     )
     
     container[GetCurrentStoriesUseCase] = Singleton(
         lambda c: GetCurrentStoriesUseCase(
             task_manager_repository=c[TaskManagerRepositoryInterface],
             current_stories_service=c[CurrentStoriesServiceInterface],
+            xlsx_report_service=c[XlsxReportServiceInterface],
         )
     )
     

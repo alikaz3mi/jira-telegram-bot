@@ -17,7 +17,8 @@ from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import 
     JiraServerRepository,
 )
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import GOOGLE_SHEETS_SETTINGS
+from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
+from jira_telegram_bot.use_cases.interfaces.google_sheet_client_interface import GoogleSheetClientInterface
 
 
 class ISheetClient(ABC):
@@ -52,29 +53,28 @@ class ISheetClient(ABC):
         pass
 
 
-class GoogleSheetClient(ISheetClient):
+class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
     """Implementation of Google Sheets client using gspread."""
 
-    def __init__(self, json_token_path: str, scope: List[str] = None):
+    def __init__(self, settings: GoogleSheetsConnectionSettings):
         """
         Initialize the Google Sheets client with authentication.
 
         Args:
-            json_token_path: Path to the Google API token JSON file
-            scope: List of OAuth scopes (default: None, uses standard scopes)
+            settings: Google Sheets connection settings
         """
         # Define the default scope if not provided.
-        if scope is None:
-            scope = [
-                "https://spreadsheets.google.com/feeds",
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive.file",
-                "https://www.googleapis.com/auth/drive",
-            ]
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive.file",
+            "https://www.googleapis.com/auth/drive",
+        ]
         # Authenticate using the service account JSON token.
         try:
+            self.settings = settings
             self.credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                json_token_path,
+                settings.token_path,
                 scope,
             )
             self.client = gspread.authorize(self.credentials)
@@ -118,6 +118,56 @@ class GoogleSheetClient(ISheetClient):
             return spreadsheet.worksheet(worksheet_name)
         except Exception as e:
             LOGGER.error(f"Error getting worksheet by name '{worksheet_name}': {e}")
+            raise
+
+    async def write_to_worksheet(
+        self,
+        worksheet_name: str,
+        headers: List[str],
+        data: List[List[Any]],
+        clear_existing: bool = True,
+        sheet_id: Optional[str] = None,
+    ):
+        """Write data to a worksheet with the given name.
+
+        Args:
+            worksheet_name: Name of the worksheet
+            headers: List of header names
+            data: List of rows, where each row is a list of values
+            clear_existing: Whether to clear existing data first
+            sheet_id: Optional sheet ID override
+        """
+        try:
+            # Use provided sheet_id (must be provided since no settings are available here)
+            if not sheet_id:
+                raise ValueError("sheet_id must be provided")
+            spreadsheet = self.client.open_by_key(sheet_id)
+
+            # Try to get existing worksheet, or create new one
+            try:
+                worksheet = spreadsheet.worksheet(worksheet_name)
+                if clear_existing:
+                    worksheet.clear()
+            except Exception:
+                # Worksheet doesn't exist, create it
+                worksheet = spreadsheet.add_worksheet(
+                    title=worksheet_name, rows=1000, cols=20
+                )
+
+            # Write headers
+            if headers:
+                worksheet.append_row(headers)
+
+            # Write data rows
+            for row in data:
+                worksheet.append_row(row)
+
+            LOGGER.info(
+                f"Successfully wrote {len(data)} rows to worksheet '{worksheet_name}'",
+            )
+
+        except Exception as e:
+            LOGGER.error(f"Error writing to worksheet '{worksheet_name}': {e}")
             raise
 
 
@@ -378,28 +428,33 @@ class TestSheetRepository(unittest.TestCase):
 # --- Main Function for Actual Usage ---
 
 
-async def create_tasks_from_sheet() -> List[str]:
+async def create_tasks_from_sheet(
+    jira_repository, 
+    sheet_client: GoogleSheetClient, 
+    sheet_id: str, 
+    worksheet_name: str = "Assignments"
+) -> List[str]:
     """
     Create Jira tasks from assignments in a Google Sheet.
+
+    Args:
+        jira_repository: JiraRepository instance to create tasks
+        sheet_client: GoogleSheetClient instance
+        sheet_id: The ID of the Google Sheet
+        worksheet_name: Name of the worksheet containing assignments
 
     Returns:
         List of created issue keys
     """
     try:
-        # Initialize the JiraRepository
-        from jira_telegram_bot.settings import JIRA_SETTINGS
-
-        jira_repository = JiraServerRepository(JIRA_SETTINGS)
-
-        # Initialize the Google Sheet client and repository
-        sheet_client = GoogleSheetClient(GOOGLE_SHEETS_SETTINGS.token_path)
+        # Initialize the repository
         repository = SheetRepository(sheet_client)
 
         # Create tasks from the assignments
         created_issues = repository.create_jira_tasks_from_assignments(
-            sheet_id=GOOGLE_SHEETS_SETTINGS.sheet_id,
+            sheet_id=sheet_id,
             jira_repository=jira_repository,
-            worksheet_name=GOOGLE_SHEETS_SETTINGS.worksheet_name,
+            worksheet_name=worksheet_name,
             project_key=None,  # This can be specified in the sheet
         )
 
@@ -414,21 +469,12 @@ async def create_tasks_from_sheet() -> List[str]:
 
 def main():
     """Main function for running as a script."""
-    try:
-        # Initialize the Google Sheet client and repository
-        sheet_client = GoogleSheetClient(GOOGLE_SHEETS_SETTINGS.token_path)
-        repository = SheetRepository(sheet_client)
-
-        # Fetch records from the first worksheet (worksheet_index = 0)
-        records = repository.get_sheet_records(GOOGLE_SHEETS_SETTINGS.sheet_id)
-        LOGGER.info("Sheet Records:")
-        for record in records:
-            LOGGER.info(record)
-
-        # Run the async function to create tasks
-        asyncio.run(create_tasks_from_sheet())
-    except Exception as e:
-        LOGGER.error(f"An error occurred: {e}")
+    # This main function should be updated to use dependency injection
+    # when this module is properly integrated with the application
+    LOGGER.warning(
+        "This main function requires proper dependency injection setup. "
+        "Use the dependency injection container instead."
+    )
 
 
 if __name__ == "__main__":

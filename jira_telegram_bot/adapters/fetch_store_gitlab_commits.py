@@ -19,7 +19,10 @@ from tqdm import tqdm
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings import GITLAB_SETTINGS
-from jira_telegram_bot.settings import POSTGRES_SETTINGS
+# NOTE: This file contains legacy code that doesn't follow Clean Architecture.
+# It should be refactored to use dependency injection properly.
+
+from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 
 Base = declarative_base()
 
@@ -59,7 +62,8 @@ def create_db_session():
     """
     Creates a SQLAlchemy session based on PostgresSettings from .env
     """
-    pg_settings = POSTGRES_SETTINGS
+    # Legacy direct instantiation - should be injected via DI
+    pg_settings = PostgresSettings()
     encoded_password = urllib.parse.quote_plus(pg_settings.db_password)
 
     database_url = (
