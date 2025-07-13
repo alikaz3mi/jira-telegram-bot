@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
-import requests
+import jdatetime
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.current_stories_report import CurrentStoriesReport, CurrentStoryItem
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
-from jira_telegram_bot.utils.jalali_georgian_calendar import JalaliGregorianCalendar
 
 
 class GetCurrentStoriesUseCase:
@@ -316,7 +315,7 @@ class GetCurrentStoriesUseCase:
             date_string: ISO format date string from Jira
             
         Returns:
-            Jalali date string or None
+            Jalali date string in format YYYY/MM/DD or None
         """
         if not date_string:
             return None
@@ -325,42 +324,13 @@ class GetCurrentStoriesUseCase:
             # Parse the ISO date string
             dt = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
             
-            # Get calendar data for the month
-            calendar_json = await self._get_calendar_data(dt.year, dt.month)
-            if not calendar_json:
-                return None
-                
-            calendar = JalaliGregorianCalendar(calendar_json)
+            # Convert to Jalali using jdatetime
+            jalali_date = jdatetime.GregorianToJalali(dt.year, dt.month, dt.day)
             
-            # Convert to Jalali
-            jalali_day = calendar.jalali_from_gregorian(dt.day)
-            if jalali_day:
-                return f"{calendar._header['jalali']}/{jalali_day:02d}"
-            
-            return None
+            return f"{jalali_date.jyear}/{jalali_date.jmonth:02d}/{jalali_date.jday:02d}"
             
         except Exception as e:
             LOGGER.warning(f"Failed to convert date {date_string} to Jalali: {e}")
-            return None
-    
-    async def _get_calendar_data(self, year: int, month: int) -> Optional[Dict]:
-        """Get calendar data from API for date conversion.
-        
-        Args:
-            year: Gregorian year
-            month: Gregorian month
-            
-        Returns:
-            Calendar JSON data or None
-        """
-        try:
-            url = f"https://calendar-api.heydarihamed.ir/api/calendar/{year}/{month}"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except Exception as e:
-            LOGGER.warning(f"Failed to get calendar data for {year}/{month}: {e}")
             return None
     
     async def _get_real_start_date_jalali(self, story) -> Optional[str]:
