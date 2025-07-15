@@ -113,6 +113,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
         group_chat_id,
         issue_message,
         reply_message_id=post["reply_message_id"],
+        token=TELEGRAM_SETTINGS.HOOK_TOKEN
     )
 
 
@@ -206,6 +207,7 @@ async def handle_comment_event(
         group_chat_id,
         message,
         reply_message_id=reply_message_id,
+        token=TELEGRAM_SETTINGS.HOOK_TOKEN
     )
     LOGGER.info(f"Sent comment notification for {issue_key}")
 
@@ -225,6 +227,7 @@ async def handle_status_change(
         group_chat_id,
         message,
         reply_message_id=reply_message_id,
+        token=TELEGRAM_SETTINGS.HOOK_TOKEN
     )
     LOGGER.info(f"Sent status transition notification for {issue_key}")
 
@@ -260,6 +263,7 @@ async def handle_review_transition(
         group_chat_id,
         notify_msg,
         reply_message_id=reply_message_id,
+        token=TELEGRAM_SETTINGS.HOOK_TOKEN
     )
     LOGGER.info(f"Reassigned {issue_key} to {assignee} for review")
 
@@ -287,6 +291,7 @@ async def handle_due_date_change(
         group_chat_id,
         message,
         reply_message_id=reply_message_id,
+        token=TELEGRAM_SETTINGS.HOOK_TOKEN
     )
     LOGGER.info(f"Sent due date update notification for {issue_key}")
 
@@ -326,6 +331,7 @@ async def process_command(
                 store_entry["group_chat_id"],
                 f"Task {issue_key} marked as Done",
                 reply_message_id=store_entry["reply_message_id"],
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN
             )
 
             return {"status": "success", "message": f"Task {issue_key} marked as done"}
@@ -338,6 +344,7 @@ async def process_command(
                 store_entry["group_chat_id"],
                 f"Task {issue_key} marked as Review",
                 reply_message_id=store_entry["reply_message_id"],
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN
             )
             return {"status": "success", "message": f"Task {issue_key} moved to review"}
 
@@ -403,6 +410,7 @@ async def jira_webhook_endpoint(request: Request):
                         message,
                         reply_message_id=reply_message_id,
                         parse_mode="html",
+                        token=TELEGRAM_SETTINGS.HOOK_TOKEN
                     )
                     LOGGER.info(f"Sent reassignment notification for {issue_key}")
 
@@ -514,6 +522,7 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
                 group_chat_id,
                 issue_message,
                 reply_message_id=message_id,
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN
             )
 
         data_local = telegram_post_data_store.load_data_store()
