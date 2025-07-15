@@ -248,7 +248,12 @@ async def handle_review_transition(
     if not creator_username or creator_username not in user_config.list_all_users():
         return
 
-    assignee = user_config.get_user_config(creator_username).jira_username
+    user_cfg = user_config.get_user_config(creator_username)
+    assignee = user_cfg.jira_username if user_cfg else None
+    if not assignee:
+        LOGGER.warning(f"No jira_username found for creator: {creator_username}")
+        return
+        
     jira_repository.assign_issue(issue_key, assignee)
     notify_msg = f"""*👤 Task Reassigned*\n\nTask {issue_key} has been assigned to @{creator_username} for review"""
     send_telegram_message(
@@ -359,7 +364,7 @@ async def jira_webhook_endpoint(request: Request):
             return {"status": "ignored", "message": "No group chat mapping found"}
 
         group_chat_id = group_chat_info["group_chat_id"]
-        reply_message_id = group_chat_info["reply_message_id"]
+        reply_message_id = group_chat_info.get("reply_message_id")
 
         # Handle comment events
         if body.get("issue_event_type_name") == "issue_commented":
@@ -553,7 +558,15 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
             "reason": "No Jira issue mapping found for this group.",
         }
 
-    jira_username = user_config.get_user_config(message_from).jira_username
+    user_cfg = user_config.get_user_config(message_from)
+    jira_username = user_cfg.jira_username if user_cfg else None
+    
+    if not jira_username:
+        LOGGER.warning(f"No jira_username found for user: {message_from}")
+        return {
+            "status": "ignored",
+            "reason": "User not configured in system",
+        }
 
     # Handle commands
     command_result = await process_command(text, issue_key, message_from, jira_username)
@@ -578,13 +591,16 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
 
 def create_task_data(username: str, parsed_fields: Dict[str, str]) -> TaskData:
     """Create TaskData object from parsed fields."""
+    user_cfg = user_config.get_user_config(username)
+    assignee = user_cfg.jira_username if user_cfg else None
+    
     return TaskData(
         project_key=JIRA_PROJECT_KEY,
         summary=parsed_fields["summary"],
         description=parsed_fields["description"],
         task_type=parsed_fields["task_type"],
         labels=[parsed_fields.get("labels", "")],
-        assignee=user_config.get_user_config(username).jira_username,
+        assignee=assignee,
     )
 
 
@@ -689,12 +705,15 @@ async def finalize_media_groups():
                 # Use LangChain to parse the text
                 parsed_fields = parse_jira_prompt(text)
 
+                user_cfg = user_config.get_user_config(username)
+                assignee = user_cfg.jira_username if user_cfg else None
+
                 task_data = TaskData(
                     project_key=JIRA_PROJECT_KEY,
                     summary=parsed_fields["summary"],
                     description=parsed_fields["description"],
                     task_type=parsed_fields["task_type"],
-                    assignee=user_config.get_user_config(username).jira_username,
+                    assignee=assignee,
                 )
 
                 await process_media_group(messages, task_data)

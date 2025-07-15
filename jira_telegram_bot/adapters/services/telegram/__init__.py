@@ -7,6 +7,7 @@ import requests
 class MockTelegramPhoto:
     def __init__(self, file_id, token: str = None):
         self.file_id = file_id
+        self.token = token
 
     async def get_file(self):
         return MockFilePath(self.file_id, self.token)
