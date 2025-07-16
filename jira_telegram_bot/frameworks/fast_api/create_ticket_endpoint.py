@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from jira_telegram_bot.app_container import create_fastapi_integration
-from jira_telegram_bot.frameworks.fast_api.telegram_webhook_controller import (
+from jira_telegram_bot.frameworks.fast_api.telegram_webhook_endpoint import (
     get_telegram_router,
 )
 

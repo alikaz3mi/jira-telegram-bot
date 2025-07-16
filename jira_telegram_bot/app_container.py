@@ -144,6 +144,7 @@ def setup_container() -> Container:
     child_container[UserSettingsConversation] = Singleton(
         lambda c: UserSettingsConversation(
             c[UserConfigInterface],
+            ["alikaz3mi"],
             c[UserAuthenticationInterface]
         )
     )

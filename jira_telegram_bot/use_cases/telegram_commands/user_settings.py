@@ -28,6 +28,7 @@ class UserSettingsConversation:
     def __init__(
         self,
         user_config_repo: UserConfigInterface,
+        admin_usernames: List[str],
         user_authentication_repo: UserAuthenticationInterface,
     ):
         """
@@ -36,6 +37,7 @@ class UserSettingsConversation:
         :param user_authentication_repo: your user authentication repository
         """
         self.user_config_repo = user_config_repo
+        self.admin_usernames = admin_usernames
         self.user_authentication_repo = user_authentication_repo
 
     def build_main_menu(self, is_admin: bool) -> InlineKeyboardMarkup:
