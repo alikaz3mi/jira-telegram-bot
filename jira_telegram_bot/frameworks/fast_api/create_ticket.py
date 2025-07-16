@@ -79,7 +79,6 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     attachments["documents"],
                     file_name,
                     token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-                    
                 )
             elif "video" in msg:
                 vid = msg["video"]
@@ -91,7 +90,6 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     attachments["videos"],
                     f"video_{idx}.mp4",
                     token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-                    
                 )
             elif "audio" in msg:
                 aud = msg["audio"]
@@ -103,7 +101,6 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     attachments["audio"],
                     f"audio_{idx}.mp3",
                     token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-                    
                 )
 
     issue = jira_repository.create_task(task_data)
@@ -131,51 +128,47 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
         if "photo" in channel_post:
             photo_array = channel_post["photo"]
             file_id = photo_array[-1]["file_id"]
-            mock_media = MockTelegramPhoto(file_id)
+            mock_media = MockTelegramPhoto(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
             await fetch_and_store_media(
                 mock_media,
                 session,
                 attachments["images"],
                 "single_image.jpg",
                 token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-                
             )
         elif "document" in channel_post:
             doc = channel_post["document"]
             file_id = doc["file_id"]
             file_name = doc.get("file_name", "single_document")
-            mock_media = MockTelegramDocument(file_id)
+            mock_media = MockTelegramDocument(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
             await fetch_and_store_media(
                 mock_media,
                 session,
                 attachments["documents"],
                 file_name,
                 token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-                
             )
         elif "video" in channel_post:
             vid = channel_post["video"]
             file_id = vid["file_id"]
-            mock_media = MockTelegramVideo(file_id)
+            mock_media = MockTelegramVideo(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
             await fetch_and_store_media(
                 mock_media,
                 session,
                 attachments["videos"],
                 "single_video.mp4",
                 token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-                
             )
         elif "audio" in channel_post:
             aud = channel_post["audio"]
             file_id = aud["file_id"]
-            mock_media = MockTelegramAudio(file_id)
+            mock_media = MockTelegramAudio(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
             await fetch_and_store_media(
                 mock_media,
                 session,
                 attachments["audio"],
                 "single_audio.mp3",
                 token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-                
             )
 
     issue = jira_repository.create_task(task_data)

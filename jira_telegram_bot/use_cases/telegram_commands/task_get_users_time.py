@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from collections import defaultdict
 from datetime import datetime
+from datetime import timedelta
 
 import xlsxwriter
 from telegram import Update
@@ -88,8 +89,11 @@ class TaskGetUsersTime:
         context.user_data["days"] = days
 
         first_day: datetime = context.user_data["first_day"]
+        last_day = first_day + timedelta(days=days)
+        
         jql = (
-            f'updated >= "{first_day.strftime("%Y-%m-%d")}" AND worklogDate >= "{first_day.strftime("%Y-%m-%d")}" '
+            f'updated >= "{first_day.strftime("%Y-%m-%d")}" AND updated <= "{last_day.strftime("%Y-%m-%d")}" '
+            f'AND worklogDate >= "{first_day.strftime("%Y-%m-%d")}" AND worklogDate <= "{last_day.strftime("%Y-%m-%d")}" '
             "ORDER BY updated DESC"
         )
 
@@ -116,12 +120,23 @@ class TaskGetUsersTime:
                 continue
 
             for wl in worklogs:
-                if not wl.started >= first_day.strftime("%Y-%m-%d"):
+                started_str = wl.started  # e.g. "2023-04-05T10:45:00.000+0300"
+                try:
+                    # Parse the start date of the worklog
+                    started_date = datetime.strptime(
+                        started_str.split(".")[0],
+                        "%Y-%m-%dT%H:%M:%S",
+                    )
+                    # Check if worklog is within the date range
+                    if not (first_day <= started_date <= last_day):
+                        continue
+                except ValueError:
+                    # Skip worklogs with unparseable dates
                     continue
+                
                 author_name = wl.author.displayName
                 time_spent_seconds = wl.timeSpentSeconds or 0
                 comment = (wl.comment or "").lower()
-                started_str = wl.started  # e.g. "2023-04-05T10:45:00.000+0300"
 
                 # Update total time
                 user_data_map[author_name]["total_time"] += time_spent_seconds
@@ -130,23 +145,11 @@ class TaskGetUsersTime:
                 if "remote" in comment or "remote" in issue.fields.summary.lower():
                     user_data_map[author_name]["remote_time"] += time_spent_seconds
 
-                # Parse the start date of the worklog
-                try:
-                    # Adjust parsing if your JIRA date format differs
-                    started_date = datetime.strptime(
-                        started_str.split(".")[0],
-                        "%Y-%m-%dT%H:%M:%S",
-                    )
-                except ValueError:
-                    # Fallback or log parsing errors
-                    started_date = None
-
                 # Check if it was a weekend or holiday
-                if started_date is not None:
-                    if self._is_weekend_or_persian_holiday(started_date):
-                        user_data_map[author_name][
-                            "weekend_holiday_time"
-                        ] += time_spent_seconds
+                if self._is_weekend_or_persian_holiday(started_date):
+                    user_data_map[author_name][
+                        "weekend_holiday_time"
+                    ] += time_spent_seconds
 
         # Generate and send Excel file
         await self._generate_and_send_excel(update, user_data_map)
