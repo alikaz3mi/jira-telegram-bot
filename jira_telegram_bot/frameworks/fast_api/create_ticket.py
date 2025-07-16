@@ -66,6 +66,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     session,
                     attachments["images"],
                     f"image_{idx}.jpg",
+                    token=TELEGRAM_SETTINGS.HOOK_TOKEN,
                 )
             elif "document" in msg:
                 doc = msg["document"]
@@ -77,6 +78,8 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     session,
                     attachments["documents"],
                     file_name,
+                    token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                    
                 )
             elif "video" in msg:
                 vid = msg["video"]
@@ -87,6 +90,8 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     session,
                     attachments["videos"],
                     f"video_{idx}.mp4",
+                    token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                    
                 )
             elif "audio" in msg:
                 aud = msg["audio"]
@@ -97,6 +102,8 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     session,
                     attachments["audio"],
                     f"audio_{idx}.mp3",
+                    token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                    
                 )
 
     issue = jira_repository.create_task(task_data)
@@ -130,6 +137,8 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
                 session,
                 attachments["images"],
                 "single_image.jpg",
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                
             )
         elif "document" in channel_post:
             doc = channel_post["document"]
@@ -141,6 +150,8 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
                 session,
                 attachments["documents"],
                 file_name,
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                
             )
         elif "video" in channel_post:
             vid = channel_post["video"]
@@ -151,6 +162,8 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
                 session,
                 attachments["videos"],
                 "single_video.mp4",
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                
             )
         elif "audio" in channel_post:
             aud = channel_post["audio"]
@@ -161,6 +174,8 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
                 session,
                 attachments["audio"],
                 "single_audio.mp3",
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                
             )
 
     issue = jira_repository.create_task(task_data)
