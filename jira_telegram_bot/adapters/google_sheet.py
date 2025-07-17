@@ -171,6 +171,139 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             LOGGER.error(f"Error writing to worksheet '{worksheet_name}': {e}")
             raise
 
+    async def append_rows(
+        self,
+        spreadsheet_id: str,
+        range_name: str,
+        values: List[List[Any]]
+    ) -> bool:
+        """Append rows to a Google Sheet.
+        
+        Args:
+            spreadsheet_id: The Google Sheet ID
+            range_name: Range to append to (e.g., "Sheet1!A:Z")
+            values: List of row data to append
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            spreadsheet = self.client.open_by_key(spreadsheet_id)
+            
+            # Extract sheet name from range
+            sheet_name = range_name.split('!')[0] if '!' in range_name else 'Sheet1'
+            worksheet = spreadsheet.worksheet(sheet_name)
+            
+            # Append each row
+            for row in values:
+                worksheet.append_row(row)
+            
+            LOGGER.info(f"Successfully appended {len(values)} rows to {spreadsheet_id}")
+            return True
+            
+        except Exception as e:
+            LOGGER.error(f"Error appending rows to {spreadsheet_id}: {e}")
+            return False
+
+    async def update_cells(
+        self,
+        spreadsheet_id: str,
+        range_name: str,
+        values: List[List[Any]]
+    ) -> bool:
+        """Update specific cells in a Google Sheet.
+        
+        Args:
+            spreadsheet_id: The Google Sheet ID
+            range_name: Range to update (e.g., "Sheet1!A1:C3")
+            values: 2D list of values to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            spreadsheet = self.client.open_by_key(spreadsheet_id)
+            
+            # Extract sheet name from range
+            sheet_name = range_name.split('!')[0] if '!' in range_name else 'Sheet1'
+            worksheet = spreadsheet.worksheet(sheet_name)
+            
+            # Update the range
+            worksheet.update(range_name, values)
+            
+            LOGGER.info(f"Successfully updated cells in {spreadsheet_id}, range {range_name}")
+            return True
+            
+        except Exception as e:
+            LOGGER.error(f"Error updating cells in {spreadsheet_id}: {e}")
+            return False
+
+    async def get_values(
+        self,
+        spreadsheet_id: str,
+        range_name: str
+    ) -> List[List[Any]]:
+        """Get values from a Google Sheet range.
+        
+        Args:
+            spreadsheet_id: The Google Sheet ID
+            range_name: Range to read (e.g., "Sheet1!A1:Z100")
+            
+        Returns:
+            2D list of cell values
+        """
+        try:
+            spreadsheet = self.client.open_by_key(spreadsheet_id)
+            
+            # Extract sheet name from range
+            sheet_name = range_name.split('!')[0] if '!' in range_name else 'Sheet1'
+            worksheet = spreadsheet.worksheet(sheet_name)
+            
+            # Get all values from the range
+            if '!' in range_name:
+                cell_range = range_name.split('!')[1]
+                values = worksheet.get(cell_range)
+            else:
+                values = worksheet.get_all_values()
+            
+            LOGGER.debug(f"Retrieved {len(values)} rows from {spreadsheet_id}")
+            return values
+            
+        except Exception as e:
+            LOGGER.error(f"Error getting values from {spreadsheet_id}: {e}")
+            return []
+
+    async def create_sheet(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str
+    ) -> bool:
+        """Create a new sheet within a spreadsheet.
+        
+        Args:
+            spreadsheet_id: The Google Sheet ID
+            sheet_name: Name for the new sheet
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            spreadsheet = self.client.open_by_key(spreadsheet_id)
+            
+            # Add new worksheet
+            worksheet = spreadsheet.add_worksheet(
+                title=sheet_name, 
+                rows=1000, 
+                cols=26
+            )
+            
+            LOGGER.info(f"Successfully created sheet '{sheet_name}' in {spreadsheet_id}")
+            return True
+            
+        except Exception as e:
+            LOGGER.error(f"Error creating sheet '{sheet_name}' in {spreadsheet_id}: {e}")
+            return False
+
     def write_hyperlink_formula(self, worksheet, row: int, col: int, url: str, text: str):
         """Write a hyperlink formula to a specific cell.
         

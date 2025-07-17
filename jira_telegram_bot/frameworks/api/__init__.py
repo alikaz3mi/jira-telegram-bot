@@ -3,4 +3,7 @@
 __all__ = [
     "JiraWebhookEndpoint",
     "TelegramWebhookEndpoint",
+    "HealthCheckEndpoint",
+    "ProjectStatusEndpoint",
+    "MetricsWebhookEndpoint",
 ]

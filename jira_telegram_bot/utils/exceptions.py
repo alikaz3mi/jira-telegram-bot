@@ -66,3 +66,29 @@ class CustomHTTPException(HTTPException):
             Headers dictionary
         """
         return self.headers if self.headers else {}
+
+
+class SpreadsheetError(Exception):
+    """Exception raised for Google Sheets operations errors."""
+    
+    def __init__(self, message: str):
+        """Initialize the spreadsheet error.
+        
+        Args:
+            message: The error message
+        """
+        self.message = message
+        super().__init__(self.message)
+
+
+class MetricsProcessingError(Exception):
+    """Exception raised for metrics processing errors."""
+    
+    def __init__(self, message: str):
+        """Initialize the metrics processing error.
+        
+        Args:
+            message: The error message
+        """
+        self.message = message
+        super().__init__(self.message)

@@ -8,31 +8,10 @@ from typing import Dict, Any
 
 from lagom import Container, Singleton
 
+# Core dependencies
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import LangChainAiService
-from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
-from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
-from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
-from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import FilePromptCatalog
-from jira_telegram_bot.adapters.repositories.file_storage.project_info_repository import ProjectInfoRepository
-from jira_telegram_bot.adapters.repositories.file_storage.user_authentication_repository import (
-    FileUserAuthenticationRepository,
-)
-from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import JiraCloudRepository
-from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
-from jira_telegram_bot.adapters.services.telegram.telegram_gateway import NotificationGateway
-from jira_telegram_bot.adapters.user_config import UserConfig
 
-# Import webhook use cases
-from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWebhookUseCase
-
-# Import API framework components
-from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
-from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint
-from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
-from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
-from jira_telegram_bot.use_cases.project_status import GetProjectStatusUseCase, UpdateProjectTrackingUseCase
-from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
+# Settings imports
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
 from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
@@ -40,71 +19,97 @@ from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings, JiraConnectionType
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
-from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
-from jira_telegram_bot.settings.telegram_settings import (
-    TelegramWebhookConnectionSettings,
-)
-from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase, TaskGrouper
-from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
+from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings, TelegramWebhookConnectionSettings
+
+# AI Models and Services imports
+from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import LangChainAiService
+from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
+from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
+
+# Repository imports
+from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import FilePromptCatalog
+from jira_telegram_bot.adapters.repositories.file_storage.project_info_repository import ProjectInfoRepository
+from jira_telegram_bot.adapters.repositories.file_storage.user_authentication_repository import FileUserAuthenticationRepository
+from jira_telegram_bot.adapters.repositories.file_storage.file_notification_log_repository import FileNotificationLogRepository
+from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_repository import FileProgressReportRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import JiraCloudRepository
+from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
+from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
+
+# Service imports
+from jira_telegram_bot.adapters.services.telegram.telegram_gateway import NotificationGateway
+from jira_telegram_bot.adapters.services.telegram.telegram_notifier import TelegramNotifier
+from jira_telegram_bot.adapters.services.jira_data_service import JiraDataService
+from jira_telegram_bot.adapters.services.current_stories_service import CurrentStoriesService
+from jira_telegram_bot.adapters.services.xlsx_report_service import XlsxReportService
+from jira_telegram_bot.adapters.user_config import UserConfig
+from jira_telegram_bot.adapters.google_sheet import GoogleSheetClient
+
+# Use case imports
 from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
-from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AIServiceProtocol
-from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
-from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
-    NotificationGatewayInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
-    ProjectInfoRepositoryInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
-    PromptCatalogProtocol,
-)
-from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import SpeechProcessorInterface
-from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import StoryDecompositionInterface
-from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import SubtaskCreationInterface
-from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
-    TaskManagerRepositoryInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import (
-    UserAuthenticationInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
-from jira_telegram_bot.use_cases.interfaces.telegram_notifier_interface import TelegramNotifierInterface
-from jira_telegram_bot.use_cases.interfaces.notification_log_repository_interface import NotificationLogRepositoryInterface
 from jira_telegram_bot.use_cases.send_deadline_alerts_use_case import SendDeadlineAlertsUseCase
-from jira_telegram_bot.adapters.services.telegram.telegram_notifier import TelegramNotifier
-from jira_telegram_bot.adapters.repositories.file_storage.file_notification_log_repository import FileNotificationLogRepository
-
-# Daily report imports
-from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_repository import FileProgressReportRepository
-from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
-from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface import ProgressReportRepositoryInterface
-
-# User story generation imports
-from jira_telegram_bot.use_cases.ai_agents.generate_user_story import GenerateUserStoryUseCase as AIGenerateUserStoryUseCase
+from jira_telegram_bot.use_cases.generate_jira_report_use_case import GenerateJiraReportUseCase
+from jira_telegram_bot.use_cases.scheduled_report_use_case import ScheduledReportUseCase
+from jira_telegram_bot.use_cases.project_status import GetProjectStatusUseCase, UpdateProjectTrackingUseCase
 from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
+from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
 
-# Story decomposition and subtask creation imports
+# AI Agent use case imports
+from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase, TaskGrouper
+from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
+from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
+from jira_telegram_bot.use_cases.ai_agents.generate_user_story import GenerateUserStoryUseCase as AIGenerateUserStoryUseCase
 from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecompositionUseCase
 from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
 
-# Jira Report imports
-from jira_telegram_bot.adapters.services.jira_data_service import JiraDataService
-from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
-from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
-from jira_telegram_bot.use_cases.generate_jira_report_use_case import GenerateJiraReportUseCase
-from jira_telegram_bot.use_cases.scheduled_report_use_case import ScheduledReportUseCase
+# Webhook use case imports
+from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWebhookUseCase
+
+# Metrics use case imports
+from jira_telegram_bot.use_cases.metrics.process_jira_event_use_case import ProcessJiraEventUseCase
+from jira_telegram_bot.use_cases.metrics.process_gitlab_event_use_case import ProcessGitlabEventUseCase
+from jira_telegram_bot.use_cases.metrics.update_sheet_use_case import UpdateSheetUseCase
+
+# Interface imports
+from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AIServiceProtocol, PromptCatalogProtocol
+from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
+from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import NotificationGatewayInterface
+from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import ProjectInfoRepositoryInterface
+from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import SpeechProcessorInterface
+from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import StoryDecompositionInterface
+from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import SubtaskCreationInterface
+from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
+from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import UserAuthenticationInterface
+from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
+from jira_telegram_bot.use_cases.interfaces.telegram_notifier_interface import TelegramNotifierInterface
+from jira_telegram_bot.use_cases.interfaces.notification_log_repository_interface import NotificationLogRepositoryInterface
+from jira_telegram_bot.use_cases.interfaces.progress_report_repository_interface import ProgressReportRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.jira_data_service_interface import JiraDataServiceInterface
 from jira_telegram_bot.use_cases.interfaces.jira_report_repository_interface import JiraReportRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.scheduler_service_interface import SchedulerServiceInterface
-
-# Current Stories imports
-from jira_telegram_bot.adapters.services.current_stories_service import CurrentStoriesService
-from jira_telegram_bot.adapters.services.xlsx_report_service import XlsxReportService
-from jira_telegram_bot.adapters.google_sheet import GoogleSheetClient
-from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
 from jira_telegram_bot.use_cases.interfaces.xlsx_report_service_interface import XlsxReportServiceInterface
+
+# Metrics interface imports
+from jira_telegram_bot.use_cases.interfaces.metrics.spreadsheet_gateway_interface import SpreadsheetGatewayInterface
+from jira_telegram_bot.use_cases.interfaces.metrics.metrics_processor_interface import MetricsProcessorInterface
+from jira_telegram_bot.use_cases.interfaces.metrics.user_setting_configuration_repository_interface import UserSettingConfigurationRepositoryInterface
+
+# Framework imports - API endpoints
+from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
+from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint, MetricsWebhookEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
+
+# Framework imports - Scheduler
+from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
+
+# Metrics adapter imports
+from jira_telegram_bot.adapters.gateways.google_sheets.google_sheets_gateway import GoogleSheetsGateway
+from jira_telegram_bot.adapters.repositories.file_storage.metrics.file_user_setting_configuration_repository import FileUserSettingConfigurationRepository
+from jira_telegram_bot.adapters.services.metrics.metrics_processor_service import MetricsProcessorService
 
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
@@ -134,11 +139,36 @@ def configure_container() -> Container:
     """
     container = Container()
     
-    # Configure settings
+    # Configure directories
     data_dir = Path(os.environ.get('DATA_DIR', './data'))
     config_dir = Path(os.environ.get('CONFIG_DIR', './config'))
     
-    # Add settings to container
+    # Configure settings
+    _configure_settings(container)
+    
+    # Configure repositories
+    _configure_repositories(container, data_dir, config_dir)
+    
+    # Configure services and gateways
+    _configure_services_and_gateways(container)
+    
+    # Configure AI agents and models
+    _configure_ai_agents_and_models(container)
+    
+    # Configure use cases
+    _configure_use_cases(container)
+    
+    # Configure API endpoints
+    _configure_api_endpoints(container)
+    
+    # Configure metrics tracking
+    _configure_metrics_tracking(container)
+    
+    return container
+
+
+def _configure_settings(container: Container) -> None:
+    """Configure application settings."""
     container[JiraConnectionSettings] = Singleton(lambda: JiraConnectionSettings())
     container[TelegramConnectionSettings] = Singleton(lambda: TelegramConnectionSettings())
     container[TelegramWebhookConnectionSettings] = Singleton(lambda: TelegramWebhookConnectionSettings())
@@ -148,98 +178,59 @@ def configure_container() -> Container:
     container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     container[JiraBoardSettings] = Singleton(lambda: JiraBoardSettings())
     container[GoogleSheetsConnectionSettings] = Singleton(lambda: GoogleSheetsConnectionSettings())
-    
-    try:
-        container[GoogleSheetClient] = Singleton(
-            lambda: GoogleSheetClient(container[GoogleSheetsConnectionSettings])
-        )
-    except Exception as e:
-        LOGGER.warning(f"GoogleSheetsConnectionSettings not registered: {e}")
-    
-    # A) Bind INTERFACE -> ADAPTER
-    container[NotificationGatewayInterface] = Singleton(
-        lambda c: NotificationGateway(c[TelegramConnectionSettings])
-    )
-      # Determine which Jira repository implementation to use
+
+
+def _configure_repositories(container: Container, data_dir: Path, config_dir: Path) -> None:
+    """Configure repository implementations."""
+    # Jira repositories
     jira_mode = os.environ.get("JIRA_MODE", "").lower()
-    
     if jira_mode == "mock":
-        # TODO: remove this part and jira mode too. 
-        # Import here to avoid circular imports
         from jira_telegram_bot.adapters.repositories.jira.mock_jira_repository import MockJiraRepository
         container[TaskManagerRepositoryInterface] = Singleton(lambda: MockJiraRepository())
         LOGGER.warning("Using MOCK Jira repository for development/testing")
     else:
-        # Default behavior: use cloud or server based on connection type
         container[TaskManagerRepositoryInterface] = Singleton(
             lambda c: JiraCloudRepository(c[JiraConnectionSettings]) 
             if c[JiraConnectionSettings].connection_type == JiraConnectionType.CLOUD 
             else JiraServerRepository(c[JiraConnectionSettings])
         )
     
-    container[ProjectInfoRepositoryInterface] = Singleton(
-        lambda c: ProjectInfoRepository()
-    )
-    
-    container[LLMModelInterface] = Singleton(
-        lambda c: LLMModels(
-            c[OpenAISettings],
-            c[GeminiConnectionSetting]
-        )
-    )
-    
-    container[SpeechProcessorInterface] = Singleton(
-        lambda c: SpeechProcessor(
-            c[OpenAISettings],
-        )
-    )
-    
-    # AI Service bindings
-    container[AIServiceProtocol] = Singleton(
-        lambda c: LangChainAiService(
-            c[LLMModelInterface]
-        )
-    )
-    container[PromptCatalogProtocol] = Singleton(
-        lambda c: FilePromptCatalog()
-    )
-    
-    # AI Agent Use Cases
-    container[AIGenerateUserStoryUseCase] = Singleton(
-        lambda c: AIGenerateUserStoryUseCase(
-            prompt_catalog=c[PromptCatalogProtocol],
-            ai_service=c[AIServiceProtocol],
-        )
-    )
-    
-    container[StoryDecompositionUseCase] = Singleton(
-        lambda c: StoryDecompositionUseCase(
-            prompt_catalog=c[PromptCatalogProtocol],
-            ai_service=c[AIServiceProtocol],
-        )
-    )
-    
-    container[CreateSubtasksUseCase] = Singleton(
-        lambda c: CreateSubtasksUseCase(
-            prompt_catalog=c[PromptCatalogProtocol],
-            ai_service=c[AIServiceProtocol],
-        )
-    )
-    
-    container[UserConfigInterface] = Singleton(
-        lambda c: UserConfig(
-            user_config_path=str(data_dir / "storage" / "user_config.json")
-        )
-    )
-    
-    # User Authentication Repository
+    # File-based repositories
+    container[ProjectInfoRepositoryInterface] = Singleton(lambda c: ProjectInfoRepository())
     container[UserAuthenticationInterface] = Singleton(
         lambda c: FileUserAuthenticationRepository(
             auth_file_path=str(config_dir / "allowed_users.json")
         )
     )
+    container[NotificationLogRepositoryInterface] = Singleton(
+        lambda c: FileNotificationLogRepository(
+            log_file_path=str(data_dir / "notifier_log.jsonl")
+        )
+    )
+    container[ProgressReportRepositoryInterface] = Singleton(
+        lambda c: FileProgressReportRepository(
+            storage_path=str(data_dir / "storage" / "progress_reports.json")
+        )
+    )
+    container[JiraReportRepositoryInterface] = Singleton(
+        lambda c: JiraReportRepository(c[PostgresSettings])
+    )
+
+
+def _configure_services_and_gateways(container: Container) -> None:
+    """Configure service implementations and gateways."""
+    # Google Sheets
+    try:
+        container[GoogleSheetClient] = Singleton(
+            lambda c: GoogleSheetClient(c[GoogleSheetsConnectionSettings])
+        )
+    except Exception as e:
+        LOGGER.warning(f"GoogleSheetsConnectionSettings not registered: {e}")
     
-    # Deadline notifier dependencies
+    # Notification services
+    container[NotificationGatewayInterface] = Singleton(
+        lambda c: NotificationGateway(c[TelegramConnectionSettings])
+    )
     container[TelegramNotifierInterface] = Singleton(
         lambda c: TelegramNotifier(
             telegram_settings=c[TelegramConnectionSettings],
@@ -247,25 +238,72 @@ def configure_container() -> Container:
         )
     )
     
-    container[NotificationLogRepositoryInterface] = Singleton(
-        lambda c: FileNotificationLogRepository(
-            log_file_path=str(data_dir / "notifier_log.jsonl")
-        )
-    )
-    container[SendDeadlineAlertsUseCase] = Singleton(
-        lambda c: SendDeadlineAlertsUseCase(
-            task_manager_repository=c[TaskManagerRepositoryInterface],
-            user_config_repository=c[UserConfigInterface],
-            telegram_notifier=c[TelegramNotifierInterface],
-            notification_log_repository=c[NotificationLogRepositoryInterface],
-        )
-    )    # Daily report dependencies
-    container[ProgressReportRepositoryInterface] = Singleton(
-        lambda c: FileProgressReportRepository(
-            storage_path=str(data_dir / "storage" / "progress_reports.json")
+    # User configuration
+    container[UserConfigInterface] = Singleton(
+        lambda c: UserConfig(
+            user_config_path=str(Path(os.environ.get('DATA_DIR', './data')) / "storage" / "user_config.json")
         )
     )
     
+    # Data services
+    container[JiraDataServiceInterface] = Singleton(
+        lambda c: JiraDataService(c[TaskManagerRepositoryInterface])
+    )
+    container[CurrentStoriesServiceInterface] = Singleton(
+        lambda c: CurrentStoriesService(c[GoogleSheetsConnectionSettings], c[GoogleSheetClient])
+    )
+    container[XlsxReportServiceInterface] = Singleton(
+        lambda c: XlsxReportService()
+    )
+    container[SchedulerServiceInterface] = Singleton(
+        lambda c: APSchedulerService()
+    )
+
+
+def _configure_ai_agents_and_models(container: Container) -> None:
+    """Configure AI models and related services."""
+    # Core AI models
+    container[LLMModelInterface] = Singleton(
+        lambda c: LLMModels(c[OpenAISettings], c[GeminiConnectionSetting])
+    )
+    container[SpeechProcessorInterface] = Singleton(
+        lambda c: SpeechProcessor(c[OpenAISettings])
+    )
+    
+    # AI services
+    container[AIServiceProtocol] = Singleton(
+        lambda c: LangChainAiService(c[LLMModelInterface])
+    )
+    container[PromptCatalogProtocol] = Singleton(
+        lambda c: FilePromptCatalog()
+    )
+    
+    # AI agent use cases
+    container[AIGenerateUserStoryUseCase] = Singleton(
+        lambda c: AIGenerateUserStoryUseCase(
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
+        )
+    )
+    container[StoryDecompositionUseCase] = Singleton(
+        lambda c: StoryDecompositionUseCase(
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
+        )
+    )
+    container[CreateSubtasksUseCase] = Singleton(
+        lambda c: CreateSubtasksUseCase(
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
+        )
+    )
+    container[BoardSummarizerUseCase] = Singleton(
+        lambda c: BoardSummarizerUseCase(
+            prompt_catalog=c[PromptCatalogProtocol],
+            ai_service=c[AIServiceProtocol],
+            task_grouper=TaskGrouper()
+        )
+    )
     container[GenerateProgressReportUseCase] = Singleton(
         lambda c: GenerateProgressReportUseCase(
             prompt_catalog=c[PromptCatalogProtocol],
@@ -274,50 +312,21 @@ def configure_container() -> Container:
         )
     )
     
-    # User story generation use case (wrapper)
-    container[GenerateUserStoryUseCase] = Singleton(
-        lambda c: GenerateUserStoryUseCase(
-            ai_generate_user_story=c[AIGenerateUserStoryUseCase],
-        )
-    )
-    
-    # Bind StoryGenerator interface to the wrapper use case
-    container[StoryGenerator] = Singleton(
-        lambda c: c[GenerateUserStoryUseCase]
-    )
-    
-    # Bind StoryDecompositionInterface to the AI agent use case
-    container[StoryDecompositionInterface] = Singleton(
-        lambda c: c[StoryDecompositionUseCase]
-    )
-    
-    # Bind SubtaskCreationInterface to the AI agent use case
-    container[SubtaskCreationInterface] = Singleton(
-        lambda c: c[CreateSubtasksUseCase]
-    )
+    # Interface bindings
+    container[StoryGenerator] = Singleton(lambda c: c[GenerateUserStoryUseCase])
+    container[StoryDecompositionInterface] = Singleton(lambda c: c[StoryDecompositionUseCase])
+    container[SubtaskCreationInterface] = Singleton(lambda c: c[CreateSubtasksUseCase])
 
-    # B) Bind basic USE CASES
+
+def _configure_use_cases(container: Container) -> None:
+    """Configure use case implementations."""
+    # Core use cases
     container[CreateTaskUseCase] = Singleton(
-        lambda c: CreateTaskUseCase(
-            jira_repo=c[TaskManagerRepositoryInterface],
-        )
+        lambda c: CreateTaskUseCase(jira_repo=c[TaskManagerRepositoryInterface])
     )
-    
-    # Board Summarizer Use Case
-    container[BoardSummarizerUseCase] = Singleton(
-        lambda c: BoardSummarizerUseCase(
-            prompt_catalog=c[PromptCatalogProtocol],
-            ai_service=c[AIServiceProtocol],
-            task_grouper=TaskGrouper()
-        )
-    )
-    
     container[ParseJiraPromptUseCase] = Singleton(
-        lambda c: ParseJiraPromptUseCase(
-            openai_gateway=c[LLMModelInterface],
-        )
+        lambda c: ParseJiraPromptUseCase(openai_gateway=c[LLMModelInterface])
     )
-    
     container[HandleJiraWebhookUseCase] = Singleton(
         lambda c: HandleJiraWebhookUseCase(
             jira_settings=c[JiraConnectionSettings],
@@ -326,14 +335,13 @@ def configure_container() -> Container:
         )
     )
     
-    # Register webhook use cases
+    # Webhook use cases
     container[JiraWebhookUseCase] = Singleton(
         lambda c: JiraWebhookUseCase(
             jira_settings=c[JiraConnectionSettings],
             telegram_gateway=c[NotificationGatewayInterface],
         )
     )
-    
     container[TelegramWebhookUseCase] = Singleton(
         lambda c: TelegramWebhookUseCase(
             create_task_use_case=c[CreateTaskUseCase],
@@ -341,30 +349,26 @@ def configure_container() -> Container:
             task_manager_repository=c[TaskManagerRepositoryInterface],
         )
     )
-      # Register API endpoints
-    container[SubServiceEndpoints] = Singleton(lambda: SubServiceEndpoints())
     
-    container[JiraWebhookEndpoint] = Singleton(
-        lambda c: JiraWebhookEndpoint(
-            jira_webhook_use_case=c[JiraWebhookUseCase],
-        )
+    # User story generation
+    container[GenerateUserStoryUseCase] = Singleton(
+        lambda c: GenerateUserStoryUseCase(ai_generate_user_story=c[AIGenerateUserStoryUseCase])
     )
     
-    container[TelegramWebhookEndpoint] = Singleton(
-        lambda c: TelegramWebhookEndpoint(
-            telegram_webhook_use_case=c[TelegramWebhookUseCase],
-        )
-    )
-    
-    container[HealthCheckEndpoint] = Singleton(lambda: HealthCheckEndpoint())
-    
-    # Register project status use cases
-    container[GetProjectStatusUseCase] = Singleton(
-        lambda c: GetProjectStatusUseCase(
+    # Alert and notification use cases
+    container[SendDeadlineAlertsUseCase] = Singleton(
+        lambda c: SendDeadlineAlertsUseCase(
             task_manager_repository=c[TaskManagerRepositoryInterface],
+            user_config_repository=c[UserConfigInterface],
+            telegram_notifier=c[TelegramNotifierInterface],
+            notification_log_repository=c[NotificationLogRepositoryInterface],
         )
     )
     
+    # Project management use cases
+    container[GetProjectStatusUseCase] = Singleton(
+        lambda c: GetProjectStatusUseCase(task_manager_repository=c[TaskManagerRepositoryInterface])
+    )
     container[UpdateProjectTrackingUseCase] = Singleton(
         lambda c: UpdateProjectTrackingUseCase(
             task_manager_repository=c[TaskManagerRepositoryInterface],
@@ -372,51 +376,20 @@ def configure_container() -> Container:
         )
     )
     
-    # Register project status endpoints
-    container[ProjectStatusEndpoint] = Singleton(
-        lambda c: ProjectStatusEndpoint(
-            get_project_status_use_case=c[GetProjectStatusUseCase],
-            update_project_tracking_use_case=c[UpdateProjectTrackingUseCase],
-        )
-    )
-    
-    # Jira Report dependencies
-    container[JiraDataServiceInterface] = Singleton(
-        lambda c: JiraDataService(c[TaskManagerRepositoryInterface])
-    )
-    
-    container[JiraReportRepositoryInterface] = Singleton(
-        lambda c: JiraReportRepository(c[PostgresSettings])
-    )
-    
-    container[SchedulerServiceInterface] = Singleton(
-        lambda c: APSchedulerService()
-    )
-    
+    # Report generation use cases
     container[GenerateJiraReportUseCase] = Singleton(
         lambda c: GenerateJiraReportUseCase(
             jira_service=c[JiraDataServiceInterface],
             report_repository=c[JiraReportRepositoryInterface],
         )
     )
-    
     container[ScheduledReportUseCase] = Singleton(
         lambda c: ScheduledReportUseCase(
             report_use_case=c[GenerateJiraReportUseCase],
             scheduler_service=c[SchedulerServiceInterface],
-            project_keys=["PARSCHAT", "PCT"],  # Configure as needed
+            project_keys=["PARSCHAT", "PCT"],
         )
     )
-    
-    # Current Stories dependencies
-    container[CurrentStoriesServiceInterface] = Singleton(
-        lambda c: CurrentStoriesService(c[GoogleSheetsConnectionSettings], c[GoogleSheetClient])
-    )
-    
-    container[XlsxReportServiceInterface] = Singleton(
-        lambda c: XlsxReportService()
-    )
-    
     container[GetCurrentStoriesUseCase] = Singleton(
         lambda c: GetCurrentStoriesUseCase(
             task_manager_repository=c[TaskManagerRepositoryInterface],
@@ -424,7 +397,63 @@ def configure_container() -> Container:
             xlsx_report_service=c[XlsxReportServiceInterface],
         )
     )
+
+
+def _configure_api_endpoints(container: Container) -> None:
+    """Configure API endpoint implementations."""
+    container[SubServiceEndpoints] = Singleton(lambda: SubServiceEndpoints())
     
-    return container
+    # Webhook endpoints
+    container[JiraWebhookEndpoint] = Singleton(
+        lambda c: JiraWebhookEndpoint(jira_webhook_use_case=c[JiraWebhookUseCase])
+    )
+    container[TelegramWebhookEndpoint] = Singleton(
+        lambda c: TelegramWebhookEndpoint(telegram_webhook_use_case=c[TelegramWebhookUseCase])
+    )
+    
+    # System endpoints
+    container[HealthCheckEndpoint] = Singleton(lambda: HealthCheckEndpoint())
+    container[ProjectStatusEndpoint] = Singleton(
+        lambda c: ProjectStatusEndpoint(
+            get_project_status_use_case=c[GetProjectStatusUseCase],
+            update_project_tracking_use_case=c[UpdateProjectTrackingUseCase],
+        )
+    )
+
+
+def _configure_metrics_tracking(container: Container) -> None:
+    """Configure metrics tracking components."""
+    # Metrics gateways and repositories
+    container[SpreadsheetGatewayInterface] = Singleton(
+        lambda c: GoogleSheetsGateway(c[GoogleSheetClient])
+    )
+    container[UserSettingConfigurationRepositoryInterface] = Singleton(
+        lambda c: FileUserSettingConfigurationRepository()
+    )
+    
+    # Metrics use cases
+    container[UpdateSheetUseCase] = Singleton(
+        lambda c: UpdateSheetUseCase(
+            spreadsheet_gateway=c[SpreadsheetGatewayInterface],
+            user_config_repository=c[UserSettingConfigurationRepositoryInterface]
+        )
+    )
+    container[MetricsProcessorInterface] = Singleton(
+        lambda c: MetricsProcessorService(c[UpdateSheetUseCase])
+    )
+    container[ProcessJiraEventUseCase] = Singleton(
+        lambda c: ProcessJiraEventUseCase(c[MetricsProcessorInterface])
+    )
+    container[ProcessGitlabEventUseCase] = Singleton(
+        lambda c: ProcessGitlabEventUseCase(c[MetricsProcessorInterface])
+    )
+    
+    # Metrics endpoints
+    container[MetricsWebhookEndpoint] = Singleton(
+        lambda c: MetricsWebhookEndpoint(
+            process_jira_event_use_case=c[ProcessJiraEventUseCase],
+            process_gitlab_event_use_case=c[ProcessGitlabEventUseCase]
+        )
+    )
 
 

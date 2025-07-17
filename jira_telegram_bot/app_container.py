@@ -80,7 +80,7 @@ from jira_telegram_bot.frameworks.telegram.get_current_stories_handler import (
     GetCurrentStoriesHandler,
 )
 from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
-from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint
+from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint, MetricsWebhookEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
 
@@ -228,6 +228,7 @@ def setup_container() -> Container:
     endpoint_registry.register(child_container[TelegramWebhookEndpoint])
     endpoint_registry.register(child_container[HealthCheckEndpoint])
     endpoint_registry.register(child_container[ProjectStatusEndpoint])
+    endpoint_registry.register(child_container[MetricsWebhookEndpoint])
     
     return child_container
 
