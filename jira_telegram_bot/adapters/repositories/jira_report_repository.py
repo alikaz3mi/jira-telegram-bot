@@ -4,28 +4,23 @@ from __future__ import annotations
 import urllib
 from datetime import datetime
 from typing import List
-import json
 
-import pandas as pd
 from sqlalchemy import Column
-from sqlalchemy import create_engine
 from sqlalchemy import DateTime
 from sqlalchemy import Float
 from sqlalchemy import Integer
 from sqlalchemy import JSON
 from sqlalchemy import String
 from sqlalchemy import Text
-from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.jira_report import JiraIssueDetail
 from jira_telegram_bot.entities.jira_report import LinkedIssue
 from jira_telegram_bot.entities.jira_report import ProjectReport
 from jira_telegram_bot.entities.jira_report import WorklogEntry
-from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
+from jira_telegram_bot.use_cases.interfaces.database_connection_interface import DatabaseConnectionInterface
 from jira_telegram_bot.use_cases.interfaces.jira_report_repository_interface import JiraReportRepositoryInterface
 
 Base = declarative_base()
@@ -69,27 +64,15 @@ class JiraTaskModel(Base):
 class JiraReportRepository(JiraReportRepositoryInterface):
     """PostgreSQL implementation of Jira report repository."""
 
-    def __init__(self, settings: PostgresSettings) -> None:
+    def __init__(self, db_connection: DatabaseConnectionInterface) -> None:
         """Initialize the repository with database connection."""
-        self.settings = settings
-        self._engine = self._create_engine()
-        self._session_maker = sessionmaker(bind=self._engine)
+        self.db_connection = db_connection
         self._ensure_schema_exists()
 
-    def _create_engine(self):
-        """Create SQLAlchemy engine with PostgreSQL connection."""
-        encoded_password = urllib.parse.quote_plus(self.settings.db_password)
-        database_url = (
-            f"postgresql://{self.settings.db_user}:"
-            f"{encoded_password}@{self.settings.db_host}:"
-            f"{self.settings.db_port}/{self.settings.db_name}"
-        )
-        return create_engine(database_url)
-
     def _ensure_schema_exists(self) -> None:
-        """Ensure the database schema exists and is up to date."""
+        """Ensure the database schema exists."""
         try:
-            Base.metadata.create_all(self._engine)
+            Base.metadata.create_all(self.db_connection.get_engine())
             LOGGER.info("Database schema ensured for enhanced Jira tasks")
         except Exception as e:
             LOGGER.error(f"Failed to ensure database schema: {e}")
@@ -104,7 +87,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
         if not issues:
             return
 
-        session = self._session_maker()
+        session = self.db_connection.get_session()
         try:
             for issue in issues:
                 task_model = self._convert_to_model(issue)
@@ -129,7 +112,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
         Returns:
             Complete project report with all issues.
         """
-        session = self._session_maker()
+        session = self.db_connection.get_session()
         try:
             tasks = session.query(JiraTaskModel).filter(
                 JiraTaskModel.key.like(f"{project_key}-%")
@@ -162,7 +145,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
         if not issue_keys:
             return []
 
-        session = self._session_maker()
+        session = self.db_connection.get_session()
         try:
             tasks = session.query(JiraTaskModel).filter(
                 JiraTaskModel.key.in_(issue_keys)

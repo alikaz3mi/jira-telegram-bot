@@ -18,6 +18,7 @@ from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnec
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings, JiraConnectionType
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
+from jira_telegram_bot.settings.fast_api_settings import FastAPISettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings, TelegramWebhookConnectionSettings
 
@@ -25,6 +26,9 @@ from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSetti
 from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import LangChainAiService
 from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
+
+# Database imports
+from jira_telegram_bot.adapters.database.postgresql_connection import PostgreSQLConnection
 
 # Repository imports
 from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import FilePromptCatalog
@@ -42,6 +46,7 @@ from jira_telegram_bot.adapters.services.telegram.telegram_notifier import Teleg
 from jira_telegram_bot.adapters.services.jira_data_service import JiraDataService
 from jira_telegram_bot.adapters.services.current_stories_service import CurrentStoriesService
 from jira_telegram_bot.adapters.services.xlsx_report_service import XlsxReportService
+from jira_telegram_bot.adapters.services.application_startup_service import ApplicationStartupService
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.adapters.google_sheet import GoogleSheetClient
 
@@ -72,6 +77,7 @@ from jira_telegram_bot.use_cases.metrics.process_gitlab_event_use_case import Pr
 from jira_telegram_bot.use_cases.metrics.update_sheet_use_case import UpdateSheetUseCase
 
 # Interface imports
+from jira_telegram_bot.use_cases.interfaces.database_connection_interface import DatabaseConnectionInterface
 from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AIServiceProtocol, PromptCatalogProtocol
 from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
@@ -146,6 +152,9 @@ def configure_container() -> Container:
     # Configure settings
     _configure_settings(container)
     
+    # Configure database connections
+    _configure_database(container)
+    
     # Configure repositories
     _configure_repositories(container, data_dir, config_dir)
     
@@ -178,6 +187,14 @@ def _configure_settings(container: Container) -> None:
     container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     container[JiraBoardSettings] = Singleton(lambda: JiraBoardSettings())
     container[GoogleSheetsConnectionSettings] = Singleton(lambda: GoogleSheetsConnectionSettings())
+    container[FastAPISettings] = Singleton(lambda: FastAPISettings())
+
+
+def _configure_database(container: Container) -> None:
+    """Configure database connections."""
+    container[DatabaseConnectionInterface] = Singleton(
+        lambda c: PostgreSQLConnection(c[PostgresSettings])
+    )
 
 
 def _configure_repositories(container: Container, data_dir: Path, config_dir: Path) -> None:
@@ -213,7 +230,7 @@ def _configure_repositories(container: Container, data_dir: Path, config_dir: Pa
         )
     )
     container[JiraReportRepositoryInterface] = Singleton(
-        lambda c: JiraReportRepository(c[PostgresSettings])
+        lambda c: JiraReportRepository(c[DatabaseConnectionInterface])
     )
 
 
@@ -257,6 +274,11 @@ def _configure_services_and_gateways(container: Container) -> None:
     )
     container[SchedulerServiceInterface] = Singleton(
         lambda c: APSchedulerService()
+    )
+    
+    # Application startup service
+    container[ApplicationStartupService] = Singleton(
+        lambda c: ApplicationStartupService(c[DatabaseConnectionInterface])
     )
 
 

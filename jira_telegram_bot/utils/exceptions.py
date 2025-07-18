@@ -92,3 +92,16 @@ class MetricsProcessingError(Exception):
         """
         self.message = message
         super().__init__(self.message)
+
+
+class DatabaseConnectionError(Exception):
+    """Exception raised for database connection errors."""
+    
+    def __init__(self, message: str):
+        """Initialize the database connection error.
+        
+        Args:
+            message: The error message
+        """
+        self.message = message
+        super().__init__(self.message)
