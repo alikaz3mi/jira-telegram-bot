@@ -51,6 +51,8 @@ class JiraTaskModel(Base):
     resolved_at = Column(DateTime, nullable=True)
     target_start = Column(DateTime, nullable=True)
     target_end = Column(DateTime, nullable=True)
+    due_date = Column(DateTime, nullable=True)
+    project = Column(String, nullable=True)
     story_points = Column(Float, nullable=True)
     components = Column(ARRAY(String), nullable=True)
     labels = Column(ARRAY(String), nullable=True)
@@ -234,6 +236,8 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             resolved_at=issue.resolved_at,
             target_start=issue.target_start,
             target_end=issue.target_end,
+            due_date=issue.due_date,
+            project=issue.project,
             story_points=issue.story_points,
             components=issue.components,
             labels=issue.labels,
@@ -284,6 +288,8 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             resolved_at=model.resolved_at,
             target_start=model.target_start,
             target_end=model.target_end,
+            due_date=model.due_date,
+            project=model.project,
             story_points=model.story_points,
             components=model.components or [],
             labels=model.labels or [],

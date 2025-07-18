@@ -160,6 +160,8 @@ class JiraDataService(JiraDataServiceInterface):
             target_end=self._parse_datetime(
                 getattr(issue.fields, "customfield_10110", None)
             ),
+            due_date=self._parse_datetime(issue.fields.duedate),
+            project=issue.fields.project.key,
             story_points=story_points,
             components=(
                 [c.name for c in issue.fields.components]

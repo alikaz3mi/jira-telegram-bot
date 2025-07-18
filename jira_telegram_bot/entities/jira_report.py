@@ -56,6 +56,8 @@ class JiraIssueDetail(BaseModel):
     resolved_at: Optional[datetime] = Field(default=None, description="Resolution timestamp")
     target_start: Optional[datetime] = Field(default=None, description="Target start date")
     target_end: Optional[datetime] = Field(default=None, description="Target end date")
+    due_date: Optional[datetime] = Field(default=None, description="Due date")
+    project: Optional[str] = Field(default=None, description="Project key")
     story_points: Optional[float] = Field(default=None, description="Story points")
     components: List[str] = Field(default_factory=list, description="Component names")
     labels: List[str] = Field(default_factory=list, description="Labels")
