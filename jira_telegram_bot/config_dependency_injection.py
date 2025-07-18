@@ -38,7 +38,7 @@ from jira_telegram_bot.adapters.repositories.file_storage.file_notification_log_
 from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_repository import FileProgressReportRepository
 from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import JiraCloudRepository
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
-from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
+from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraReportRepository
 
 # Service imports
 from jira_telegram_bot.adapters.services.telegram.telegram_gateway import NotificationGateway

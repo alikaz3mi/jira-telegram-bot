@@ -6,8 +6,8 @@ from datetime import datetime
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
-from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraTaskModel
+from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraReportRepository
+from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraTaskModel
 from jira_telegram_bot.entities.jira_report import ProjectReport
 from tests.samples.jira_report_test_factory import JiraReportTestFactory
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings

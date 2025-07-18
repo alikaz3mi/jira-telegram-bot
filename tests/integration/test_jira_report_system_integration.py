@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from jira_telegram_bot.adapters.repositories.jira_report_repository import JiraReportRepository
+from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraReportRepository
 from jira_telegram_bot.adapters.services.jira_data_service import JiraDataService
 from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
 from jira_telegram_bot.use_cases.generate_jira_report_use_case import GenerateJiraReportUseCase
