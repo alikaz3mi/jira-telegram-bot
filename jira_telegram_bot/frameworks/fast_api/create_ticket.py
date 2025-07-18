@@ -1,5 +1,21 @@
 from __future__ import annotations
 
+# MIGRATION NOTICE:
+# ================
+# This file contains legacy FastAPI code that violates Clean Architecture principles.
+# It should be gradually migrated to proper use cases in jira_telegram_bot/use_cases/
+# and endpoints in jira_telegram_bot/frameworks/api/endpoints/
+# 
+# The new Clean Architecture API server is in jira_telegram_bot/frameworks/api/main.py
+# 
+# TODO: Extract business logic to use cases:
+# - Jira webhook processing with comment handling, status changes, etc.
+# - Telegram webhook processing with media group handling
+# - Channel post processing and task creation
+# - Group message handling and auto-forwarding
+#
+# IMPORTANT: This file is currently used in production. Migration should be done gradually.
+
 import asyncio
 import time
 from collections import defaultdict

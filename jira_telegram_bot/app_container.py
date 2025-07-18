@@ -223,7 +223,7 @@ def setup_container() -> Container:
     # Get the endpoint registry
     endpoint_registry = child_container[SubServiceEndpoints]
     
-    # Register API endpoints
+    # # Register API endpoints
     endpoint_registry.register(child_container[JiraWebhookEndpoint])
     endpoint_registry.register(child_container[TelegramWebhookEndpoint])
     endpoint_registry.register(child_container[HealthCheckEndpoint])

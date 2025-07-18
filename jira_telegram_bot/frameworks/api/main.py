@@ -34,14 +34,7 @@ def create_app() -> FastAPI:
     
     # Get the endpoint registry
     endpoint_registry = container[SubServiceEndpoints]
-    
-    # Register all endpoint routes
-    for endpoint in endpoint_registry.endpoints:
-        app.include_router(
-            endpoint.api_route,
-            prefix=f"/{endpoint.__class__.__name__.lower().replace('endpoint', '')}"
-        )
-        LOGGER.info(f"Registered API routes for {endpoint.__class__.__name__}")
+    # TODO: register endpoints here
     
     return app
 

@@ -773,3 +773,114 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error searching for deadline issues: {e}")
             return []
+
+    def get_available_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+        """Get available transitions for an issue.
+        
+        Args:
+            issue_key: The issue key
+            
+        Returns:
+            List of transitions with id and name
+        """
+        try:
+            transitions = self.jira.transitions(issue_key)
+            return [{"id": t["id"], "name": t["name"]} for t in transitions]
+        except Exception as e:
+            LOGGER.error(f"Error getting transitions for issue {issue_key}: {e}")
+            return []
+
+    def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
+        """Get a single issue with expanded fields.
+        
+        Args:
+            issue_key: The issue key
+            expand: Comma-separated list of fields to expand
+            
+        Returns:
+            Jira issue with expanded fields or None
+        """
+        try:
+            issue = self.jira.issue(issue_key, expand=expand)
+            return issue
+        except Exception as e:
+            LOGGER.error(f"Error fetching issue {issue_key} with expand {expand}: {e}")
+            return None
+
+    def is_user_jira_admin(self, username: str) -> bool:
+        """Check if a user has Jira administrator privileges.
+        
+        Args:
+            username: Jira username to check
+            
+        Returns:
+            True if user is Jira admin, False otherwise
+        """
+        try:
+            # In Jira Cloud, check if user has admin permissions
+            # This is a simplified check - in practice you might need to check specific permissions
+            user = self.jira.user(username)
+            if user:
+                # Check if user has admin group membership or permissions
+                # Note: The exact implementation depends on your Jira Cloud configuration
+                # This is a basic implementation that might need adjustment
+                return user.active and hasattr(user, 'groups') and any(
+                    'admin' in group.lower() for group in getattr(user, 'groups', [])
+                )
+            return False
+        except Exception as e:
+            LOGGER.error(f"Error checking admin status for user {username}: {e}")
+            return False
+
+    def search_issues(
+        self, 
+        jql: str,
+        start_at: int = 0,
+        max_results: int = 100,
+        expand: Optional[str] = None,
+    ) -> List[Issue]:
+        """Search for issues using JQL.
+        
+        Args:
+            jql: JQL query string
+            start_at: Starting index for pagination
+            max_results: Maximum number of results to return
+            expand: Comma-separated list of fields to expand
+            
+        Returns:
+            List of matching Jira issues
+        """
+        try:
+            search_kwargs = {
+                'jql_str': jql,
+                'startAt': start_at,
+                'maxResults': max_results,
+            }
+            if expand:
+                search_kwargs['expand'] = expand
+                
+            issues = self.jira.search_issues(**search_kwargs)
+            return issues
+        except Exception as e:
+            LOGGER.error(f"Error searching issues with JQL '{jql}': {e}")
+            return []
+
+    def update_time_estimate(self, issue_key: str, remaining_estimate: str) -> None:
+        """Update the remaining time estimate for an issue.
+        
+        Args:
+            issue_key: The issue key
+            remaining_estimate: New remaining estimate (e.g., "0h", "2d")
+        """
+        try:
+            issue = self.jira.issue(issue_key)
+            # Update the remaining estimate field
+            fields = {
+                'timetracking': {
+                    'remainingEstimate': remaining_estimate
+                }
+            }
+            issue.update(fields=fields)
+            LOGGER.info(f"Updated time estimate for issue {issue_key} to {remaining_estimate}")
+        except Exception as e:
+            LOGGER.error(f"Error updating time estimate for issue {issue_key}: {e}")
