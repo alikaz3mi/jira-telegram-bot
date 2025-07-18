@@ -28,7 +28,7 @@ from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 
 # Database imports
-from jira_telegram_bot.adapters.database.postgresql_connection import PostgreSQLConnection
+from jira_telegram_bot.adapters.repositories.postgres.database.postgresql_connection import PostgreSQLConnection
 
 # Repository imports
 from jira_telegram_bot.adapters.repositories.file_storage.prompt_catalog import FilePromptCatalog
@@ -105,6 +105,7 @@ from jira_telegram_bot.use_cases.interfaces.metrics.user_setting_configuration_r
 
 # Framework imports - API endpoints
 from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
+from jira_telegram_bot.frameworks.api.entry_point import FastAPIConfig
 from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint, MetricsWebhookEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
@@ -424,6 +425,7 @@ def _configure_use_cases(container: Container) -> None:
 def _configure_api_endpoints(container: Container) -> None:
     """Configure API endpoint implementations."""
     container[SubServiceEndpoints] = Singleton(lambda: SubServiceEndpoints())
+    container[FastAPIConfig] = Singleton(lambda: FastAPIConfig())
     
     # Webhook endpoints
     container[JiraWebhookEndpoint] = Singleton(

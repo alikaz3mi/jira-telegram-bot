@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import NoSuchTableError
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.database.migration_interface import MigrationInterface
+from jira_telegram_bot.adapters.repositories.postgres.database.migration_interface import MigrationInterface
 
 
 class MigrationRunner:

@@ -21,6 +21,7 @@ class TelegramWebhookEndpoint(ServiceAPIEndpointBluePrint):
             telegram_webhook_use_case: Use case for handling Telegram webhooks
         """
         self.telegram_webhook_use_case = telegram_webhook_use_case
+        super().__init__()
     
     def create_rest_api_route(self) -> APIRouter:
         """Create and configure the API router for Telegram webhooks.

@@ -10,6 +10,8 @@ from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.frameworks.api.entry_point import APIEndpoint, FastAPIConfig
 from jira_telegram_bot.settings.fast_api_settings import FastAPISettings
 
+_app: FastAPI | None = None
+
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application.
@@ -31,14 +33,14 @@ def create_app() -> FastAPI:
         _app = api_endpoint.rest_api_app
 
     return _app
-    return app
 
 
+# Create the app instance at module level for uvicorn
+app = create_app()
 
 
 if __name__ == "__main__":
     import uvicorn
-    app = create_app()
     settings = FastAPISettings()
     LOGGER.info("Starting Jira Telegram Bot API server...")
     uvicorn.run(

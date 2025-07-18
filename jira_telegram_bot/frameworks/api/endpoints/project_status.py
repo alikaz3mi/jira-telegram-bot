@@ -34,6 +34,7 @@ class ProjectStatusEndpoint(ServiceAPIEndpointBluePrint):
         """
         self.get_project_status_use_case = get_project_status_use_case
         self.update_project_tracking_use_case = update_project_tracking_use_case
+        super().__init__()
     
     def create_rest_api_route(self) -> APIRouter:
         """Create and configure the API router for project status operations.

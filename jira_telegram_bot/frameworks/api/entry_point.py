@@ -22,6 +22,7 @@ from jira_telegram_bot.frameworks.api.configs.fastapi_doc import fastapi_tags_me
 from jira_telegram_bot.frameworks.api.base_endpoint import (
     ServiceAPIEndpointBluePrint,
 )
+from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.settings.fast_api_settings import FastAPISettings
 
 
@@ -50,17 +51,6 @@ class SocketServerConfig:
         self.always_connect = True
         self.engineio_logger = False
         self.server_workers = None
-
-
-class SubServiceEndpoints:
-    def __init__(self) -> None:
-        self.services: List[ServiceAPIEndpointBluePrint] = []
-
-    def register(self, service: ServiceAPIEndpointBluePrint) -> None:
-        self.services.append(service)
-
-    def get(self) -> List[ServiceAPIEndpointBluePrint]:
-        return self.services
 
 
 class APIEndpoint:
@@ -117,27 +107,6 @@ class APIEndpoint:
                 },
             ).start()
 
-    def socket_call_backs(self):
-        @self.sio.on("connect")
-        async def connect(sid, environ, auth):
-            LOGGER.info(f"Socket connected with ID: {sid}")
-            LOGGER.info("No Auth")
-            self.sio.disconnect(sid)
-            await self.sio.emit("connected", room=sid)
-
-        @self.sio.on("disconnect")
-        def disconnect(sid):
-            LOGGER.info(f"Socket disconnected with ID: {sid}")
-
-        @self.sio.on("message")
-        async def message(sid, data: dict):
-            LOGGER.info(f"Message from {sid}")
-            try:
-                pass
-            except Exception as e:
-                LOGGER.info(f"Error parsing messages from socket; {e}")
-                await self.sio.emit("error", str(e), room=sid)
-
     def create_rest_api_route(self):
         @self.rest_api_app.get(
             "/",
@@ -156,7 +125,7 @@ class APIEndpoint:
         )
         async def docs(request: Request):
             """Playground of the Service."""
-            return RedirectResponse(url=f"{self.configs.API_VERSION}/playground")
+            return RedirectResponse(url=f"{self.configs.API_VERSION}/docs")
 
         @self.rest_api_app.get(
             "/redoc",
@@ -165,4 +134,4 @@ class APIEndpoint:
         )
         async def redocs(request: Request):
             """Documentation of the Service."""
-            return RedirectResponse(url=f"{self.configs.API_VERSION}/documentation")
+            return RedirectResponse(url=f"{self.configs.API_VERSION}/redoc")

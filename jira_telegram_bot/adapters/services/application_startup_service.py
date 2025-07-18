@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.database.migration_runner import MigrationRunner
+from jira_telegram_bot.adapters.repositories.postgres.database.migration_runner import MigrationRunner
 from jira_telegram_bot.use_cases.interfaces.database_connection_interface import DatabaseConnectionInterface
 from jira_telegram_bot.utils.exceptions import DatabaseConnectionError
 

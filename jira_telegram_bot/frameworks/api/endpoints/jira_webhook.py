@@ -21,6 +21,7 @@ class JiraWebhookEndpoint(ServiceAPIEndpointBluePrint):
             jira_webhook_use_case: Use case for handling Jira webhooks
         """
         self.jira_webhook_use_case = jira_webhook_use_case
+        super().__init__()
     
     def create_rest_api_route(self) -> APIRouter:
         """Create and configure the API router for Jira webhooks.

@@ -16,6 +16,7 @@ class HealthCheckEndpoint(ServiceAPIEndpointBluePrint):
     def __init__(self):
         """Initialize the health check endpoint."""
         self.start_time = datetime.now()
+        super().__init__()
     
     def create_rest_api_route(self) -> APIRouter:
         """Create and configure the API router for health checks.

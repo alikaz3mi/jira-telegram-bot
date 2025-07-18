@@ -27,3 +27,11 @@ class SubServiceEndpoints:
         """
         LOGGER.info(f"Registering endpoint: {endpoint.__class__.__name__}")
         self.endpoints.append(endpoint)
+
+    def get(self) -> List[ServiceAPIEndpointBluePrint]:
+        """Get all registered endpoints.
+        
+        Returns:
+            List of registered endpoints
+        """
+        return self.endpoints
