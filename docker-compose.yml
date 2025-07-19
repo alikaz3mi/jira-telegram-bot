@@ -6,12 +6,26 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: telegram_bot
-    image: jira_telegram_bot:v2
+    image: jira_telegram_bot:v3
     volumes:
       - .:/app
     command: >
       python3 jira_telegram_bot
     restart: always
+  
+  synth-pm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: synth_pm
+    image: jira_telegram_bot:v3
+    volumes:
+      - .:/app
+    command: >
+      python3 jira_telegram_bot/frameworks/api/main.py
+    restart: always
+    ports:
+      - "2318:2318"
 
   ticketing-bot:
     build:
@@ -31,6 +45,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: jira_report_scheduler
+    image: jira_telegram_bot:v3
     volumes:
       - .:/app
     command: >

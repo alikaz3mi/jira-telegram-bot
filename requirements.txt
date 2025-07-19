@@ -29,7 +29,7 @@ oauth2client==4.1.3
 croniter==6.0.0
 apscheduler~=3.11.0
 psycopg2-binary==2.9.10
---no-deps chromatrace==0.2.13
+--no-deps chromatrace==0.2.11
 django==5.1.1
 python-socketio==5.11.4
 python-socketio[client]==5.11.4

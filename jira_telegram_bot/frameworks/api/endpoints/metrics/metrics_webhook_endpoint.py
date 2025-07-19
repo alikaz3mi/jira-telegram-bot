@@ -1,35 +1,13 @@
 """FastAPI webhook endpoint for metrics processing."""
 
+from fastapi import APIRouter, BackgroundTasks
 from typing import Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from pydantic import BaseModel
-
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.adapters.controllers.jira_webhook_controller import JiraWebhookController
+from jira_telegram_bot.adapters.controllers.gitlab_webhook_controller import GitlabWebhookController
 from jira_telegram_bot.entities.api_schemas import WebhookResponse
 from jira_telegram_bot.frameworks.api.base_endpoint import ServiceAPIEndpointBluePrint
-from jira_telegram_bot.use_cases.metrics.process_jira_event_use_case import ProcessJiraEventUseCase
-from jira_telegram_bot.use_cases.metrics.process_gitlab_event_use_case import ProcessGitlabEventUseCase
-
-
-class JiraWebhookPayload(BaseModel):
-    """Pydantic model for Jira webhook payload."""
-    
-    issue_event_type_name: str = None
-    issue: Dict[str, Any] = {}
-    changelog: Dict[str, Any] = None
-    worklog: Dict[str, Any] = None
-    timestamp: str = None
-
-
-class GitLabWebhookPayload(BaseModel):
-    """Pydantic model for GitLab webhook payload."""
-    
-    object_kind: str
-    event_type: str = None
-    project: Dict[str, Any] = {}
-    commits: list[Dict[str, Any]] = []
-    object_attributes: Dict[str, Any] = {}
 
 
 class MetricsWebhookEndpoint(ServiceAPIEndpointBluePrint):
@@ -37,18 +15,18 @@ class MetricsWebhookEndpoint(ServiceAPIEndpointBluePrint):
     
     def __init__(
         self,
-        process_jira_event_use_case: ProcessJiraEventUseCase,
-        process_gitlab_event_use_case: ProcessGitlabEventUseCase
+        jira_webhook_controller: JiraWebhookController,
+        gitlab_webhook_controller: GitlabWebhookController
     ):
         """Initialize the endpoint.
         
         Args:
-            process_jira_event_use_case: Use case for processing Jira events
-            process_gitlab_event_use_case: Use case for processing GitLab events
+            jira_webhook_controller: Controller for handling Jira webhooks
+            gitlab_webhook_controller: Controller for handling GitLab webhooks
         """
         super().__init__()
-        self.process_jira_event_use_case = process_jira_event_use_case
-        self.process_gitlab_event_use_case = process_gitlab_event_use_case
+        self.jira_webhook_controller = jira_webhook_controller
+        self.gitlab_webhook_controller = gitlab_webhook_controller
     
     def create_rest_api_route(self) -> APIRouter:
         """Create and configure the API router for metrics webhook endpoints.
@@ -151,11 +129,11 @@ class MetricsWebhookEndpoint(ServiceAPIEndpointBluePrint):
             payload: Raw webhook payload from Jira
         """
         try:
-            success = await self.process_jira_event_use_case.process_jira_webhook(payload)
-            if success:
+            result = await self.jira_webhook_controller.process_webhook(payload)
+            if result.status == "success":
                 LOGGER.info("Successfully processed Jira webhook for metrics")
             else:
-                LOGGER.error("Failed to process Jira webhook for metrics")
+                LOGGER.error(f"Failed to process Jira webhook for metrics: {result.message}")
                 
         except Exception as e:
             LOGGER.error(f"Error in background Jira webhook processing: {e}")
@@ -167,11 +145,11 @@ class MetricsWebhookEndpoint(ServiceAPIEndpointBluePrint):
             payload: Raw webhook payload from GitLab
         """
         try:
-            success = await self.process_gitlab_event_use_case.process_gitlab_webhook(payload)
-            if success:
+            result = await self.gitlab_webhook_controller.process_webhook(payload)
+            if result.status == "success":
                 LOGGER.info("Successfully processed GitLab webhook for metrics")
             else:
-                LOGGER.error("Failed to process GitLab webhook for metrics")
+                LOGGER.error(f"Failed to process GitLab webhook for metrics: {result.message}")
                 
         except Exception as e:
             LOGGER.error(f"Error in background GitLab webhook processing: {e}")

@@ -103,6 +103,10 @@ from jira_telegram_bot.use_cases.interfaces.metrics.spreadsheet_gateway_interfac
 from jira_telegram_bot.use_cases.interfaces.metrics.metrics_processor_interface import MetricsProcessorInterface
 from jira_telegram_bot.use_cases.interfaces.metrics.user_setting_configuration_repository_interface import UserSettingConfigurationRepositoryInterface
 
+# Controller imports
+from jira_telegram_bot.adapters.controllers.jira_webhook_controller import JiraWebhookController
+from jira_telegram_bot.adapters.controllers.gitlab_webhook_controller import GitlabWebhookController
+
 # Framework imports - API endpoints
 from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.frameworks.api.entry_point import FastAPIConfig
@@ -427,9 +431,22 @@ def _configure_api_endpoints(container: Container) -> None:
     container[SubServiceEndpoints] = Singleton(lambda: SubServiceEndpoints())
     container[FastAPIConfig] = Singleton(lambda: FastAPIConfig())
     
+    # Controllers
+    container[JiraWebhookController] = Singleton(
+        lambda c: JiraWebhookController(
+            jira_webhook_use_case=c[JiraWebhookUseCase],
+            process_jira_event_use_case=c[ProcessJiraEventUseCase]
+        )
+    )
+    container[GitlabWebhookController] = Singleton(
+        lambda c: GitlabWebhookController(
+            process_gitlab_event_use_case=c[ProcessGitlabEventUseCase]
+        )
+    )
+    
     # Webhook endpoints
     container[JiraWebhookEndpoint] = Singleton(
-        lambda c: JiraWebhookEndpoint(jira_webhook_use_case=c[JiraWebhookUseCase])
+        lambda c: JiraWebhookEndpoint(jira_webhook_controller=c[JiraWebhookController])
     )
     container[TelegramWebhookEndpoint] = Singleton(
         lambda c: TelegramWebhookEndpoint(telegram_webhook_use_case=c[TelegramWebhookUseCase])
@@ -475,8 +492,8 @@ def _configure_metrics_tracking(container: Container) -> None:
     # Metrics endpoints
     container[MetricsWebhookEndpoint] = Singleton(
         lambda c: MetricsWebhookEndpoint(
-            process_jira_event_use_case=c[ProcessJiraEventUseCase],
-            process_gitlab_event_use_case=c[ProcessGitlabEventUseCase]
+            jira_webhook_controller=c[JiraWebhookController],
+            gitlab_webhook_controller=c[GitlabWebhookController]
         )
     )
 
