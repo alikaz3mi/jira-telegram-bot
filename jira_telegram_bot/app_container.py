@@ -13,6 +13,9 @@ from jira_telegram_bot.adapters.services.telegram.authentication import Telegram
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import (
     AdvancedTaskCreation,
 )
+from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
+from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
+
 from jira_telegram_bot.use_cases.telegram_commands.board_summary_generator import BoardSummaryGenerator
 from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase
 from jira_telegram_bot.use_cases.telegram_commands.create_task import JiraTaskCreation
@@ -28,16 +31,11 @@ from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
     AIServiceProtocol,
 )
-from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
+from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGeneratorInterface
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
 )
-from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import (
-    StoryDecompositionInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import (
-    SubtaskCreationInterface,
-)
+from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecompositionUseCase
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
@@ -170,9 +168,9 @@ def setup_container() -> Container:
             task_manager_repository=c[TaskManagerRepositoryInterface],
             user_config=c[UserConfigInterface],
             project_info_repository=c[ProjectInfoRepositoryInterface],
-            story_generator=c[StoryGenerator],
-            story_decomposition_service=c[StoryDecompositionInterface],
-            subtask_creation_service=c[SubtaskCreationInterface],
+            story_generator=c[GenerateUserStoryUseCase],
+            story_decomposition_usecase=c[StoryDecompositionUseCase],
+            subtask_creation_usecase=c[CreateSubtasksUseCase],
         )
     )
     

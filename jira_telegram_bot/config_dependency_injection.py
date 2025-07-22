@@ -64,9 +64,10 @@ from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import Ge
 from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase, TaskGrouper
 from jira_telegram_bot.use_cases.ai_agents.parse_jira_prompt_usecase import ParseJiraPromptUseCase
 from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase import GenerateProgressReportUseCase
-from jira_telegram_bot.use_cases.ai_agents.generate_user_story import GenerateUserStoryUseCase as AIGenerateUserStoryUseCase
 from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecompositionUseCase
 from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
+from jira_telegram_bot.use_cases.ai_agents.agent_generate_use_story import AgentGenerateUserStory
+
 
 # Webhook use case imports
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWebhookUseCase
@@ -80,12 +81,9 @@ from jira_telegram_bot.use_cases.metrics.update_sheet_use_case import UpdateShee
 from jira_telegram_bot.use_cases.interfaces.database_connection_interface import DatabaseConnectionInterface
 from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AIServiceProtocol, PromptCatalogProtocol
-from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import NotificationGatewayInterface
 from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import ProjectInfoRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import SpeechProcessorInterface
-from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import StoryDecompositionInterface
-from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import SubtaskCreationInterface
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import UserAuthenticationInterface
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
@@ -305,13 +303,6 @@ def _configure_ai_agents_and_models(container: Container) -> None:
         lambda c: FilePromptCatalog()
     )
     
-    # AI agent use cases
-    container[AIGenerateUserStoryUseCase] = Singleton(
-        lambda c: AIGenerateUserStoryUseCase(
-            prompt_catalog=c[PromptCatalogProtocol],
-            ai_service=c[AIServiceProtocol],
-        )
-    )
     container[StoryDecompositionUseCase] = Singleton(
         lambda c: StoryDecompositionUseCase(
             prompt_catalog=c[PromptCatalogProtocol],
@@ -339,10 +330,13 @@ def _configure_ai_agents_and_models(container: Container) -> None:
         )
     )
     
-    # Interface bindings
-    container[StoryGenerator] = Singleton(lambda c: c[GenerateUserStoryUseCase])
-    container[StoryDecompositionInterface] = Singleton(lambda c: c[StoryDecompositionUseCase])
-    container[SubtaskCreationInterface] = Singleton(lambda c: c[CreateSubtasksUseCase])
+    container[AgentGenerateUserStory] = Singleton(
+        lambda c: AgentGenerateUserStory(
+            ai_service=c[AIServiceProtocol],
+            prompt_catalog=c[PromptCatalogProtocol],
+        )
+    )
+    
 
 
 def _configure_use_cases(container: Container) -> None:
@@ -379,7 +373,7 @@ def _configure_use_cases(container: Container) -> None:
     
     # User story generation
     container[GenerateUserStoryUseCase] = Singleton(
-        lambda c: GenerateUserStoryUseCase(ai_generate_user_story=c[AIGenerateUserStoryUseCase])
+        lambda c: GenerateUserStoryUseCase(ai_generate_user_story=c[AgentGenerateUserStory])
     )
     
     # Alert and notification use cases

@@ -9,7 +9,7 @@ from jira_telegram_bot.entities.ai_agent_models.generate_user_story import Gener
 from jira_telegram_bot.entities.ai_agent_models.generate_user_story import UserStoryCandidate
 from jira_telegram_bot.entities.ai_agent_models.prompt_names import PromptNames
 from jira_telegram_bot.entities.structured_prompt import StructuredPrompt
-from jira_telegram_bot.use_cases.ai_agents.generate_user_story_usecase import GenerateUserStoryUseCase
+from jira_telegram_bot.use_cases.ai_agents.agent_generate_use_story import AgentGenerateUserStory
 
 
 class TestGenerateUserStoryUseCase(unittest.IsolatedAsyncioTestCase):
@@ -19,7 +19,7 @@ class TestGenerateUserStoryUseCase(unittest.IsolatedAsyncioTestCase):
         """Set up test dependencies."""
         self.mock_prompt_catalog = AsyncMock()
         self.mock_ai_service = AsyncMock()
-        self.use_case = GenerateUserStoryUseCase(
+        self.use_case = AgentGenerateUserStory(
             prompt_catalog=self.mock_prompt_catalog,
             ai_service=self.mock_ai_service,
         )

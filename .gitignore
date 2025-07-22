@@ -5,7 +5,7 @@
 *.png
 *.csv
 *.xlsx
-*.log
+*.log*
 *.ogg
 *.mp3
 *.oga

@@ -49,7 +49,7 @@ class BaseAIAgentUseCase(ABC):
             StructuredPrompt object.
         """
         return await self.prompt_catalog.get_prompt(
-            task=self.prompt_name,
+            task=self.prompt_name.value,
             department=department,
             user_id=user_id,
         )

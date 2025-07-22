@@ -18,6 +18,7 @@ class StructuredPrompt(BaseModel):
     ai_model_hint: str = Field(
         default="gpt-4o-mini",
         description="Optional model hint for the LLM.",
+        alias="ai_model_name",
     )
     ai_model_engine: str = Field(
         default="openai",

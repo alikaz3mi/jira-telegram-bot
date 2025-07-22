@@ -26,7 +26,7 @@ class LangChainAiService(AIServiceProtocol):
         cleanse_llm_text: bool = False,
     ) -> Dict[str, Any]:
         # TODO: get a model with the least used RPM and RPD. Or, that has at least 10% of the max RPM and RPD
-        model = self.model_registry[prompt.ai_model_hint, prompt.ai_model_engine]
+        model = self.model_registry[prompt.ai_model_engine, prompt.ai_model_hint]
         parser = StructuredOutputParser.from_response_schemas(
             [ResponseSchema(**schema) for schema in prompt.schemas],
         )
@@ -35,13 +35,13 @@ class LangChainAiService(AIServiceProtocol):
             input_variables=prompt.input_variables,
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
-        chain = await self.create_chain(cleanse_llm_text, model, parser, tmpl)
+        chain = self.create_chain(cleanse_llm_text, model, parser, tmpl)
         return await chain.with_config(
             configurable={"llm_temperature": prompt.temperature},
         ).ainvoke(inputs)
 
     @staticmethod
-    async def create_chain(cleanse_llm_text: bool, model, parser, tmpl: PromptTemplate):
+    def create_chain(cleanse_llm_text: bool, model, parser, tmpl: PromptTemplate):
         if cleanse_llm_text:
             chain = tmpl | model | llm_result_correction_chain | parser
         else:

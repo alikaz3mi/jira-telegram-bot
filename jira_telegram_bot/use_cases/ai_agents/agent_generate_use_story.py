@@ -14,7 +14,7 @@ from jira_telegram_bot.use_cases.interfaces.ai_service_interface import PromptCa
 from jira_telegram_bot.use_cases.interfaces.base_ai_agent_use_case import BaseAIAgentUseCase
 
 
-class GenerateUserStoryUseCase(BaseAIAgentUseCase):
+class AgentGenerateUserStory(BaseAIAgentUseCase):
     """AI agent use case for generating user stories from raw text input."""
 
     def __init__(

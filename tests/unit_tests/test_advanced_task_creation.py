@@ -96,8 +96,8 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
             user_config=self.mock_user_config,
             project_info_repository=self.mock_project_info_repo,
             story_generator=self.mock_story_generator,
-            story_decomposition_service=self.mock_story_decomposition,
-            subtask_creation_service=self.mock_subtask_creation,
+            story_decomposition_usecase=self.mock_story_decomposition,
+            subtask_creation_usecase=self.mock_subtask_creation,
         )
         
         # Patch the project_info_repository.get_project_info method to return our mock data

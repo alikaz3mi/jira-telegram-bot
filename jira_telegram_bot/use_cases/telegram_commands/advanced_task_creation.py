@@ -10,13 +10,7 @@ from jira import Issue
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.entities.task import UserStory
-from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGenerator
-from jira_telegram_bot.use_cases.interfaces.story_decomposition_interface import (
-    StoryDecompositionInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.subtask_creation_interface import (
-    SubtaskCreationInterface,
-)
+from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGeneratorInterface
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
@@ -26,6 +20,9 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
 from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
     ProjectInfoRepositoryInterface,
 )
+from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
+from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
+from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecompositionUseCase
 
 
 class AdvancedTaskCreation:
@@ -36,9 +33,9 @@ class AdvancedTaskCreation:
         task_manager_repository: TaskManagerRepositoryInterface,
         user_config: UserConfigInterface,
         project_info_repository: ProjectInfoRepositoryInterface,
-        story_generator: StoryGenerator,
-        story_decomposition_service: StoryDecompositionInterface,
-        subtask_creation_service: SubtaskCreationInterface,
+        story_generator: GenerateUserStoryUseCase,
+        story_decomposition_usecase: StoryDecompositionUseCase,
+        subtask_creation_usecase: CreateSubtasksUseCase,
     ):
         """Initialize advanced task creation service.
 
@@ -47,15 +44,15 @@ class AdvancedTaskCreation:
             user_config: Service for user configuration
             project_info_repository: Repository for project information
             story_generator: Service for generating user stories
-            story_decomposition_service: Service for decomposing stories into tasks
-            subtask_creation_service: Service for creating subtasks
+            story_decomposition_usecase: Service for decomposing stories into tasks
+            subtask_creation_usecase: Service for creating subtasks
         """
         self.task_manager_repository = task_manager_repository
         self.user_config = user_config
         self.project_info_repository = project_info_repository
         self.story_generator = story_generator
-        self.story_decomposition_service = story_decomposition_service
-        self.subtask_creation_service = subtask_creation_service
+        self.story_decomposition_usecase = story_decomposition_usecase
+        self.subtask_creation_usecase = subtask_creation_usecase
 
     async def create_tasks(
         self,
@@ -82,7 +79,7 @@ class AdvancedTaskCreation:
 
         # Parse the tasks
         if task_type == "story":
-            tasks_data = await self.story_decomposition_service.decompose_story(
+            tasks_data = await self.story_decomposition_usecase.execute(
                 project_context=project_info["project_info"]["description"],
                 description=description,
                 departments=", ".join(project_info["departments"].keys()),

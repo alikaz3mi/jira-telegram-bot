@@ -3,15 +3,14 @@ from __future__ import annotations
 from jira_telegram_bot.entities.ai_agent_models.generate_user_story import GenerateUserStoryInput
 from jira_telegram_bot.entities.task import UserStory
 from jira_telegram_bot.entities.user_story_generation_request import UserStoryGenerationRequest
-from jira_telegram_bot.use_cases.ai_agents.generate_user_story_usecase import GenerateUserStoryUseCase as AIGenerateUserStoryUseCase
-
+from jira_telegram_bot.use_cases.ai_agents.agent_generate_use_story import AgentGenerateUserStory
 
 class GenerateUserStoryUseCase:
     """
     Use case for creating a user story using AI agents.
     """
 
-    def __init__(self, ai_generate_user_story: AIGenerateUserStoryUseCase):
+    def __init__(self, ai_generate_user_story: AgentGenerateUserStory):
         """Initialize with AI agent use case.
         
         Args:

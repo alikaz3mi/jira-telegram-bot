@@ -6,17 +6,17 @@ from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.entities.task import UserStory
 
 
-class StoryGenerator(Protocol):
+class StoryGeneratorInterface(Protocol):
     async def generate(self, raw_text: str, project: str, **kwargs) -> UserStory:
         ...
 
 
-class TaskSplitter(Protocol):
+class TaskSplitterInterface(Protocol):
     async def split(self, story: UserStory, project: str) -> list[TaskData]:
         ...
 
 
-class IssueTracker(Protocol):
+class IssueTrackerInterface(Protocol):
     async def create_story(self, story: UserStory) -> str:
         pass
 

@@ -21,11 +21,25 @@ class LLMModels(LLMModelInterface):
         self.openai_settings = openai_settings
         self.gemini_settings = gemini_settings
 
-    def __getitem__(self, engine_name: str, model_name: str):
+    def __getitem__(self, key: tuple[str, str]):
         # TODO: In here, create the algorithm and caching to return the model with the least used RPM and RPD,
         #  or 10% of the max RPM and RPD
+        """Get a model by engine and model name.
+
+        Args:
+            key: Tuple containing (engine_name, model_name).
+
+        Returns:
+            The requested LLM model instance.
+
+        Raises:
+            Exception: If unable to get the model.
+        """
+        if not isinstance(key, tuple) or len(key) != 2:
+            raise ValueError("Key must be a tuple of (engine_name, model_name)")
+        engine_name, model_name = key
         try:
-            return self.models[engine_name][[model_name]]
+            return self.models[engine_name][model_name]
         except KeyError:
             self.register(engine_name, model_name)
             return self.models[engine_name][model_name]
