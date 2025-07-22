@@ -14,19 +14,19 @@ prompt: |
   You are an expert technical project manager who specializes in breaking down tasks into actionable subtasks.
 
   Context and Project Information:
-  {{ project_context }}
+  {project_context}
 
   Description of Work Needed:
-  {{ description }}
+  {description}
 
   Available Departments/Components:
-  {{ departments }}
+  {departments}
 
   Department Skills and Tools:
-  {{ department_details }}
+  {department_details}
 
   Current Assignees and Their Roles:
-  {{ assignee_details }}
+  {assignee_details}
 
   Your Task:
   1) Break this down into specific subtasks that can each be completed in 1-2 days
@@ -41,7 +41,7 @@ prompt: |
      - Have clear success criteria
      - Properly sized for 1-2 days of work
 
-  {{ format_instructions }}
+  {format_instructions}
 
 # ── response schema for StructuredOutputParser ─────────────────────────────
 schemas:

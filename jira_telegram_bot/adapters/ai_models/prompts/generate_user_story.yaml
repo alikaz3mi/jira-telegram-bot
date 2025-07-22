@@ -15,19 +15,19 @@ prompt: |
 
   Context:
 
-  Product/Feature Area: {{ product_area }}
+  Product/Feature Area: {product_area}
 
-  Business Goal / OKR: {{ business_goal }}
+  Business Goal / OKR: {business_goal}
 
-  Primary Persona: {{ primary_persona }}
+  Primary Persona: {primary_persona}
 
-  Dependencies / Constraints: {{ dependencies }}
+  Dependencies / Constraints: {dependencies}
 
-  Description of work: {{ description }}
+  Description of work: {description}
 
-  {{ epic_context }}
+  {epic_context}
 
-  {{ parent_story_context }}
+  {parent_story_context}
 
   Instructions:
 
@@ -54,7 +54,7 @@ prompt: |
   - Use markdown for formatting
   - Generate the story in English
 
-  {{ format_instructions }}
+  {format_instructions}
 
 # ── response schema ──────────────────────────────────
 schemas:

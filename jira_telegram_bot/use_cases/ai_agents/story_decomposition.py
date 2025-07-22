@@ -69,6 +69,6 @@ class StoryDecompositionUseCase(BaseAIAgentUseCase):
         }
 
         # Process with AI service
-        result = await self._process_with_ai(ai_inputs, cleanse_llm_text=True)
+        result = await self._process_with_ai(ai_inputs, cleanse_llm_text=False)
         
         return result

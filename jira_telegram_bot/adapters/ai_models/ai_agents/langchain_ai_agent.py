@@ -33,7 +33,7 @@ class LangChainAiService(AIServiceProtocol):
         tmpl = PromptTemplate(
             template=prompt.template,
             input_variables=prompt.input_variables,
-            partial_variables={"format_instructions": parser.get_format_instructions()},
+            partial_variables={"format_instructions": parser.get_format_instructions(only_json=True)},
         )
         chain = self.create_chain(cleanse_llm_text, model, parser, tmpl)
         return await chain.with_config(
