@@ -9,6 +9,21 @@ from pydantic import Field
 
 
 class StructuredPrompt(BaseModel):
+    id: str = Field(
+        description="Unique identifier for the prompt.",
+    )
+    description: str = Field(
+        default="",
+        description="Description of the prompt.",
+    )
+    version: str = Field(
+        default="1.0",
+        description="Version of the prompt.",
+    )
+    language: str = Field(
+        default="en",
+        description="Language of the prompt.",
+    )
     schemas: List[Dict[str, Any]] = Field(
         description="Schema for the structured output.",
     )
