@@ -1,0 +1,29 @@
+[Unit]
+Description=Jira Telegram Bot Scheduler Service
+After=network.target
+
+[Service]
+Type=simple
+User=jira-bot
+Group=jira-bot
+WorkingDirectory=/opt/jira-telegram-bot/current
+Environment=PATH=/opt/jira-telegram-bot/current/venv/bin
+ExecStart=/opt/jira-telegram-bot/current/venv/bin/python scripts/run_scheduled_reports.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jira-telegram-bot-scheduler
+
+# Environment file
+EnvironmentFile=/opt/jira-telegram-bot/current/.env
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/jira-telegram-bot/current/logs /opt/jira-telegram-bot/current/data
+
+[Install]
+WantedBy=multi-user.target

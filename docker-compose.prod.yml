@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  jira-telegram-bot:
+    image: ghcr.io/alikaz3mi/jira-telegram-bot:latest
+    container_name: jira-telegram-bot-main
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - jira-bot-network
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  jira-telegram-bot-api:
+    image: ghcr.io/alikaz3mi/jira-telegram-bot:latest
+    container_name: jira-telegram-bot-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    networks:
+      - jira-bot-network
+    depends_on:
+      - postgres
+    command: ["python", "-m", "scripts.run_api_server"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  jira-telegram-bot-scheduler:
+    image: ghcr.io/alikaz3mi/jira-telegram-bot:latest
+    container_name: jira-telegram-bot-scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - jira-bot-network
+    depends_on:
+      - postgres
+    command: ["python", "-m", "scripts.run_scheduled_reports"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  jira-telegram-bot-deadline-notifier:
+    image: ghcr.io/alikaz3mi/jira-telegram-bot:latest
+    container_name: jira-telegram-bot-deadline-notifier
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - jira-bot-network
+    depends_on:
+      - postgres
+    command: ["python", "-m", "scripts.run_deadline_notifier"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: jira-telegram-bot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jira_telegram_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-jira_bot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - jira-bot-network
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jira_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: jira-telegram-bot-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - jira-bot-network
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    container_name: jira-telegram-bot-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl/certs:ro
+    networks:
+      - jira-bot-network
+    depends_on:
+      - jira-telegram-bot-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  jira-bot-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
