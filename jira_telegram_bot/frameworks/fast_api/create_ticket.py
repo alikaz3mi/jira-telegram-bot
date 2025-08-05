@@ -76,7 +76,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                 photo_array = msg["photo"]
                 file_info = photo_array[-1]
                 file_id = file_info["file_id"]
-                mock_media = MockTelegramPhoto(file_id)
+                mock_media = MockTelegramPhoto(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
                 await fetch_and_store_media(
                     mock_media,
                     session,
@@ -88,7 +88,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                 doc = msg["document"]
                 file_id = doc["file_id"]
                 file_name = doc.get("file_name", f"document_{idx}")
-                mock_media = MockTelegramDocument(file_id)
+                mock_media = MockTelegramDocument(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
                 await fetch_and_store_media(
                     mock_media,
                     session,
@@ -99,7 +99,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
             elif "video" in msg:
                 vid = msg["video"]
                 file_id = vid["file_id"]
-                mock_media = MockTelegramVideo(file_id)
+                mock_media = MockTelegramVideo(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
                 await fetch_and_store_media(
                     mock_media,
                     session,
@@ -110,7 +110,7 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
             elif "audio" in msg:
                 aud = msg["audio"]
                 file_id = aud["file_id"]
-                mock_media = MockTelegramAudio(file_id)
+                mock_media = MockTelegramAudio(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
                 await fetch_and_store_media(
                     mock_media,
                     session,
