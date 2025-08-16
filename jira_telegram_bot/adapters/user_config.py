@@ -94,3 +94,20 @@ class UserConfig(UserConfigInterface):
                 LOGGER.error(f"Error parsing group chat IDs: {e}")
                 return []
         return []
+
+
+    def get_user_component(self, username: str, project_key: str) -> Optional[str]:
+        """
+        Get the user component for a specific user and project key.
+        
+        Args:
+            username: The username to look up
+            project_key: The project key to filter components
+            
+        Returns:
+            The component name if found, None otherwise
+        """
+        user_config = self.get_user_config_by_jira_username(username)
+        if user_config and user_config.user_components:
+            return user_config.user_components.get(project_key)
+        return None

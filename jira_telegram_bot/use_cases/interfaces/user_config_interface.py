@@ -102,31 +102,3 @@ class UserConfigInterface(ABC):
             Component name or None if not found
         """
         pass
-
-    @abstractmethod
-    def update_user_component(self, username: str, project_key: str, component: str) -> bool:
-        """
-        Update user component for a specific project.
-
-        Args:
-            username: JIRA username
-            project_key: Project key (e.g., "PARSCHAT")
-            component: Component/department name
-
-        Returns:
-            True if successful, False otherwise
-        """
-        pass
-
-    @abstractmethod
-    def initialize_user_components_from_projects_info(self, project_key: str = "PARSCHAT") -> bool:
-        """
-        Initialize user components from projects_info.json for all users.
-
-        Args:
-            project_key: Project key to initialize components for
-
-        Returns:
-            True if successful, False otherwise
-        """
-        pass

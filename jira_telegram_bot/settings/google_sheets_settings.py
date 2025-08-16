@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from pydantic import Field
-from pydantic_settings import SettingsConfigDict
-
-from jira_telegram_bot.utils.pydantic_advanced_settings import CustomizedSettings
+from pydantic_settings import SettingsConfigDict, BaseSettings
 
 
-class GoogleSheetsConnectionSettings(CustomizedSettings):
+class GoogleSheetsConnectionSettings(BaseSettings):
     token_path: str = Field(
         description="Path to the Google Sheets API token JSON file",
     )

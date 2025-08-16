@@ -475,7 +475,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 task_type="Story",  # Use Story for 
                 priority=self._map_priority(feature.priority),
                 epic_link=epic_link,
-                labels=[f"PM Board-{feature.jira_issue_key}", f"Sprint-{sprint_info.sprint_id}"] + (assignees or []), #TODO: check this one later
+                labels=[f"PM Board-{feature.jira_issue_key}", (assignees or [])], #TODO: check this one later
                 components=components,
                 assignee=main_assignee,
                 due_date=due_date,
@@ -1212,19 +1212,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # Create subtask data
                 subtask_data = TaskData(
                     project_key=project_key,
-                    summary=f"{feature.task_title} - {component} ({assignee})",
-                    description=f"🔗 **Parent Story**: {parent_issue_key}\n\n"
-                               f"👤 **Assignee**: {assignee}\n\n"
-                               f"🏗️ **Component**: {component}\n\n"
-                               f"📅 **Sprint**: {sprint_info.sprint_id} ({sprint_info.start_date} - {sprint_info.end_date})\n\n"
-                               f"{feature.description or ''}",
+                    summary=f"{feature.task_title}",
+                    description=f"{feature.description or ''}",
                     task_type="Sub-task",
                     priority=self._map_priority(feature.priority),
                     components=[component] if component else None,
                     assignee=assignee,
                     parent_issue_key=parent_issue_key,
                     due_date=due_date,
-                    story_points=feature.__getattribute__(component.lower()) / 8 if component else 1,  # Default subtask story points
+                    story_points=feature.__getattribute__(component.lower().strip('-').strip().replace('-', '')) / 8 if component else 1,  # Default subtask story points
                 )
                 
                 # Create the subtask
