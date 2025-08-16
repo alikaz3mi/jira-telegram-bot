@@ -3,8 +3,7 @@ from __future__ import annotations
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings import JIRA_SETTINGS
-
+from jira_telegram_bot.app_container import get_container
 
 def batch_task_creation(
     jira_repository: JiraServerRepository,
@@ -22,8 +21,8 @@ def batch_task_creation(
 
 
 if __name__ == "__main__":
-    # Example usage
-    jira_repository = JiraServerRepository(JIRA_SETTINGS)
+    container = get_container()
+    jira_repository = container[JiraServerRepository]
     tasks = [
         {
             "summary": "بازطراحی دیالوگ‌های تأیید (مانند حذف ربات)",

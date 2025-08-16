@@ -13,7 +13,7 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
 
-USER_CONFIG_PATH = f"{DEFAULT_PATH}/jira_telegram_bot/settings/user_config.json"
+USER_CONFIG_PATH = f"{DEFAULT_PATH}/data/storage/user_config.json"
 
 
 class UserConfig(UserConfigInterface):

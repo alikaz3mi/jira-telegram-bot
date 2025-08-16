@@ -10,6 +10,7 @@ from typing import List
 from typing import Optional
 
 import gspread
+from gspread.exceptions import APIError
 from oauth2client.service_account import ServiceAccountCredentials
 
 from jira_telegram_bot import LOGGER
@@ -228,12 +229,20 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             sheet_name = range_name.split('!')[0] if '!' in range_name else 'Sheet1'
             worksheet = spreadsheet.worksheet(sheet_name)
             
+            
             # Update the range
             worksheet.update(range_name, values)
             
             LOGGER.info(f"Successfully updated cells in {spreadsheet_id}, range {range_name}")
             return True
             
+        except APIError as e:
+             #FIXME: Handle APIError specifically to retry with worksheet update
+            sheet_name = range_name.split('!')[1] if '!' in range_name else 'Sheet1'
+            LOGGER.error(f"API error updating cells in {spreadsheet_id}, range {range_name} (sheet: {sheet_name}): {e}")
+            worksheet.update(sheet_name, values)
+            return True
+        
         except Exception as e:
             LOGGER.error(f"Error updating cells in {spreadsheet_id}: {e}")
             return False

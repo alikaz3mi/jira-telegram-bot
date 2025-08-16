@@ -26,12 +26,10 @@ from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSett
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
-from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
     AIServiceProtocol,
 )
-from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGeneratorInterface
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
 )
@@ -81,6 +79,7 @@ from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint, MetricsWebhookEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.synth_pm_endpoint import SynthPMEndpoint
 
 
 # Global container instance
@@ -227,6 +226,7 @@ def setup_container() -> Container:
     endpoint_registry.register(child_container[HealthCheckEndpoint])
     endpoint_registry.register(child_container[ProjectStatusEndpoint])
     endpoint_registry.register(child_container[MetricsWebhookEndpoint])
+    endpoint_registry.register(child_container[SynthPMEndpoint])
     
     return child_container
 

@@ -8,8 +8,8 @@ import requests
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.adapters.user_config import UserConfig
-from jira_telegram_bot.settings import JIRA_SETTINGS
-from jira_telegram_bot.settings import TELEGRAM_SETTINGS
+from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 
 
 def get_effective_deadline(issue):
@@ -74,7 +74,9 @@ def build_message(tasks_by_date):
         for issue in tasks_by_date[date_str]:
             key = issue.key
             summary = issue.fields.summary
-            link = f"{JIRA_SETTINGS.domain.scheme}://{JIRA_SETTINGS.domain.host}/browse/{key}"
+            # TODO: Fix with dependency injection
+            # link = f"{JIRA_SETTINGS.domain.scheme}://{JIRA_SETTINGS.domain.host}/browse/{key}"
+            link = f"https://your-jira-domain.com/browse/{key}"  # Placeholder
             # In Markdown or HTML
             lines.append(f"- [{key}]({link}): {summary}")
         lines.append("")  # blank line
@@ -85,7 +87,10 @@ def send_telegram_message(chat_id: int, text: str):
     """
     Send a message to a single user via Telegram using bot token.
     """
-    url = f"https://api.telegram.org/bot{TELEGRAM_SETTINGS.TOKEN}/sendMessage"
+    # TODO: Fix with dependency injection
+    telegram_settings = TelegramConnectionSettings()
+    
+    url = f"https://api.telegram.org/bot{telegram_settings.TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
         "text": text,
@@ -100,7 +105,10 @@ def send_telegram_message(chat_id: int, text: str):
 
 
 def main():
-    jira_repo = JiraServerRepository(settings=JIRA_SETTINGS)
+    # TODO: Fix with dependency injection
+    jira_settings = JiraConnectionSettings()
+    
+    jira_repo = JiraServerRepository(settings=jira_settings)
     user_config = UserConfig()
 
     threshold_date = datetime.now() + timedelta(days=3)

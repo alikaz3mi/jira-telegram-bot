@@ -40,6 +40,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         self.jira_original_estimate_id = "customfield_10111"
         self.jira_sprint_id = "customfield_10104"
         self.jira_epic_link_id = "customfield_10100"
+        self.jira_epic_name_id = "customfield_10102"
 
     def _get_from_cache(self, cache_key, max_age_seconds):
         entry = self.cache.get(cache_key)
@@ -247,10 +248,15 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 label.replace(" ", "-") for label in task_data.labels
             ]
 
+        # FIXME: task_type must be literal
         if task_data.task_type == "Sub-task":
             issue_fields["parent"] = {"key": task_data.parent_issue_key}
             if issue_fields.get(self.jira_sprint_id):
                 del issue_fields[self.jira_sprint_id]
+        
+        if task_data.task_type == "Epic":
+            # For Epics, we need to set the epic name field
+            issue_fields[self.jira_epic_name_id] = task_data.summary
 
         return issue_fields
 
@@ -559,4 +565,116 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             return self.jira.issue(issue_key, expand=expand)
         except Exception as e:
             LOGGER.error(f"Error fetching issue {issue_key} with expand '{expand}': {e}")
+            return None
+    
+    def get_issue_url(self, issue: Issue) -> str:
+        """
+        Get the URL for a Jira issue.
+        
+        Args:
+            issue: The Jira issue object
+            
+        Returns:
+            URL string for the issue
+        """
+        return f"{self.settings.domain.scheme}://{self.settings.domain.host}/browse/{issue.key}" if issue else ""
+
+    def get_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+        """
+        Get available transitions for an issue.
+        
+        Args:
+            issue_key: The key of the Jira issue
+            
+        Returns:
+            List of available transitions with their IDs and names
+        """
+        try:
+            transitions = self.jira.transitions(issue_key)
+            return transitions
+        except Exception as e:
+            LOGGER.error(f"Error fetching transitions for issue {issue_key}: {e}")
+            return []
+
+    def transition_issue(self, issue_key: str, transition_id: str) -> None:
+        """
+        Transition an issue to a new status.
+        
+        Args:
+            issue_key: The key of the Jira issue
+            transition_id: The ID of the transition to apply
+            
+        Raises:
+            Exception if the transition fails
+        """
+        try:
+            self.jira.transition_issue(issue_key, transition_id)
+            LOGGER.info(f"Issue {issue_key} transitioned to {transition_id}")
+        except Exception as e:
+            LOGGER.error(f"Error transitioning issue {issue_key} to {transition_id}: {e}")
+            raise e
+    
+    def get_sprint_by_id(self, sprint_id: str, board_id: str) -> Optional[Dict[str, any]]:
+        """
+        Get sprint details by ID.
+        
+        Args:
+            sprint_id: The ID of the sprint
+            board_id: The ID of the board
+            
+        Returns:
+            Sprint details as a dictionary or None if not found
+        """
+        try:
+            sprints = self.get_sprints(board_id)
+            for sprint in sprints:
+                if sprint.id == int(sprint_id):
+                    return {
+                        "id": sprint.id,
+                        "name": sprint.name,
+                        "state": sprint.state,
+                        "startDate": sprint.startDate,
+                        "endDate": sprint.endDate,
+                    }
+            return None
+        except Exception as e:
+            LOGGER.error(f"Error fetching sprint {sprint_id} for board {board_id}: {e}")
+            return None
+
+    
+    def create_sprint(
+        self, 
+        board_id: int, 
+        sprint_name: str, 
+        start_date: str, 
+        end_date: str
+    ) -> Optional[Dict[str, any]]:
+        """
+        Create a new sprint.
+        
+        Args:
+            board_id: The ID of the board to create the sprint in
+            sprint_name: The name of the new sprint
+            start_date: The start date of the sprint in ISO format
+            end_date: The end date of the sprint in ISO format
+            
+        Returns:
+            Sprint details as a dictionary or None if creation fails
+        """
+        try:
+            sprint = self.jira.create_sprint(
+                name=sprint_name,
+                board_id=board_id,
+                startDate=start_date,
+                endDate=end_date,
+            )
+            return {
+                "id": sprint.id,
+                "name": sprint.name,
+                "state": sprint.state,
+                "startDate": sprint.startDate,
+                "endDate": sprint.endDate,
+            }
+        except Exception as e:
+            LOGGER.error(f"Error creating sprint '{sprint_name}': {e}")
             return None

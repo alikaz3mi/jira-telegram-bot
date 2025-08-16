@@ -55,18 +55,19 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
 
-  # postgres:
-  #   image: postgres:15
-  #   container_name: jira_postgres
-  #   environment:
-  #     POSTGRES_DB: jira_reports
-  #     POSTGRES_USER: jira_user
-  #     POSTGRES_PASSWORD: jira_password
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   ports:
-  #     - "5432:5432"
-  #   restart: always
+  synth-pm-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: synth_pm
+    image: jira_telegram_bot:v3
+    volumes:
+      - .:/app
+    command: >
+      python3 scripts/run_synth_pm.py service
+    restart: always
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
 
-volumes:
-  postgres_data:
+

@@ -1,5 +1,7 @@
 """Webhook handling use cases."""
 
+from jira_telegram_bot.use_cases.webhooks.telegram_webhook_usecase import TelegramWebhookUseCase
+
 __all__ = [
     "JiraWebhookUseCase", 
     "TelegramWebhookUseCase",
