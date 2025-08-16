@@ -17,6 +17,7 @@ class UserConfig(BaseModel):
     jira_username: str
     gitlab_username: Optional[str] = None
     google_sheet_name: Optional[str] = None
+    user_components: Optional[dict] = None  
     project: FieldConfig = FieldConfig()
     component: FieldConfig = FieldConfig()
     task_type: FieldConfig = FieldConfig()

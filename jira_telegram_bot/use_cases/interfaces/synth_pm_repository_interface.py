@@ -1,4 +1,4 @@
-"""Interface for SynthParsChat repository operations."""
+"""Interface for Synth repository operations."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity, SprintIn
 
 
 class SynthPMRepositoryInterface(ABC):
-    """Interface for SynthParsChat repository operations."""
+    """Interface for Synth repository operations."""
     
     @abstractmethod
     async def get_developer_board_features(self) -> List[SynthPMFeatureEntity]:
-        """Get all ParsChat features from Google Sheets.
+        """Get all  features from Google Sheets.
         
         Returns:
-            List of ParsChat feature entities
+            List of  feature entities
         """
         pass
     
@@ -40,7 +40,7 @@ class SynthPMRepositoryInterface(ABC):
         row_number: int, 
         updates: Dict[str, any]
     ) -> bool:
-        """Update a specific ParsChat feature in Google Sheets.
+        """Update a specific  feature in Google Sheets.
         
         Args:
             row_number: Row number to update
@@ -73,10 +73,10 @@ class SynthPMRepositoryInterface(ABC):
         self, 
         feature: SynthPMFeatureEntity
     ) -> Optional[str]:
-        """Create a PM Board Jira task from a ParsChat feature.
+        """Create a PM Board Jira task from a  feature.
         
         Args:
-            feature: ParsChat feature entity
+            feature:  feature entity
             
         Returns:
             PM Board Jira issue key if successful, None otherwise
@@ -90,15 +90,15 @@ class SynthPMRepositoryInterface(ABC):
         sprint_info: SprintInfo,
         assignees: Optional[List[str]] = None
     ) -> Optional[str]:
-        """Create a PARSCHAT Jira task from a ParsChat feature with sprint.
+        """Create a  Jira task from a  feature with sprint.
         
         Args:
-            feature: ParsChat feature entity
-            sprint_info: Sprint information for PARSCHAT board
+            feature:  feature entity
+            sprint_info: Sprint information for  board
             assignees: List of assignee usernames for the task
             
         Returns:
-            PARSCHAT Jira issue key if successful, None otherwise
+             Jira issue key if successful, None otherwise
         """
         pass
     
@@ -107,10 +107,10 @@ class SynthPMRepositoryInterface(ABC):
         self, 
         feature: SynthPMFeatureEntity
     ) -> bool:
-        """Update an existing PM Board Jira task from a ParsChat feature.
+        """Update an existing PM Board Jira task from a  feature.
         
         Args:
-            feature: ParsChat feature entity
+            feature:  feature entity
             
         Returns:
             True if successful, False otherwise
@@ -123,10 +123,10 @@ class SynthPMRepositoryInterface(ABC):
         feature: SynthPMFeatureEntity,
         assignees: Optional[List[str]] = None
     ) -> bool:
-        """Update an existing PARSCHAT Jira task from a ParsChat feature.
+        """Update an existing  Jira task from a  feature.
         
         Args:
-            feature: ParsChat feature entity
+            feature:  feature entity
             assignees: List of assignee usernames for the task
             
         Returns:
@@ -141,10 +141,10 @@ class SynthPMRepositoryInterface(ABC):
         time_spent: int,
         user: str
     ) -> bool:
-        """Track time spent on PARSCHAT task and deduct from original story points.
+        """Track time spent on  task and deduct from original story points.
         
         Args:
-            developer_board_issue_key: PARSCHAT issue key
+            developer_board_issue_key:  issue key
             time_spent: Time spent in hours
             user: User who spent the time
             

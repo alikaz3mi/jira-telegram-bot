@@ -34,14 +34,14 @@ async def run_sync_once(use_case: SynthPMUseCase):
     try:
         LOGGER.info("Starting one-time SynthPM synchronization...")
         
-        # Sync ParsChat features
+        # Sync  features
         result = await use_case.sync_developer_board_features()
         
         if result["status"] == "success":
-            LOGGER.info("✅ ParsChat Features synchronization completed successfully!")
-            print(f"ParsChat Features Results: {result.get('results', {})}")
+            LOGGER.info("✅  Features synchronization completed successfully!")
+            print(f" Features Results: {result.get('results', {})}")
         else:
-            LOGGER.error(f"❌ ParsChat Features synchronization failed: {result.get('message')}")
+            LOGGER.error(f"❌  Features synchronization failed: {result.get('message')}")
             sys.exit(1)
         
         # Sync Release Notes

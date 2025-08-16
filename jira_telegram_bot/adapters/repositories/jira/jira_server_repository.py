@@ -672,8 +672,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 "id": sprint.id,
                 "name": sprint.name,
                 "state": sprint.state,
-                "startDate": sprint.startDate,
-                "endDate": sprint.endDate,
+                "start_date": sprint.startDate,
+                "end_date": sprint.endDate,
             }
         except Exception as e:
             LOGGER.error(f"Error creating sprint '{sprint_name}': {e}")

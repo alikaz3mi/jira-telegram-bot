@@ -411,6 +411,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Jira issue key if successful, None otherwise
         """
+        # TODO: If task has two sprints, handle it. 
+        # TODO: If the issue is only updated in the google sheet board (i.e its times and stuff, handle it)
         try:
             if not feature.jira_issue_key:
                 LOGGER.error("Cannot create task without existing PM Board task")
@@ -452,11 +454,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 end_date = jdatetime.JalaliToGregorian(1404, int(end_date.split("-")[0]), int(end_date.split("-")[1]))
                 start_date = start_date.getGregorianList()
                 end_date = end_date.getGregorianList()
+                start_date_str = f"{start_date[0]}-{start_date[1]:02d}-{start_date[2]:02d}"
+                end_date_str = f"{end_date[0]}-{end_date[1]:02d}-{end_date[2]:02d}"
                 sprint = self.jira_repository.create_sprint(
                     board_id=self.developer_board_id,
                     sprint_name=f'{"board_id"} Sprint {sprint_info.sprint_id}',
-                    start_date=start_date,
-                    end_date=end_date,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
                 )
             
             # Create task with enhanced linking
@@ -480,7 +484,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Create the issue
             developer_board_issue = self.jira_repository.create_task(developer_board_task_data)
+            
             LOGGER.info(f"Created task {developer_board_issue.key} for feature: {feature.task_title}")
+            
+            if assignees:
+                try:
+                    subtask_keys = await self._create_subtasks_for_assignees(
+                        developer_board_issue.key,
+                        assignees,
+                        feature,
+                        sprint_info,
+                        due_date,
+                    )
+                    if subtask_keys:
+                        LOGGER.info(f"Created {len(subtask_keys)} subtasks for story {developer_board_issue.key}: {subtask_keys}")
+                except Exception as e:
+                    LOGGER.warning(f"Could not create subtasks for {developer_board_issue.key}: {e}")
             
             # Link the issues
             try:
@@ -841,6 +860,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             task_title = get_mapped_value("task_title")
             if not task_title:
                 return None  # Skip rows without task title
+        
+            # TODO: set multiple sprint for each task
             
             return SynthPMFeatureEntity(
                 row_number=row_number,
@@ -1154,6 +1175,70 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     LOGGER.info(f"Added label '{label}' to issue {issue_key}")
         except Exception as e:
             LOGGER.error(f"Error adding label to issue {issue_key}: {e}")
+
+    async def _create_subtasks_for_assignees(
+        self,
+        parent_issue_key: str,
+        assignees: List[str],
+        feature: SynthPMFeatureEntity,
+        sprint_info: SprintInfo,
+        due_date: Optional[str] = None
+    ) -> List[str]:
+        """Create subtasks for each assignee.
+        
+        Args:
+            parent_issue_key: Parent story issue key
+            assignees: List of assignee usernames
+            feature: Feature entity containing task details
+            sprint_info: Sprint information
+            due_date: Due date for subtasks
+            
+        Returns:
+            List of created subtask keys
+        """
+        if not assignees:
+            return []
+        
+        project_key = self.settings.developer_board_project_key
+        created_subtasks = []
+        
+        for assignee in assignees:
+            try:
+                # Get component for this user from user config
+                component = self.user_config.get_user_component(assignee, self.settings.developer_board_project_key)
+                if not component:
+                    LOGGER.warning(f"No component found for user {assignee}, defaulting to Backend")
+                
+                # Create subtask data
+                subtask_data = TaskData(
+                    project_key=project_key,
+                    summary=f"{feature.task_title} - {component} ({assignee})",
+                    description=f"🔗 **Parent Story**: {parent_issue_key}\n\n"
+                               f"👤 **Assignee**: {assignee}\n\n"
+                               f"🏗️ **Component**: {component}\n\n"
+                               f"📅 **Sprint**: {sprint_info.sprint_id} ({sprint_info.start_date} - {sprint_info.end_date})\n\n"
+                               f"{feature.description or ''}",
+                    task_type="Sub-task",
+                    priority=self._map_priority(feature.priority),
+                    components=[component] if component else None,
+                    assignee=assignee,
+                    parent_issue_key=parent_issue_key,
+                    due_date=due_date,
+                    story_points=feature.__getattribute__(component.lower()) / 8 if component else 1,  # Default subtask story points
+                )
+                
+                # Create the subtask
+                subtask_issue = self.jira_repository.create_task(subtask_data)
+                created_subtasks.append(subtask_issue.key)
+                
+                LOGGER.info(f"Created subtask {subtask_issue.key} for assignee {assignee} in component {component}")
+                
+            except Exception as e:
+                LOGGER.error(f"Error creating subtask for assignee {assignee}: {e}")
+                continue
+        
+        return created_subtasks
+    
     
     def _create_release_notes_column_mapping(self, headers: List[str]) -> Dict[str, int]:
         """Create column mapping for Release Notes sheet.
