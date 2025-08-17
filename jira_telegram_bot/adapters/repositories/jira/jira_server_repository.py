@@ -25,15 +25,15 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         if self.settings.password:
             # Use basic authentication if password is provided
             self.jira = JIRA(
-            server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
-            basic_auth=(self.settings.username, self.settings.password),
-            # options={"verify": False}
+                server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
+                basic_auth=(self.settings.username, self.settings.password),
+                # options={"verify": False}
             )
         else:
             # Use API token authentication if password is empty
             self.jira = JIRA(
-            server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
-            token_auth=self.settings.api_token,
+                server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
+                token_auth=self.settings.api_token,
             )
         self.cache = {}
         self.jira_story_point_id = "customfield_10106"
@@ -253,7 +253,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             issue_fields["parent"] = {"key": task_data.parent_issue_key}
             if issue_fields.get(self.jira_sprint_id):
                 del issue_fields[self.jira_sprint_id]
-        
+
         if task_data.task_type == "Epic":
             # For Epics, we need to set the epic name field
             issue_fields[self.jira_epic_name_id] = task_data.summary
@@ -463,8 +463,15 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         try:
             user = self.jira.user(username)
             groups = self.jira.groups_for_user(username)
-            admin_groups = ["jira-administrators", "jira-software-users", "administrators"]
-            return any(group.get("name", "").lower() in [g.lower() for g in admin_groups] for group in groups)
+            admin_groups = [
+                "jira-administrators",
+                "jira-software-users",
+                "administrators",
+            ]
+            return any(
+                group.get("name", "").lower() in [g.lower() for g in admin_groups]
+                for group in groups
+            )
         except Exception as e:
             LOGGER.error(f"Error checking admin status for user {username}: {e}")
             return False
@@ -487,26 +494,28 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         try:
             fields = {
                 "timetracking": {
-                    "remainingEstimate": remaining_estimate
-                }
+                    "remainingEstimate": remaining_estimate,
+                },
             }
             self.update_issue_from_fields(issue_key, fields)
-            LOGGER.info(f"Updated remaining estimate for {issue_key} to {remaining_estimate}")
+            LOGGER.info(
+                f"Updated remaining estimate for {issue_key} to {remaining_estimate}",
+            )
         except Exception as e:
             LOGGER.error(f"Error updating time estimate for issue {issue_key}: {e}")
 
     def get_issues_with_approaching_deadlines(
-        self, 
+        self,
         lookahead_days: int = 7,
         additional_jql: Optional[str] = None,
     ) -> List[Issue]:
         """
         Get issues with deadlines within the specified lookahead period.
-        
+
         Args:
             lookahead_days: Number of days to look ahead for deadlines
             additional_jql: Additional JQL filter to apply
-            
+
         Returns:
             List of Jira issues with approaching deadlines
         """
@@ -514,14 +523,14 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             jql = f"duedate <= {lookahead_days}d AND resolution = Unresolved"
             if additional_jql:
                 jql += f" AND {additional_jql}"
-            
+
             return self.search_for_issues(jql)
         except Exception as e:
             LOGGER.error(f"Error fetching issues with approaching deadlines: {e}")
             return []
 
     def search_issues(
-        self, 
+        self,
         jql: str,
         start_at: int = 0,
         max_results: int = 100,
@@ -529,13 +538,13 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
     ) -> List[Issue]:
         """
         Search for issues using JQL.
-        
+
         Args:
             jql: JQL query string
             start_at: Starting index for pagination
             max_results: Maximum number of results to return
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             List of matching Jira issues
         """
@@ -544,7 +553,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 jql,
                 startAt=start_at,
                 maxResults=max_results,
-                expand=expand
+                expand=expand,
             )
         except Exception as e:
             LOGGER.error(f"Error searching issues with JQL '{jql}': {e}")
@@ -553,39 +562,57 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
     def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
         """
         Get a single issue with expanded fields.
-        
+
         Args:
             issue_key: The issue key
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             Jira issue with expanded fields or None
         """
         try:
             return self.jira.issue(issue_key, expand=expand)
         except Exception as e:
-            LOGGER.error(f"Error fetching issue {issue_key} with expand '{expand}': {e}")
+            LOGGER.error(
+                f"Error fetching issue {issue_key} with expand '{expand}': {e}",
+            )
             return None
-    
+
     def get_issue_url(self, issue: Issue) -> str:
         """
         Get the URL for a Jira issue.
-        
+
         Args:
             issue: The Jira issue object
-            
+
         Returns:
             URL string for the issue
         """
-        return f"{self.settings.domain.scheme}://{self.settings.domain.host}/browse/{issue.key}" if issue else ""
+        return (
+            f"{self.settings.domain.scheme}://{self.settings.domain.host}/browse/{issue.key}"
+            if issue
+            else ""
+        )
+
+    def get_issue_url_by_key(self, issue_key: str) -> str:
+        """
+        Get the URL for a Jira issue by its key.
+
+        Args:
+            issue_key: The key of the Jira issue
+
+        Returns:
+            URL string for the issue
+        """
+        return f"{self.settings.domain.scheme}://{self.settings.domain.host}/browse/{issue_key}"
 
     def get_transitions(self, issue_key: str) -> List[Dict[str, str]]:
         """
         Get available transitions for an issue.
-        
+
         Args:
             issue_key: The key of the Jira issue
-            
+
         Returns:
             List of available transitions with their IDs and names
         """
@@ -599,11 +626,11 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
     def transition_issue(self, issue_key: str, transition_id: str) -> None:
         """
         Transition an issue to a new status.
-        
+
         Args:
             issue_key: The key of the Jira issue
             transition_id: The ID of the transition to apply
-            
+
         Raises:
             Exception if the transition fails
         """
@@ -611,24 +638,30 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             self.jira.transition_issue(issue_key, transition_id)
             LOGGER.info(f"Issue {issue_key} transitioned to {transition_id}")
         except Exception as e:
-            LOGGER.error(f"Error transitioning issue {issue_key} to {transition_id}: {e}")
+            LOGGER.error(
+                f"Error transitioning issue {issue_key} to {transition_id}: {e}",
+            )
             raise e
-    
-    def get_sprint_by_id(self, sprint_id: str, board_id: str) -> Optional[Dict[str, any]]:
+
+    def get_sprint_by_id(
+        self,
+        sprint_id: str,
+        board_id: str,
+    ) -> Optional[Dict[str, any]]:
         """
         Get sprint details by ID.
-        
+
         Args:
             sprint_id: The ID of the sprint
             board_id: The ID of the board
-            
+
         Returns:
             Sprint details as a dictionary or None if not found
         """
         try:
             sprints = self.get_sprints(board_id)
             for sprint in sprints:
-                if sprint.id == int(sprint_id):
+                if int(sprint.name.split(" ")[-1]) == int(sprint_id):
                     return {
                         "id": sprint.id,
                         "name": sprint.name,
@@ -641,23 +674,67 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             LOGGER.error(f"Error fetching sprint {sprint_id} for board {board_id}: {e}")
             return None
 
-    
+    def get_sprint_by_name(
+        self,
+        sprint_name: str,
+        board_id: str,
+    ) -> Optional[Dict[str, any]]:
+        """
+        Get sprint details by name.
+
+        Args:
+            sprint_name: The name of the sprint
+            board_id: The ID of the board
+
+        Returns:
+            Sprint details as a dictionary or None if not found
+        """
+        try:
+            sprints = self.get_sprints(board_id)
+            for sprint in sprints:
+                if sprint.name == sprint_name:
+                    return {
+                        "id": sprint.id,
+                        "name": sprint.name,
+                        "state": sprint.state,
+                        "startDate": sprint.startDate,
+                        "endDate": sprint.endDate,
+                    }
+            return {
+                "id": None,
+                "name": None,
+                "state": None,
+                "startDate": None,
+                "endDate": None,
+            }
+        except Exception as e:
+            LOGGER.error(
+                f"Error fetching sprint {sprint_name} for board {board_id}: {e}",
+            )
+            return {
+                "id": None,
+                "name": None,
+                "state": None,
+                "startDate": None,
+                "endDate": None,
+            }
+
     def create_sprint(
-        self, 
-        board_id: int, 
-        sprint_name: str, 
-        start_date: str, 
-        end_date: str
+        self,
+        board_id: int,
+        sprint_name: str,
+        start_date: str,
+        end_date: str,
     ) -> Optional[Dict[str, any]]:
         """
         Create a new sprint.
-        
+
         Args:
             board_id: The ID of the board to create the sprint in
             sprint_name: The name of the new sprint
             start_date: The start date of the sprint in ISO format
             end_date: The end date of the sprint in ISO format
-            
+
         Returns:
             Sprint details as a dictionary or None if creation fails
         """

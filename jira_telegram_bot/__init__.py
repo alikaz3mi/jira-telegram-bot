@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__version__ = "2.32.31"
+__version__ = "2.33.39"
 __name__ = "jira_telegram_bot"
 
 import os
@@ -28,7 +28,7 @@ logging_config = LoggingConfig(
         enable_file_logging=True,
         max_bytes=10 * 1024 * 1024,
         backup_count=50,
-    )
+    ),
 )
 LOGGER = logging_config.get_logger(__name__)
 
