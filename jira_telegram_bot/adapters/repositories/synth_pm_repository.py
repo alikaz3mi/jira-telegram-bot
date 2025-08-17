@@ -527,7 +527,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 end_date_str = f"{end_date[0]}-{end_date[1]:02d}-{end_date[2]:02d}"
                 sprint = self.jira_repository.create_sprint(
                     board_id=self.developer_board_id,
-                    sprint_name=f'{"board_id"} Sprint {sprint_info.sprint_id}',
+                    sprint_name=f'{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}',
                     start_date=start_date_str,
                     end_date=end_date_str,
                 )
@@ -568,8 +568,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             developer_board_issue = self.jira_repository.create_task(
                 developer_board_task_data,
             )
-            
-            
+
+
 
             LOGGER.info(
                 f"Created task {self.jira_repository.get_issue_url_by_key(developer_board_issue.key)} for feature: {feature.task_title}",
@@ -729,10 +729,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 update_fields["labels"] = [{"add": label} for label in new_labels]
 
             # Update story points based on ETA hours
-            if feature.eta_hours:
+            if feature.total_hours:
                 update_fields[
                     "customfield_10002"
-                ] = feature.eta_hours  # Story points field
+                ] = feature.total_hours / 8  # Story points field
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -1019,7 +1019,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # Results
                 number = int(max_item.split(':', 1)[0])          # 44
                 value  = max_item.split(':', 1)[1].strip()       # 'x to x'
-                last_sprint  = max_item  
+                last_sprint  = max_item
                 sprint_list = items
 
             return SynthPMFeatureEntity(

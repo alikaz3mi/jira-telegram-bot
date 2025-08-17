@@ -39,7 +39,7 @@ class SynthPMFeatureEntity(BaseModel):
     description: Optional[str] = Field(default=None, description="Description/توضیحات")
     jira_issue_key: Optional[str] = Field(default=None, description="Associated PM Board Jira issue key")
     developer_board_issue_key: Optional[str] = Field(default=None, description="Associated developer's board Jira issue key")
-    
+
     class Config:
         """Pydantic configuration."""
         frozen = True
@@ -53,7 +53,7 @@ class SynthPMSheetSyncStatus(BaseModel):
     last_sync_time: datetime = Field(description="Last synchronization time")
     total_rows_synced: int = Field(description="Total rows synchronized")
     errors: List[str] = Field(default_factory=list, description="Sync errors")
-    
+
     class Config:
         """Pydantic configuration."""
         frozen = True
