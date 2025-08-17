@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
-from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
+from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
 from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity, SprintInfo
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
@@ -75,7 +75,10 @@ class SynthPMUseCase:
             # Handle task cleanup - check for tasks that no longer exist in sheet
             await self._cleanup_deleted_tasks(features, sync_results) # TODO: check this one later
             
-            for feature in features:
+            for idx, feature in enumerate(features):
+                LOGGER.info(f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}")
+                if idx == 10:
+                    break
                 try:
                     await self._process_feature(feature, sync_results)
                 except Exception as e:
@@ -84,7 +87,7 @@ class SynthPMUseCase:
                     sync_results["errors"].append(error_msg)
             
             # Update sync status
-            sync_status = SynthPMFeatureEntity(
+            sync_status = SynthPMSheetSyncStatus(
                 sheet_id=self.settings.google_sheets_id,
                 worksheet_name=self.settings.developer_board_worksheet_name,
                 last_sync_time=datetime.now(),
@@ -253,7 +256,7 @@ class SynthPMUseCase:
                     sync_results["created_jira_tasks"] += 1
                     feature = feature.copy(update={"jira_issue_key": issue_key})
                     
-                    sprint_info = SprintInfo.parse_sprint_string(feature.sprint)
+                    sprint_info = SprintInfo.parse_sprint_string(feature.last_sprint)
                     if sprint_info and sprint_info.is_valid():
                         assignees = self._extract_assignees_from_feature(feature)
                         

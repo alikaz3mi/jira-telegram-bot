@@ -568,12 +568,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             developer_board_issue = self.jira_repository.create_task(
                 developer_board_task_data,
             )
+            
+            
 
             LOGGER.info(
-                f"Created task {developer_board_issue.key} for feature: {feature.task_title}",
+                f"Created task {self.jira_repository.get_issue_url_by_key(developer_board_issue.key)} for feature: {feature.task_title}",
             )
 
-            if assignees:
+            if assignees and len(assignees) > 1 and task_type == "Story":
                 try:
                     subtask_keys = await self._create_subtasks_for_assignees(
                         developer_board_issue.key,
@@ -603,16 +605,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             try:
                 await self._add_label_to_issue(
                     feature.jira_issue_key,
-                    f"PM-{developer_board_issue.key}",
+                    f"{developer_board_issue.key}",
                 )
             except Exception as e:
                 LOGGER.warning(f"Could not add label to PM Board issue: {e}")
 
             # Update the sheet with issue key
-            await self.update_developer_board_feature(
-                feature.row_number,
-                {"developer_board_issue_key": developer_board_issue.key},
-            )
+            # await self.update_developer_board_feature(
+            #     feature.row_number,
+            #     {"developer_board_issue_key": developer_board_issue.key},
+            # )
 
             return developer_board_issue.key
 
@@ -1009,6 +1011,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return None  # Skip rows without task title
 
             # TODO: set multiple sprint for each task
+            sprints = get_mapped_value("sprint")
+            if sprints != '' and len(sprints.split(',')) >= 1:
+                items = [p.strip() for p in sprints.split(',')]
+                max_item = max(items, key=lambda t: int(t.split(':', 1)[0]))
+
+                # Results
+                number = int(max_item.split(':', 1)[0])          # 44
+                value  = max_item.split(':', 1)[1].strip()       # 'x to x'
+                last_sprint  = max_item  
+                sprint_list = items
 
             return SynthPMFeatureEntity(
                 row_number=row_number,
@@ -1059,6 +1071,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 sprint=get_mapped_value("sprint")
                 if get_mapped_value("sprint") != "Select"
                 else None,
+                last_sprint=last_sprint if 'last_sprint' in locals() else None,
+                sprint_list=sprint_list if 'sprint_list' in locals() else None,
                 dependencies=get_mapped_value("dependencies")
                 if get_mapped_value("dependencies") != "Select"
                 else None,
@@ -1282,7 +1296,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             developer_board_issue_key: issue key
         """
         try:
-            # This would need to be implemented based on your Jira repository
+            # TODO This would need to be implemented based on your Jira repository
             # For now, we use labels to indicate the relationship
             LOGGER.info(
                 f"Issues linked via labels: {pm_board_issue_key} <-> {developer_board_issue_key}",
@@ -1346,10 +1360,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             issue = self.jira_repository.get_issue(issue_key)
             if issue:
-                current_labels = [label.name for label in issue.fields.labels]
+                current_labels = issue.fields.labels
                 if label not in current_labels:
                     current_labels.append(label)
-                    issue.update(fields={"labels": [{"set": current_labels}]})
+                    issue.update(update={"labels": [{"set": current_labels}]})
                     LOGGER.info(f"Added label '{label}' to issue {issue_key}")
         except Exception as e:
             LOGGER.error(f"Error adding label to issue {issue_key}: {e}")

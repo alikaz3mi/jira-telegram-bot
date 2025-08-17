@@ -32,6 +32,8 @@ class SynthPMFeatureEntity(BaseModel):
     implementation_start_date: Optional[datetime] = Field(default=None, description="Implementation start date/تاریخ شروع پیاده سازی")
     deadline: Optional[datetime] = Field(default=None, description="Deadline/ددلاین")
     sprint: Optional[str] = Field(default=None, description="Sprint/اسپرینت")
+    last_sprint: Optional[str] = Field(default=None, description="Last sprint/آخرین اسپرینت")
+    sprint_list: Optional[List[str]] = Field(default=None, description="List of sprints/لیست اسپرینت ها")
     dependencies: Optional[str] = Field(default=None, description="Dependencies/وابستگی ها")
     initial_delivery_time: Optional[datetime] = Field(default=None, description="Initial delivery time/زمان تحویل اولیه")
     description: Optional[str] = Field(default=None, description="Description/توضیحات")
