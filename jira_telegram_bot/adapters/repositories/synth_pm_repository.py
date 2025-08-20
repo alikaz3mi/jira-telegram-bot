@@ -69,26 +69,23 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             List of eature entities
         """
         try:
-            # Get data from sheet - expand range to include all person columns
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.developer_board_worksheet_name}!A:AZ",  # Extended range for all columns
+                f"{self.settings.developer_board_worksheet_name}!A:AZ",
             )
 
             if not values or len(values) < 2:
                 LOGGER.warning("No data found in Features sheet")
                 return []
 
-            # Get headers from first row and create column mapping
             headers = values[0]
             column_mapping = self._create_column_mapping(headers)
 
-            # Skip header row
             data_rows = values[1:]
             features = []
 
-            for idx, row in enumerate(data_rows, start=2):  # Start from row 2
-                if len(row) < 2:  # Skip empty rows
+            for idx, row in enumerate(data_rows, start=2):
+                if len(row) < 2:
                     continue
 
                 feature = self._parse_row_to_feature_with_mapping(
@@ -121,7 +118,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            # Get headers to create column mapping
             headers_range = f"{self.settings.developer_board_worksheet_name}!1:1"
             headers_values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
@@ -135,13 +131,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             headers = headers_values[0]
             column_mapping = self._create_column_mapping(headers)
 
-            # Map field names to column indices and update
             for field, value in updates.items():
                 if field in column_mapping:
                     col_idx = column_mapping[field]
                     col_letter = self._number_to_column_letter(
                         col_idx + 1,
-                    )  # +1 for 1-based indexing
+                    )
                     range_name = f"{self.settings.developer_board_worksheet_name}!{col_letter}{row_number}"
 
                     success = await self.google_sheet_client.update_cells(
@@ -183,21 +178,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             PM Board Jira issue key if successful, None otherwise
         """
         try:
-            # Format due date properly
             due_date = None
             if feature.deadline:
                 if isinstance(feature.deadline, str):
                     due_date = feature.deadline
                 else:
-                    # Convert datetime to string format YYYY-MM-DD
                     due_date = feature.deadline.strftime("%Y-%m-%d")
 
-            # Handle epic link - only set if it exists and is not empty
             epic_link = None
             if (
                 feature.epic and feature.epic.strip() and feature.epic != "Select"
             ):  # TODO: what is Select?
-                # Validate epic exists in Jira before setting it
                 epic_exists, epic_key = self._validate_epic_exists(
                     feature.epic,
                     self.settings.pm_project_key,
@@ -209,18 +200,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"Epic '{feature.epic}' not found in Jira, skipping epic assignment",
                     )  # FIXME: the epic must be created if not exists
 
-            # Determine status based on components and current status
             jira_status = self._determine_jira_status(feature)
             # FIXME: check if the issue exists. If it exists, update it instead of creating a new one.
             # To check for the issue existance, check its label starting with PM, and its title
 
-            # Map feature components to Jira components
             components = self._map_components(
                 feature,
             )  # FIXME: get compoments from column department instead
             labels = [feature.involved_people] if feature.involved_people else []
             labels = labels + [f"PM-{feature.row_number}"]  # Add row number as label
-            # Create task in PM Board project first
             pm_board_task_data = TaskData(
                 project_key=self.settings.pm_project_key,  # PM Board
                 summary=feature.task_title,
@@ -230,14 +218,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 epic_link=epic_link,
                 labels=labels,
                 components=components,
-                story_points=(feature.total_hours) / 8
-                if feature.total_hours
-                else 0,  # Set story points from total hours
+                story_points=((feature.total_hours) / 8 if feature.total_hours else 0),
                 assignee=None,
                 due_date=due_date,
             )
 
-            # Set additional fields if available
             if feature.sprint:
                 pm_board_task_data.sprint_id = self._get_sprint_id(
                     "Active",
@@ -250,14 +235,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 f"{feature.task_title}: {self.jira_repository.get_issue_url(pm_board_issue)}",
             )
 
-            # Update status if needed
-            if jira_status != "To Do":
-                try:
-                    self._transition_issue_to_status(pm_board_issue.key, jira_status)
-                except Exception as e:
-                    LOGGER.warning(f"Could not transition issue to {jira_status}: {e}")
+            try:
+                self._transition_issue_to_status(pm_board_issue.key, jira_status)
+            except Exception as e:
+                LOGGER.warning(f"Could not transition issue to {jira_status}: {e}")
 
-            # Update the sheet with the PM Board issue key only
             await self.update_developer_board_feature(
                 feature.row_number,
                 {"jira_issue_key": pm_board_issue.key},
@@ -295,13 +277,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.warning(f"No Jira issue key for feature: {feature.task_title}")
                 return False
 
-            # Get the existing issue
             issue = self.jira_repository.get_issue(feature.jira_issue_key)
             if not issue:
                 LOGGER.warning(f"Jira issue {feature.jira_issue_key} not found")
                 return False
 
-            # Update issue fields
             update_fields = {}
 
             if feature.task_title:
@@ -318,22 +298,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if feature.deadline:
                 update_fields["duedate"] = feature.deadline.strftime("%Y-%m-%d")
 
+            if feature.label:
+                update_fields[""] = ...
+
+            if feature.total_hours:
+                update_fields[""] = ...
+
             if feature.status:
-                # Handle status transitions
-                status_mapping = self._get_status_mapping()
-                if feature.status in status_mapping:
-                    jira_status = status_mapping[feature.status]
-                    # Get available transitions and transition if possible
-                    transitions = self.jira_repository.get_transitions(
-                        feature.jira_issue_key,
-                    )
-                    for transition in transitions:
-                        if transition["to"]["name"] == jira_status:
-                            self.jira_repository.transition_issue(
-                                feature.jira_issue_key,
-                                transition["id"],
-                            )
-                            break
+                jira_status = self._determine_jira_status(feature)
+                self._transition_issue_to_status(issue.key, jira_status)
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -352,26 +325,23 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             List of release note entities
         """
         try:
-            # Get data from Release Notes sheet
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.release_notes_worksheet_name}!A:H",  # Extended range for all columns
+                f"{self.settings.release_notes_worksheet_name}!A:H",
             )
 
             if not values or len(values) < 2:
                 LOGGER.warning("No data found in Release Notes sheet")
                 return []
 
-            # Get headers from first row and create column mapping
             headers = values[0]
             column_mapping = self._create_release_notes_column_mapping(headers)
 
-            # Skip header row
             data_rows = values[1:]
             release_notes = []
 
-            for idx, row in enumerate(data_rows, start=2):  # Start from row 2
-                if len(row) < 2:  # Skip empty rows
+            for idx, row in enumerate(data_rows, start=2):
+                if len(row) < 2:
                     continue
 
                 release_note = self._parse_row_to_release_note(idx, row, column_mapping)
@@ -400,7 +370,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            # Similar to update_developer_board_feature but for Release Notes sheet
             headers_range = f"{self.settings.release_notes_worksheet_name}!1:1"
             headers_values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
@@ -416,7 +385,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             headers = headers_values[0]
             column_mapping = self._create_release_notes_column_mapping(headers)
 
-            # Map field names to column indices and update
             for field, value in updates.items():
                 if field in column_mapping:
                     col_idx = column_mapping[field]
@@ -471,7 +439,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.error("Cannot create task without existing PM Board task")
                 return None
 
-            # Format due date properly
             due_date = None
             if feature.deadline:
                 if isinstance(feature.deadline, str):
@@ -479,7 +446,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 else:
                     due_date = feature.deadline.strftime("%Y-%m-%d")
 
-            # Handle epic link
             epic_link = None
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
                 epic_exists, epic_key = self._validate_epic_exists(
@@ -491,13 +457,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"Epic '{feature.epic}' not found in Jira, skipping epic assignment",
                     )
                 else:
-                    # Only set epic link if it exists
                     epic_link = epic_key
 
-            # Map components
             components = self._map_components(feature)
 
-            # Determine main assignee (first in list or None)
             main_assignee = assignees[0] if assignees else None
 
             # TODO: add sprint id and name. And set the current date if the dates are from Jalali calendar
@@ -510,7 +473,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if sprint is None:
                 start_date = sprint_info.start_date
                 end_date = sprint_info.end_date
-                # LOGGER.error(f"Sprint with ID {sprint_info.sprint_id} not found in Jira")
                 start_date = jdatetime.JalaliToGregorian(
                     1404,
                     int(start_date.split("-")[0]),
@@ -543,7 +505,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if assignees:
                     labels = [f"PM Board-{feature.jira_issue_key}", *assignees]
                 else:
-                    # If no assignees, just use the PM Board issue key
                     labels = [f"PM Board-{feature.jira_issue_key}"]
                 description = (
                     f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
@@ -552,7 +513,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     f"✍️ *Description*: {feature.description}"
                 )
 
-            # Create task with enhanced linking
             developer_board_task_data = TaskData(
                 project_key=self.settings.developer_board_project_key,
                 summary=f"{feature.task_title}",
@@ -564,15 +524,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 components=components,
                 assignee=main_assignee,
                 due_date=due_date,
-                story_points=feature.total_hours / 8
-                if feature.total_hours
-                else 0,  # Set story points from ETA hours
+                story_points=(feature.total_hours / 8 if feature.total_hours else 0),
             )
             if sprint and sprint.get("state") != "closed":
                 developer_board_task_data.sprint_id = sprint.get("id")
                 developer_board_task_data.sprint_name = sprint.get("name")
 
-            # Create the issue
             developer_board_issue = self.jira_repository.create_task(
                 developer_board_task_data,
             )
@@ -600,7 +557,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"Could not create subtasks for {developer_board_issue.key}: {e}",
                     )
 
-            # Link the issues
             try:
                 self._link_issues(feature.jira_issue_key, developer_board_issue.key)
             except Exception as e:
@@ -608,7 +564,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     f"Could not link issues {feature.jira_issue_key} and {developer_board_issue.key}: {e}",
                 )
 
-            # Add issue key as label to PM Board task
             try:
                 await self._add_label_to_issue(
                     feature.jira_issue_key,
@@ -643,6 +598,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             True if successful, False otherwise
         """
+        # TODO: if issue assignees are updated, assigneess of sub-tasks must be handled or reassigned.
         try:
             if not feature.developer_board_issue_key:
                 LOGGER.warning(f"No issue key for feature: {feature.task_title}")
@@ -654,11 +610,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.warning(f"issue {feature.developer_board_issue_key} not found")
                 return False
 
-            # Update issue fields
             update_fields = {}
 
             if feature.task_title:
-                # Keep sprint info in summary
                 current_summary = issue.fields.summary
                 if "(Sprint:" in current_summary:
                     sprint_part = current_summary[current_summary.find("(Sprint:") :]
@@ -667,11 +621,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     update_fields["summary"] = feature.task_title
 
             if feature.description:
-                # Preserve linked PM Board info and assignees info
                 current_desc = issue.fields.description or ""
                 preserved_lines = []
 
-                # Keep existing linked info
                 lines = current_desc.split("\n")
                 for line in lines:
                     if any(
@@ -686,14 +638,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         preserved_lines.append(line)
                     elif line.strip() == "":
                         preserved_lines.append(line)
-                        if (
-                            len(preserved_lines) > 5
-                        ):  # Stop after initial preserved content
+                        if len(preserved_lines) > 5:
                             break
 
-                # Update assignees info if provided
                 if assignees:
-                    # Replace assignees line
                     preserved_lines = [
                         line
                         for line in preserved_lines
@@ -716,15 +664,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if feature.deadline:
                 update_fields["duedate"] = feature.deadline.strftime("%Y-%m-%d")
 
-            # Update assignee if provided
             if assignees:
                 update_fields["assignee"] = {
                     "name": assignees[0],
-                }  # Assign to first person
-
-                # Update labels to include all assignees
+                }
                 current_labels = [label.name for label in issue.fields.labels]
-                # Keep non-person labels
                 # FIXME
                 new_labels = [
                     label
@@ -737,9 +681,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Update story points based on ETA hours
             if feature.total_hours:
-                update_fields["customfield_10002"] = (
-                    feature.total_hours / 8
-                )  # Story points field
+                update_fields["customfield_10002"] = feature.total_hours / 8
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -770,7 +712,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            # Get issue
             developer_board_issue = self.jira_repository.get_issue(
                 developer_board_issue_key,
             )
@@ -778,7 +719,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.error(f"issue {developer_board_issue_key} not found")
                 return False
 
-            # Find linked PM Board issue from labels
             pm_board_issue_key = None
             for label in developer_board_issue.fields.labels:
                 # FIXME
@@ -792,13 +732,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 )
                 return False
 
-            # Get PM Board issue
             pm_board_issue = self.jira_repository.get_issue(pm_board_issue_key)
             if not pm_board_issue:
                 LOGGER.error(f"Linked PM Board issue {pm_board_issue_key} not found")
                 return False
 
-            # Log time in developer board
             worklog = self.jira_repository.add_worklog(
                 developer_board_issue_key,
                 timeSpent=f"{time_spent}h",
@@ -806,7 +744,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             )
 
             if worklog:
-                # Deduct from PM Board story points
                 current_story_points = (
                     getattr(pm_board_issue.fields, "customfield_10002", 0) or 0
                 )
@@ -819,7 +756,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     f"deducted from PM Board {pm_board_issue_key} story points: {current_story_points} -> {new_story_points}",
                 )
 
-                # Update Google Sheet with remaining hours
                 features = await self.get_developer_board_features()
                 for feature in features:
                     if feature.jira_issue_key == pm_board_issue_key:
@@ -864,7 +800,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            # Ensure directory exists
             self.sync_status_file.parent.mkdir(parents=True, exist_ok=True)
 
             with open(self.sync_status_file, "w", encoding="utf-8") as f:
@@ -887,7 +822,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         mapping = {}
 
-        # Define the column name mappings (Persian and English variations)
         # FIXME: read these columns from database
         column_name_mappings = {
             "row_number": ["ردیف", "Row", "ردیف"],
@@ -941,11 +875,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key"],
         }
 
-        # Create reverse lookup for headers
         for idx, header in enumerate(headers):
             header_clean = header.strip()
 
-            # Find matching field name
             for field_name, possible_names in column_name_mappings.items():
                 if header_clean in possible_names:
                     mapping[field_name] = idx
@@ -973,14 +905,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             SynthPMFeatureEntity or None if parsing fails
         """
         try:
-            # Safely get values using column mapping
+
             def get_mapped_value(field_name: str) -> str:
                 col_idx = column_mapping.get(field_name)
                 if col_idx is not None and col_idx < len(row):
                     return row[col_idx].strip() if row[col_idx] else ""
                 return ""
 
-            # Parse dates safely
             def parse_date(date_str: str) -> Optional[datetime]:
                 if not date_str:
                     return None
@@ -995,7 +926,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 except Exception:
                     return None
 
-            # Parse integers safely
             def parse_int(value_str: str) -> Optional[int]:
                 if not value_str or value_str.lower() in [
                     "",
@@ -1005,92 +935,120 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 ]:
                     return None
                 try:
-                    # Extract number from strings like "Sum: 56"
                     if ":" in value_str:
                         value_str = value_str.split(":")[-1].strip()
                     return int(float(value_str))
                 except (ValueError, TypeError):
                     return None
 
-            # Check if we have required fields
             task_title = get_mapped_value("task_title")
             if not task_title:
-                return None  # Skip rows without task title
+                return None
 
             # TODO: set multiple sprint for each task
             sprints = get_mapped_value("sprint")
             if sprints != "" and len(sprints.split(",")) >= 1:
                 items = [p.strip() for p in sprints.split(",")]
                 max_item = max(items, key=lambda t: int(t.split(":", 1)[0]))
-
-                # Results
-                number = int(max_item.split(":", 1)[0])  # 44
-                value = max_item.split(":", 1)[1].strip()  # 'x to x'
                 last_sprint = max_item
                 sprint_list = items
 
             return SynthPMFeatureEntity(
                 row_number=row_number,
                 task_title=task_title,
-                epic=get_mapped_value("epic")
-                if get_mapped_value("epic") != "Select"
-                else None,
-                release=get_mapped_value("release")
-                if get_mapped_value("release") != "Select"
-                else None,
-                necessity=get_mapped_value("necessity")
-                if get_mapped_value("necessity") != "Select"
-                else None,
-                priority=get_mapped_value("priority")
-                if get_mapped_value("priority") != "Select"
-                else None,
-                status=get_mapped_value("status")
-                if get_mapped_value("status") != "Select"
-                else None,
+                epic=(
+                    get_mapped_value("epic")
+                    if get_mapped_value("epic") != "Select"
+                    else None
+                ),
+                release=(
+                    get_mapped_value("release")
+                    if get_mapped_value("release") != "Select"
+                    else None
+                ),
+                necessity=(
+                    get_mapped_value("necessity")
+                    if get_mapped_value("necessity") != "Select"
+                    else None
+                ),
+                priority=(
+                    get_mapped_value("priority")
+                    if get_mapped_value("priority") != "Select"
+                    else None
+                ),
+                status=(
+                    get_mapped_value("status")
+                    if get_mapped_value("status") != "Select"
+                    else None
+                ),
                 eta_hours=parse_int(get_mapped_value("eta_hours")),
                 total_hours=parse_int(get_mapped_value("total_hours")),
-                departments=get_mapped_value("departments")
-                if get_mapped_value("departments") != "Select"
-                else None,
-                involved_people=get_mapped_value("involved_people")
-                if get_mapped_value("involved_people") != "Select"
-                else None,
-                ai=get_mapped_value("ai")
-                if get_mapped_value("ai") != "Select"
-                else None,
-                backend=get_mapped_value("backend")
-                if get_mapped_value("backend") != "Select"
-                else None,
-                frontend=get_mapped_value("frontend")
-                if get_mapped_value("frontend") != "Select"
-                else None,
-                devops=get_mapped_value("devops")
-                if get_mapped_value("devops") != "Select"
-                else None,
-                ui_ux=get_mapped_value("ui_ux")
-                if get_mapped_value("ui_ux") != "Select"
-                else None,
+                departments=(
+                    get_mapped_value("departments")
+                    if get_mapped_value("departments") != "Select"
+                    else None
+                ),
+                involved_people=(
+                    get_mapped_value("involved_people")
+                    if get_mapped_value("involved_people") != "Select"
+                    else None
+                ),
+                ai=(
+                    get_mapped_value("ai")
+                    if get_mapped_value("ai") != "Select"
+                    else None
+                ),
+                backend=(
+                    get_mapped_value("backend")
+                    if get_mapped_value("backend") != "Select"
+                    else None
+                ),
+                frontend=(
+                    get_mapped_value("frontend")
+                    if get_mapped_value("frontend") != "Select"
+                    else None
+                ),
+                devops=(
+                    get_mapped_value("devops")
+                    if get_mapped_value("devops") != "Select"
+                    else None
+                ),
+                ui_ux=(
+                    get_mapped_value("ui_ux")
+                    if get_mapped_value("ui_ux") != "Select"
+                    else None
+                ),
                 creation_date=parse_date(get_mapped_value("creation_date")),
                 implementation_start_date=parse_date(
                     get_mapped_value("implementation_start_date"),
                 ),
                 deadline=parse_date(get_mapped_value("deadline")),
-                sprint=get_mapped_value("sprint")
-                if get_mapped_value("sprint") != "Select"
-                else None,
+                sprint=(
+                    get_mapped_value("sprint")
+                    if get_mapped_value("sprint") != "Select"
+                    else None
+                ),
                 last_sprint=last_sprint if "last_sprint" in locals() else None,
                 sprint_list=sprint_list if "sprint_list" in locals() else None,
-                dependencies=get_mapped_value("dependencies")
-                if get_mapped_value("dependencies") != "Select"
-                else None,
+                dependencies=(
+                    get_mapped_value("dependencies")
+                    if get_mapped_value("dependencies") != "Select"
+                    else None
+                ),
                 initial_delivery_time=parse_date(
                     get_mapped_value("initial_delivery_time"),
                 ),
-                description=get_mapped_value("description")
-                if get_mapped_value("description")
-                else None,
-                jira_issue_key=None,  # Will be populated separately
-                developer_board_issue_key=None,  # Will be populated separately
+                description=(
+                    get_mapped_value("description")
+                    if get_mapped_value("description")
+                    else None
+                ),
+                jira_issue_key=(
+                    get_mapped_value("jira_issue_key")
+                    if get_mapped_value("jira_issue_key")
+                    else None
+                ),
+                developer_board_issue_key=None,  # TODO
             )
 
         except Exception as e:
@@ -1125,25 +1083,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         if not priority:
             return "Medium"
 
-        # Standard Jira priority mapping - matching Highest, High, Medium, Low
         priority_mapping = {
             "Highest": "Highest",
             "High": "High",
             "Medium": "Medium",
             "Low": "Low",
             "Lowest": "Lowest",
-            # Persian mappings with full descriptions
-            "۱": "Highest",  # ۱. بالاترین
+            "۱": "Highest",
             "۱. بالاترین": "Highest",
-            "۲": "High",  # ۲. بالا
+            "۲": "High",
             "۲. بالا": "High",
-            "۳": "Medium",  # ۳. متوسط
+            "۳": "Medium",
             "۳. متوسط": "Medium",
-            "۴": "Low",  # ۴. پایین
+            "۴": "Low",
             "۴. پایین": "Low",
-            "۵": "Lowest",  # ۵. پایین ترین
+            "۵": "Lowest",
             "۵. پایین ترین": "Lowest",
-            # Legacy mappings for backward compatibility
             "بالاترین": "Highest",
             "بالا": "High",
             "متوسط": "Medium",
@@ -1165,7 +1120,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         components = []
 
-        # Map department flags to component names
         if feature.ai != "" and float(feature.ai) > 0:
             components.append("AI")
         if feature.backend != "" and float(feature.backend) > 0:
@@ -1186,31 +1140,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             Dictionary mapping sheet status to Jira status
         """
         return {
-            # Sheet -> Jira mapping (based on actual Jira workflow)
-            "۱": "BACKLOG",  # ۱. ثبت و اولویت بندی
             "۱. ثبت و اولویت بندی": "BACKLOG",
-            "۲": "SELECTED FOR DEVELOPMENT",  # ۲. تحلیل مسئله و RFP
+            "۲": "SELECTED FOR DEVELOPMENT",
             "۲. تحلیل مسئله و RFP": "SELECTED FOR DEVELOPMENT",
-            "۳": "TO DO",  # ۳. برری بوردو اسپوری
-            "۳. برری بوردو اسپوری": "TO DO",
-            "۴": "IN REVIEW",  # ۴. در مرحله طراحی
+            "۳. آماده سازی یوزر استوری": "TO DO",
             "۴. در مرحله طراحی": "IN REVIEW",
-            "۵": "REOPENED",  # ۵. پیاده سازی فنی (or OPEN)
-            "۵. پیاده سازی فنی": "REOPENED",
-            "۶": "IN PROGRESS",  # ۶. در حال پیاده سازی
+            "۵. پیاده سازی فنی": "OPEN",
             "۶. در حال پیاده سازی": "IN PROGRESS",
-            "۷": "REVIEW",  # ۷. تست فنی
             "۷. تست فنی": "REVIEW",
-            "۸": "RESOLVED",  # ۸. آماده تحویل
             "۸. آماده تحویل": "RESOLVED",
-            "۹": "DONE",  # ۹. مستندسازی فنی
             "۹. مستندسازی فنی": "DONE",
-            "۱۰": "CLOSED",  # ۱۰. تکمیل شده
             "۱۰. تکمیل شده": "CLOSED",
-            # Legacy mappings for backward compatibility
-            "بررسی": "REVIEW",
-            "تست": "REVIEW",
-            "آماده انتشار": "DONE",
         }
 
     def _validate_epic_exists(
@@ -1229,7 +1169,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         # TODO: clean and modify function name as its not needed this way anymore
         try:
-            # Search for epic by name in the project
             jql = f'project = "{board_name}" AND issuetype = Epic AND summary ~ "{epic_name}"'
             issues = self.jira_repository.search_issues(jql, max_results=1)
             if len(issues) == 0:
@@ -1258,8 +1197,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         # TODO: for now, settings pm board sprint to "active"
         try:
-            # This is a placeholder - implement based on your Jira setup
-            # You might need to query active sprints in your board
             sprint_id = self.jira_repository.get_sprint_by_name(
                 sprint_name,
                 board_id,
@@ -1278,19 +1215,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Jira status name
         """
-        # Check if this is a UI/UX task and it's in progress
         if (
             feature.ui_ux and feature.status == "۶. در حال پیاده سازی"
         ):  # در حال پیاده سازی # FIXME: use constants instead
-            return "In Progress"  # ۴. در مرحله طراحی
+            return "In Progress"
 
         # Map other statuses
         status_mapping = self._get_status_mapping()
         jira_status = status_mapping.get(feature.status, "To Do")
 
-        # Special handling for "Selected for Development" fallback
         if jira_status == "Selected for Development":
-            # If "Selected for Development" doesn't exist, use "To Do"
             return "To Do"
 
         return jira_status
@@ -1304,7 +1238,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         try:
             # TODO This would need to be implemented based on your Jira repository
-            # For now, we use labels to indicate the relationship
             LOGGER.info(
                 f"Issues linked via labels: {pm_board_issue_key} <-> {developer_board_issue_key}",
             )
@@ -1321,7 +1254,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             target_status: Target status name
         """
         try:
-            # Get available transitions
             transitions = self.jira_repository.get_transitions(issue_key)
             for transition in transitions:
                 if transition["to"]["name"].lower() == target_status.lower():
@@ -1339,20 +1271,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Dictionary mapping Jira status to sheet status
         """
-        return {
-            # Jira -> Sheet mapping (based on actual Jira workflow)
-            "BACKLOG": "۱",  # ثبت و اولویت بندی
-            "SELECTED FOR DEVELOPMENT": "۲",  # تحلیل مسئله و RFP
-            "TO DO": "۳",  # برری بوردو اسپوری
-            "IN REVIEW": "۴",  # در مرحله طراحی
-            "REOPENED": "۵",  # پیاده سازی فنی
-            "OPEN": "۵",  # پیاده سازی فنی
-            "IN PROGRESS": "۶",  # در حال پیاده سازی
-            "REVIEW": "۷",  # تست فنی
-            "RESOLVED": "۸",  # آماده تحویل
-            "DONE": "۹",  # مستندسازی فنی
-            "CLOSED": "۱۰",  # تکمیل شده
-        }
+        key_values = self._get_status_mapping()
+        return {value: key for key, value in key_values.items()}
 
     async def _add_label_to_issue(self, issue_key: str, label: str):
         """Add a label to an existing Jira issue.
@@ -1361,6 +1281,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             issue_key: Jira issue key
             label: Label to add
         """
+        # TODO: also, a label must be deleted (i.e, the assignees)
         try:
             issue = self.jira_repository.get_issue(issue_key)
             if issue:
@@ -1400,7 +1321,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         for assignee in assignees:
             try:
-                # Get component for this user from user config
                 component = self.user_config.get_user_component(
                     assignee,
                     self.settings.developer_board_project_key,
@@ -1410,7 +1330,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"No component found for user {assignee}, defaulting to Backend",
                     )
 
-                # Create subtask data
                 subtask_data = TaskData(
                     project_key=project_key,
                     summary=f"{feature.task_title}",
@@ -1421,15 +1340,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     assignee=assignee,
                     parent_issue_key=parent_issue_key,
                     due_date=due_date,
-                    story_points=feature.__getattribute__(
-                        component.lower().strip("-").strip().replace("-", ""),
-                    )
-                    / 8
-                    if component
-                    else 1,  # Default subtask story points
+                    story_points=(
+                        feature.__getattribute__(
+                            component.lower().strip("-").strip().replace("-", ""),
+                        )
+                        / 8
+                        if component
+                        else 1
+                    ),
                 )
 
-                # Create the subtask
                 subtask_issue = self.jira_repository.create_task(subtask_data)
                 created_subtasks.append(subtask_issue.key)
 
@@ -1457,7 +1377,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         mapping = {}
 
-        # Define the column name mappings for Release Notes
         column_name_mappings = {
             "row_number": ["ردیف", "Row"],
             "release_version": ["ریلیز اصلی", "Release Version", "Version"],
@@ -1470,11 +1389,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "last_updated": ["Last Updated", "Updated"],
         }
 
-        # Create reverse lookup for headers
         for idx, header in enumerate(headers):
             header_clean = header.strip()
 
-            # Find matching field name
             for field_name, possible_names in column_name_mappings.items():
                 if header_clean in possible_names:
                     mapping[field_name] = idx
@@ -1499,14 +1416,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             ReleaseNoteEntity or None if parsing fails
         """
         try:
-            # Safely get values using column mapping
+
             def get_mapped_value(field_name: str) -> str:
                 col_idx = column_mapping.get(field_name)
                 if col_idx is not None and col_idx < len(row):
                     return row[col_idx].strip() if row[col_idx] else ""
                 return ""
 
-            # Parse dates safely
             def parse_date(date_str: str) -> Optional[datetime]:
                 if not date_str:
                     return None
@@ -1520,13 +1436,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 except Exception:
                     return None
 
-            # Check if we have required fields
             release_version = get_mapped_value("release_version")
             release_components = get_mapped_value("release_components")
             description = get_mapped_value("description")
 
             if not release_version or not release_components or not description:
-                return None  # Skip rows without required fields
+                return None
 
             return ReleaseNoteEntity(
                 row_number=row_number,
@@ -1534,15 +1449,21 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 release_components=release_components,
                 description=description,
                 goals=get_mapped_value("goals") if get_mapped_value("goals") else None,
-                delivery_process=get_mapped_value("delivery_process")
-                if get_mapped_value("delivery_process")
-                else None,
-                test_process=get_mapped_value("test_process")
-                if get_mapped_value("test_process")
-                else None,
-                telegram_message_id=get_mapped_value("telegram_message_id")
-                if get_mapped_value("telegram_message_id")
-                else None,
+                delivery_process=(
+                    get_mapped_value("delivery_process")
+                    if get_mapped_value("delivery_process")
+                    else None
+                ),
+                test_process=(
+                    get_mapped_value("test_process")
+                    if get_mapped_value("test_process")
+                    else None
+                ),
+                telegram_message_id=(
+                    get_mapped_value("telegram_message_id")
+                    if get_mapped_value("telegram_message_id")
+                    else None
+                ),
                 last_updated=parse_date(get_mapped_value("last_updated")),
             )
 

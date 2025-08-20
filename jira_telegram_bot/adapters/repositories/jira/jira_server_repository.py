@@ -580,6 +580,14 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             )
             return None
 
+    def get_issue_by_summary(self, summary: str, board: str) -> Issue | None:
+        query = f'project = {board} AND summary ~ "{summary}"'
+        results = self.search_issues(query)
+        for result in results:
+            if result.field.summary == summary:
+                return result
+        return None
+
     def get_issue_url(self, issue: Issue) -> str:
         """
         Get the URL for a Jira issue.
