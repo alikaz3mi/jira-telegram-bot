@@ -71,7 +71,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.developer_board_worksheet_name}!A:AZ",
+                f"{self.settings.developer_board_worksheet_name}!A:AP",
             )
 
             if not values or len(values) < 2:
@@ -186,27 +186,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     due_date = feature.deadline.strftime("%Y-%m-%d")
 
             epic_link = None
-            if (
-                feature.epic and feature.epic.strip() and feature.epic != "Select"
-            ):  # TODO: what is Select?
-                epic_exists, epic_key = self._validate_epic_exists(
+            if feature.epic and feature.epic.strip() and feature.epic != "Select":
+                epic_exists, epic_key = self._create_epic_not_exist(
                     feature.epic,
                     self.settings.pm_project_key,
                 )
-                if epic_exists:
-                    epic_link = epic_key
-                else:
-                    LOGGER.warning(
-                        f"Epic '{feature.epic}' not found in Jira, skipping epic assignment",
-                    )  # FIXME: the epic must be created if not exists
+                epic_link = epic_key
 
             jira_status = self._determine_jira_status(feature)
-            # FIXME: check if the issue exists. If it exists, update it instead of creating a new one.
-            # To check for the issue existance, check its label starting with PM, and its title
 
             components = self._map_components(
                 feature,
-            )  # FIXME: get compoments from column department instead
+            )  # FIXME: get component from column department instead
             labels = [feature.involved_people] if feature.involved_people else []
             labels = labels + [f"PM-{feature.row_number}"]  # Add row number as label
             pm_board_task_data = TaskData(
@@ -298,11 +289,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if feature.deadline:
                 update_fields["duedate"] = feature.deadline.strftime("%Y-%m-%d")
 
-            if feature.label:
-                update_fields[""] = ...
+            # if feature.label:
+            #     update_fields[""] = ...
 
             if feature.total_hours:
-                update_fields[""] = ...
+                update_fields[self.jira_repository.jira_original_estimate_id] = (
+                    feature.total_hours / 8
+                )
 
             if feature.status:
                 jira_status = self._determine_jira_status(feature)
@@ -448,22 +441,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             epic_link = None
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
-                epic_exists, epic_key = self._validate_epic_exists(
+                _, epic_key = self._create_epic_not_exist(
                     feature.epic,
                     self.settings.developer_board_project_key,
                 )
-                if not epic_exists:
-                    LOGGER.warning(
-                        f"Epic '{feature.epic}' not found in Jira, skipping epic assignment",
-                    )
-                else:
-                    epic_link = epic_key
+                epic_link = epic_key
 
             components = self._map_components(feature)
 
             main_assignee = assignees[0] if assignees else None
 
-            # TODO: add sprint id and name. And set the current date if the dates are from Jalali calendar
             # TODO: set the year dynamically
             sprint = self.jira_repository.get_sprint_by_id(
                 sprint_info.sprint_id,
@@ -503,9 +490,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 description = feature.description
             else:
                 if assignees:
-                    labels = [f"PM Board-{feature.jira_issue_key}", *assignees]
+                    labels = [f"PM-{feature.jira_issue_key}", *assignees]
                 else:
-                    labels = [f"PM Board-{feature.jira_issue_key}"]
+                    labels = [f"PM-{feature.jira_issue_key}"]
                 description = (
                     f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
                     f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
@@ -681,7 +668,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Update story points based on ETA hours
             if feature.total_hours:
-                update_fields["customfield_10002"] = feature.total_hours / 8
+                update_fields[self.jira_repository.jira_original_estimate_id] = (
+                    feature.total_hours / 8
+                )
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -745,11 +734,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if worklog:
                 current_story_points = (
-                    getattr(pm_board_issue.fields, "customfield_10002", 0) or 0
+                    getattr(
+                        pm_board_issue.fields,
+                        self.jira_repository.jira_original_estimate_id,
+                        0,
+                    )
+                    or 0
                 )
                 new_story_points = max(0, current_story_points - time_spent)
 
-                pm_board_issue.update(fields={"customfield_10002": new_story_points})
+                pm_board_issue.update(
+                    fields={
+                        self.jira_repository.jira_original_estimate_id: new_story_points
+                    }
+                )
 
                 LOGGER.info(
                     f"Tracked {time_spent}h for {user} on {developer_board_issue_key}, "
@@ -855,7 +853,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 "زمان تحویل اولیه",
             ],
             "description": ["توضیحات", "Description", "توضیحات"],
-            # People columns
             "kazemi": ["کاظمی", "Kazemi"],
             "mousavi": ["موسوی", "Mousavi"],
             "moradi": ["مرادی", "Moradi"],
@@ -873,6 +870,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "nasim": ["نسیم", "Nasim"],
             "dr_heravi": ["دکتر هروی", "Dr Heravi"],
             "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key"],
+            "developer_board_issue_key": ["developer_board_issue_key"],
+            "version": ["version", "ریلیز اصلی"],
         }
 
         for idx, header in enumerate(headers):
@@ -954,7 +953,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 sprint_list = items
 
             return SynthPMFeatureEntity(
-                row_number=row_number,
+                row_number=get_mapped_value("row_number"),
                 task_title=task_title,
                 epic=(
                     get_mapped_value("epic")
@@ -1048,7 +1047,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if get_mapped_value("jira_issue_key")
                     else None
                 ),
-                developer_board_issue_key=None,  # TODO
+                developer_board_issue_key=get_mapped_value("developer_board_issue_key")
+                if get_mapped_value("developer_board_issue_key")
+                else None,
+                version=get_mapped_value("version")
+                if get_mapped_value("version")
+                else None,
             )
 
         except Exception as e:
@@ -1153,15 +1157,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "۱۰. تکمیل شده": "CLOSED",
         }
 
-    def _validate_epic_exists(
+    def _create_epic_not_exist(
         self,
         epic_name: str,
         board_name: str,
     ) -> Tuple[bool, Optional[str]]:
-        """Validate if an epic exists in Jira.
+        """Create if an epic doesn't exists in Jira.
 
         Args:
-            epic_name: Epic name to validate
+            epic_name: Epic name to create
 
         Returns:
             True if epic exists, False otherwise
