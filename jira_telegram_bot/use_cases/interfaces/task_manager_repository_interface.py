@@ -220,3 +220,122 @@ class TaskManagerRepositoryInterface(ABC):
             Jira issue with expanded fields or None
         """
         pass
+    
+        @abstractmethod
+        def get_issue_by_summary(self, summary: str, board: str) -> Optional[Issue]:
+            """
+            Get a Jira issue by its summary and board.
+        
+            Args:
+                summary: The summary of the issue
+                board: The board/project key
+        
+            Returns:
+                Jira issue or None
+            """
+            pass
+
+        @abstractmethod
+        def get_issue_url(self, issue: Issue) -> str:
+            """
+            Get the URL for a Jira issue.
+        
+            Args:
+                issue: The Jira issue object
+        
+            Returns:
+                URL string for the issue
+            """
+            pass
+
+        @abstractmethod
+        def get_issue_url_by_key(self, issue_key: str) -> str:
+            """
+            Get the URL for a Jira issue by its key.
+        
+            Args:
+                issue_key: The key of the Jira issue
+        
+            Returns:
+                URL string for the issue
+            """
+            pass
+
+        @abstractmethod
+        def get_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+            """
+            Get available transitions for an issue.
+        
+            Args:
+                issue_key: The key of the Jira issue
+        
+            Returns:
+                List of available transitions with their IDs and names
+            """
+            pass
+
+        @abstractmethod
+        def transition_issue(self, issue_key: str, transition_id: str) -> None:
+            """
+            Transition an issue to a new status.
+        
+            Args:
+                issue_key: The key of the Jira issue
+                transition_id: The ID of the transition to apply
+        
+            Raises:
+                Exception if the transition fails
+            """
+            pass
+
+        @abstractmethod
+        def get_sprint_by_id(self, sprint_id: str, board_id: str) -> Optional[Dict[str, any]]:
+            """
+            Get sprint details by ID.
+        
+            Args:
+                sprint_id: The ID of the sprint
+                board_id: The ID of the board
+        
+            Returns:
+                Sprint details as a dictionary or None if not found
+            """
+            pass
+
+        @abstractmethod
+        def get_sprint_by_name(self, sprint_name: str, board_id: str) -> Optional[Dict[str, any]]:
+            """
+            Get sprint details by name.
+        
+            Args:
+                sprint_name: The name of the sprint
+                board_id: The ID of the board
+        
+            Returns:
+                Sprint details as a dictionary or None if not found
+            """
+            pass
+
+        @abstractmethod
+        def create_sprint(
+            self,
+            board_id: int,
+            sprint_name: str,
+            start_date: str,
+            end_date: str,
+            goal: str = None,
+        ) -> Optional[Dict[str, any]]:
+            """
+            Create a new sprint.
+        
+            Args:
+                board_id: The ID of the board to create the sprint in
+                sprint_name: The name of the new sprint
+                start_date: The start date of the sprint in ISO format
+                end_date: The end date of the sprint in ISO format
+                goal: The goal of the sprint (optional)
+        
+            Returns:
+                Sprint details as a dictionary or None if creation fails
+            """
+            pass

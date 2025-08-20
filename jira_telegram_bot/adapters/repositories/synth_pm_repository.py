@@ -199,9 +199,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 feature,
             )  # FIXME: get component from column department instead
             labels = [feature.involved_people] if feature.involved_people else []
-            labels = labels + [f"PM-{feature.row_number}"]  # Add row number as label
+            labels = labels + [f"PM-{feature.row_number}"]
             pm_board_task_data = TaskData(
-                project_key=self.settings.pm_project_key,  # PM Board
+                project_key=self.settings.pm_project_key,
                 summary=feature.task_title,
                 description=feature.description or "",
                 task_type="Task",
@@ -209,7 +209,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 epic_link=epic_link,
                 labels=labels,
                 components=components,
-                story_points=((feature.total_hours) / 8 if feature.total_hours else 0),
+                story_points=feature.total_hours / 8 if feature.total_hours else 0,
                 assignee=None,
                 due_date=due_date,
             )
@@ -219,6 +219,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     "Active",
                     self.pm_board_id,
                 )
+            
+            if feature.release:
+                release = self.jira_repository.jira.
+                pm_board_task_data.release = feature.release
 
             pm_board_issue = self.jira_repository.create_task(pm_board_task_data)
             LOGGER.info(
@@ -244,7 +248,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             )
             LOGGER.error(error_msg)
 
-            # Log more details for debugging
             LOGGER.debug(
                 f"Feature data: epic='{feature.epic}', deadline='{feature.deadline}' (type: {type(feature.deadline)})",
             )
@@ -655,12 +658,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 update_fields["assignee"] = {
                     "name": assignees[0],
                 }
-                current_labels = [label.name for label in issue.fields.labels]
+                current_labels = [label for label in issue.fields.labels]
                 # FIXME
                 new_labels = [
                     label
                     for label in current_labels
-                    if not any(person in label for person in self.user_config.list_())
+                    if not any(person in label for person in self.user_config.list_jira_usernames())
                 ]
                 # Add new assignees as labels
                 new_labels.extend(assignees)
@@ -809,7 +812,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error updating sync status: {e}")
             return False
 
-    def _create_column_mapping(self, headers: List[str]) -> Dict[str, int]:
+    @staticmethod
+    def _create_column_mapping(headers: List[str]) -> Dict[str, int]:
         """Create mapping from column names to indices.
 
         Args:
@@ -887,8 +891,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         return mapping
 
+    @staticmethod
     def _parse_row_to_feature_with_mapping(
-        self,
         row_number: int,
         row: List[str],
         column_mapping: Dict[str, int],
@@ -1059,7 +1063,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error parsing row {row_number}: {e}")
             return None
 
-    def _number_to_column_letter(self, col_num: int) -> str:
+    @staticmethod
+    def _number_to_column_letter(col_num: int) -> str:
         """Convert column number to Excel column letter.
 
         Args:
@@ -1075,7 +1080,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             col_num //= 26
         return result
 
-    def _map_priority(self, priority: Optional[str]) -> str:
+    @staticmethod
+    def _map_priority(priority: Optional[str]) -> str:
         """Map sheet priority to Jira priority.
 
         Args:
