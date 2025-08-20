@@ -1,23 +1,26 @@
 """SynthPM use case for managing bidirectional synchronization."""
-
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
+from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
-from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity, SprintInfo
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
+from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
+    NotificationGatewayInterface,
+)
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
     SynthPMRepositoryInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
-)
-from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
-    NotificationGatewayInterface,
 )
 
 
@@ -61,7 +64,7 @@ class SynthPMUseCase:
                 return {"status": "success", "message": "No features found to sync"}
 
             # Get previous sync status
-            previous_sync = await self.repository.get_sync_status()
+            # previous_sync = await self.repository.get_sync_status()
 
             sync_results = {
                 "created_jira_tasks": 0,
@@ -73,10 +76,15 @@ class SynthPMUseCase:
             }
 
             # Handle task cleanup - check for tasks that no longer exist in sheet
-            await self._cleanup_deleted_tasks(features, sync_results) # TODO: check this one later
+            await self._cleanup_deleted_tasks(
+                features,
+                sync_results,
+            )  # TODO: check this one later
 
             for idx, feature in enumerate(features):
-                LOGGER.info(f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}")
+                LOGGER.info(
+                    f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}",
+                )
                 try:
                     await self._process_feature(feature, sync_results)
                 except Exception as e:
@@ -110,7 +118,7 @@ class SynthPMUseCase:
     async def _cleanup_deleted_tasks(
         self,
         current_features: List[SynthPMFeatureEntity],
-        sync_results: Dict[str, Any]
+        sync_results: Dict[str, Any],
     ):
         """Clean up Jira tasks that are no longer in Google Sheets.
 
@@ -125,11 +133,19 @@ class SynthPMUseCase:
                 return  # No previous sync, nothing to clean up
 
             # Get all PM Board issues created by this system
-            current_jira_keys = {f.jira_issue_key for f in current_features if f.jira_issue_key}
-            current_developer_board_keys = {f.developer_board_issue_key for f in current_features if f.developer_board_issue_key}
+            current_jira_keys = {
+                f.jira_issue_key for f in current_features if f.jira_issue_key
+            }
+            current_developer_board_keys = {
+                f.developer_board_issue_key
+                for f in current_features
+                if f.developer_board_issue_key
+            }
 
             LOGGER.info(f"Current PM Board tasks: {len(current_jira_keys)}")
-            LOGGER.info(f"Current Developer board tasks: {len(current_developer_board_keys)}")
+            LOGGER.info(
+                f"Current Developer board tasks: {len(current_developer_board_keys)}",
+            )
 
             # TODO: Implement actual cleanup logic when task deletion is confirmed
             # - Query Jira for all PM Board/Developer board tasks created by this system
@@ -141,7 +157,10 @@ class SynthPMUseCase:
             LOGGER.error(f"Error during task cleanup: {e}")
             sync_results["errors"].append(f"Task cleanup error: {e}")
 
-    def _extract_assignees_from_feature(self, feature: SynthPMFeatureEntity) -> List[str]:
+    def _extract_assignees_from_feature(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> List[str]:
         """Extract assignees from feature's people columns using UserConfig.
 
         Args:
@@ -157,45 +176,75 @@ class SynthPMUseCase:
 
         # Create mapping from google_sheet_name to jira_username
         google_sheet_to_jira = {}
-        for username, user_cfg in all_user_configs.items():
-            if (hasattr(user_cfg, 'google_sheet_name') and
-                hasattr(user_cfg, 'jira_username') and
-                user_cfg.google_sheet_name and
-                user_cfg.jira_username):
-                google_sheet_to_jira[user_cfg.google_sheet_name.lower()] = user_cfg.jira_username
+        for _, user_cfg in all_user_configs.items():
+            if (
+                hasattr(user_cfg, "google_sheet_name")
+                and hasattr(user_cfg, "jira_username")
+                and user_cfg.google_sheet_name
+                and user_cfg.jira_username
+            ):
+                google_sheet_to_jira[
+                    user_cfg.google_sheet_name.lower()
+                ] = user_cfg.jira_username
 
         # Get all feature attributes that might contain people assignments
         # This will dynamically check all attributes of the feature
-        feature_dict = feature.dict() if hasattr(feature, 'dict') else feature.__dict__
+        feature_dict = feature.dict() if hasattr(feature, "dict") else feature.__dict__
 
         # Check each feature attribute for assignment
         for attr_name, value in feature_dict.items():
             # Skip non-people fields
-            if attr_name in ['task_title', 'description', 'epic', 'priority', 'status',
-                           'deadline', 'eta_hours', 'departments', 'involved_people',
-                           'jira_issue_key', 'developer_board_issue_key', 'row_number', 'sprint']:
+            if attr_name in [
+                "task_title",
+                "description",
+                "epic",
+                "priority",
+                "status",
+                "deadline",
+                "eta_hours",
+                "departments",
+                "involved_people",
+                "jira_issue_key",
+                "developer_board_issue_key",
+                "row_number",
+                "sprint",
+            ]:
                 continue
 
             if value and str(value).strip() and str(value).strip() != "Select":
                 # If column has a value (hours or assignment), find corresponding user
-                if (str(value).strip().replace(".", "").isdigit() or
-                    ":" in str(value) or
-                    any(keyword in str(value).lower() for keyword in ['hour', 'h', 'ساعت'])):
-
+                if (
+                    str(value).strip().replace(".", "").isdigit()
+                    or ":" in str(value)
+                    or any(
+                        keyword in str(value).lower()
+                        for keyword in ["hour", "h", "ساعت"]
+                    )
+                ):
                     # This attribute has hour assignment, try to find matching user
                     # Look for google_sheet_name that might match this attribute
-                    for google_sheet_name, jira_username in google_sheet_to_jira.items():
+                    for (
+                        google_sheet_name,
+                        jira_username,
+                    ) in google_sheet_to_jira.items():
                         # Check if the google_sheet_name might correspond to this attribute
                         # This is a fuzzy match to handle variations
-                        sheet_name_clean = google_sheet_name.replace(' ', '').lower()
-                        attr_name_clean = attr_name.replace('_', '').lower()
+                        sheet_name_clean = google_sheet_name.replace(" ", "").lower()
+                        attr_name_clean = attr_name.replace("_", "").lower()
 
                         # Try various matching strategies
-                        if (sheet_name_clean in attr_name_clean or
-                            attr_name_clean in sheet_name_clean or
-                            self._names_are_similar(attr_name_clean, sheet_name_clean)):
+                        if (
+                            sheet_name_clean in attr_name_clean
+                            or attr_name_clean in sheet_name_clean
+                            or self._names_are_similar(
+                                attr_name_clean,
+                                sheet_name_clean,
+                            )
+                        ):
                             assignees.append(jira_username)
-                            LOGGER.info(f"Matched attribute '{attr_name}' with user '{google_sheet_name}' -> '{jira_username}'")
+                            LOGGER.info(
+                                f"Matched attribute '{attr_name}' with user '{google_sheet_name}' -> '{jira_username}'",
+                            )
                             break
 
         # Fallback: use involved_people field if no specific people are assigned
@@ -206,12 +255,16 @@ class SynthPMUseCase:
                 person = person.strip()
                 # Try to find matching google_sheet_name
                 for google_sheet_name, jira_username in google_sheet_to_jira.items():
-                    if (person.lower() in google_sheet_name.lower() or
-                        google_sheet_name.lower() in person.lower()):
+                    if (
+                        person.lower() in google_sheet_name.lower()
+                        or google_sheet_name.lower() in person.lower()
+                    ):
                         assignees.append(jira_username)
                         break
 
-        LOGGER.info(f"Extracted assignees for feature '{feature.task_title}': {assignees}")
+        LOGGER.info(
+            f"Extracted assignees for feature '{feature.task_title}': {assignees}",
+        )
         return list(set(assignees))  # Remove duplicates
 
     def _names_are_similar(self, name1: str, name2: str) -> bool:
@@ -225,8 +278,8 @@ class SynthPMUseCase:
             True if names are considered similar
         """
         # Remove common variations and check for similarity
-        name1_variants = [name1, name1.replace('dr_', ''), name1.replace('_', '')]
-        name2_variants = [name2, name2.replace('dr_', ''), name2.replace('_', '')]
+        name1_variants = [name1, name1.replace("dr_", ""), name1.replace("_", "")]
+        name2_variants = [name2, name2.replace("dr_", ""), name2.replace("_", "")]
 
         for n1 in name1_variants:
             for n2 in name2_variants:
@@ -238,7 +291,7 @@ class SynthPMUseCase:
     async def _process_feature(
         self,
         feature: SynthPMFeatureEntity,
-        sync_results: Dict[str, Any]
+        sync_results: Dict[str, Any],
     ):
         """Process a single feature.
 
@@ -249,6 +302,8 @@ class SynthPMUseCase:
         try:
             # Always create PM Board task if needed
             if not feature.jira_issue_key and feature.task_title:
+                if feature.last_sprint is None:
+                    return
                 issue_key = await self.repository.create_jira_task_from_feature(feature)
                 if issue_key:
                     sync_results["created_jira_tasks"] += 1
@@ -261,13 +316,21 @@ class SynthPMUseCase:
                         developer_board_key = await self.repository.create_developer_board_task_from_feature(
                             feature,
                             sprint_info,
-                            assignees=assignees
+                            assignees=assignees,
                         )
                         if developer_board_key:
-                            feature = feature.copy(update={"developer_board_issue_key": developer_board_key})
-                            sync_results["created_developer_board_tasks"] = sync_results.get("created_developer_board_tasks", 0) + 1
+                            feature = feature.copy(
+                                update={
+                                    "developer_board_issue_key": developer_board_key,
+                                },
+                            )
+                            sync_results["created_developer_board_tasks"] = (
+                                sync_results.get("created_developer_board_tasks", 0) + 1
+                            )
                 else:
-                    sync_results["errors"].append(f"Failed to create Jira task for: {feature.task_title}")
+                    sync_results["errors"].append(
+                        f"Failed to create Jira task for: {feature.task_title}",
+                    )
                     return
 
             # Check if existing Jira task needs updating
@@ -276,17 +339,23 @@ class SynthPMUseCase:
                 if success:
                     sync_results["updated_jira_tasks"] += 1
                 else:
-                    sync_results["errors"].append(f"Failed to update Jira task: {feature.jira_issue_key}")
+                    sync_results["errors"].append(
+                        f"Failed to update Jira task: {feature.jira_issue_key}",
+                    )
 
                 if feature.developer_board_issue_key:
                     # Update assignees based on current feature data
                     assignees = self._extract_assignees_from_feature(feature)
-                    developer_board_success = await self.repository.update_developer_board_task_from_feature(
-                        feature,
-                        assignees=assignees
+                    developer_board_success = (
+                        await self.repository.update_developer_board_task_from_feature(
+                            feature,
+                            assignees=assignees,
+                        )
                     )
                     if developer_board_success:
-                        sync_results["updated_developer_board_tasks"] = sync_results.get("updated_developer_board_tasks", 0) + 1
+                        sync_results["updated_developer_board_tasks"] = (
+                            sync_results.get("updated_developer_board_tasks", 0) + 1
+                        )
 
             # NO DIRECT TELEGRAM POSTING - Only for releases
             # Telegram notifications are now handled via sync_release_notes method
@@ -328,8 +397,8 @@ class SynthPMUseCase:
                                 release.row_number,
                                 {
                                     "telegram_message_id": message_id,
-                                    "last_updated": datetime.now()
-                                }
+                                    "last_updated": datetime.now(),
+                                },
                             )
                             sync_results["posted_releases"] += 1
                     else:
@@ -341,7 +410,9 @@ class SynthPMUseCase:
                                 sync_results["updated_releases"] += 1
 
                 except Exception as e:
-                    error_msg = f"Error processing release {release.release_version}: {e}"
+                    error_msg = (
+                        f"Error processing release {release.release_version}: {e}"
+                    )
                     LOGGER.error(error_msg)
                     sync_results["errors"].append(error_msg)
 
@@ -349,7 +420,7 @@ class SynthPMUseCase:
             return {
                 "status": "success",
                 "message": "Release Notes sync completed",
-                "results": sync_results
+                "results": sync_results,
             }
 
         except Exception as e:
@@ -357,7 +428,10 @@ class SynthPMUseCase:
             LOGGER.error(error_msg)
             return {"status": "error", "message": error_msg}
 
-    async def _post_release_to_telegram(self, release: ReleaseNoteEntity) -> Optional[str]:
+    async def _post_release_to_telegram(
+        self,
+        release: ReleaseNoteEntity,
+    ) -> Optional[str]:
         """Post release note to Telegram and return message ID.
 
         Args:
@@ -372,14 +446,16 @@ class SynthPMUseCase:
             sent_message_id = await self.notification_gateway.send_message_async(
                 chat_id=int(self.settings.telegram_channel_id),
                 text=message,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
 
             if sent_message_id:
                 LOGGER.info(f"Posted release {release.release_version} to Telegram")
                 return sent_message_id
             else:
-                LOGGER.error(f"Failed to post release {release.release_version} to Telegram")
+                LOGGER.error(
+                    f"Failed to post release {release.release_version} to Telegram",
+                )
                 return None
 
         except Exception as e:
@@ -402,20 +478,22 @@ class SynthPMUseCase:
                 chat_id=int(self.settings.telegram_channel_id),
                 message_id=int(release.telegram_message_id),
                 text=message,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
 
             if success:
                 # Update last_updated timestamp
                 await self.repository.update_release_note(
                     release.row_number,
-                    {"last_updated": datetime.now()}
+                    {"last_updated": datetime.now()},
                 )
 
                 LOGGER.info(f"Updated release {release.release_version} in Telegram")
                 return True
             else:
-                LOGGER.error(f"Failed to update release {release.release_version} in Telegram")
+                LOGGER.error(
+                    f"Failed to update release {release.release_version} in Telegram",
+                )
                 return False
 
         except Exception as e:
@@ -437,37 +515,47 @@ class SynthPMUseCase:
             f"📋 **نسخه:** {release.release_version}",
             f"🔧 **اجزای ریلیز:** {release.release_components}",
             "",
-            f"📝 **شرح:**",
-            release.description
+            "📝 **شرح:**",
+            release.description,
         ]
 
         if release.goals:
-            message_parts.extend([
-                "",
-                f"🎯 **اهداف:**",
-                release.goals
-            ])
+            message_parts.extend(
+                [
+                    "",
+                    "🎯 **اهداف:**",
+                    release.goals,
+                ],
+            )
 
         if release.delivery_process:
-            message_parts.extend([
-                "",
-                f"📦 **فرایند تحویل:**",
-                release.delivery_process
-            ])
+            message_parts.extend(
+                [
+                    "",
+                    "📦 **فرایند تحویل:**",
+                    release.delivery_process,
+                ],
+            )
 
         if release.test_process:
-            message_parts.extend([
-                "",
-                f"🧪 **فرایند تست:**",
-                release.test_process
-            ])
+            message_parts.extend(
+                [
+                    "",
+                    "🧪 **فرایند تست:**",
+                    release.test_process,
+                ],
+            )
 
         # Add release hashtag
-        release_hashtag = f"#{release.release_version.replace(' ', '_').replace('.', '_')}"
-        message_parts.extend([
-            "",
-            f"🏷️ {release_hashtag} #Release"
-        ])
+        release_hashtag = (
+            f"#{release.release_version.replace(' ', '_').replace('.', '_')}"
+        )
+        message_parts.extend(
+            [
+                "",
+                f"🏷️ {release_hashtag} #Release",
+            ],
+        )
 
         return "\n".join(message_parts)
 
@@ -520,16 +608,18 @@ class SynthPMUseCase:
             await self.notification_gateway.send_message_async(
                 chat_id=int(self.settings.telegram_channel_id),
                 text=message,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
 
             # Also post to group if different from channel
-            if (self.settings.telegram_group_id and
-                self.settings.telegram_group_id != self.settings.telegram_channel_id):
+            if (
+                self.settings.telegram_group_id
+                and self.settings.telegram_group_id != self.settings.telegram_channel_id
+            ):
                 await self.notification_gateway.send_message_async(
                     chat_id=int(self.settings.telegram_group_id),
                     text=message,
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
                 )
 
             LOGGER.info(f"Posted to Telegram: {feature.task_title}")
@@ -583,11 +673,16 @@ class SynthPMUseCase:
 
         # Show component assignments
         components = []
-        if feature.ai: components.append(f"🤖 AI: {feature.ai}")
-        if feature.backend: components.append(f"⚙️ Backend: {feature.backend}")
-        if feature.frontend: components.append(f"🎨 Frontend: {feature.frontend}")
-        if feature.devops: components.append(f"🔧 DevOps: {feature.devops}")
-        if feature.ui_ux: components.append(f"🎯 UI/UX: {feature.ui_ux}")
+        if feature.ai:
+            components.append(f"🤖 AI: {feature.ai}")
+        if feature.backend:
+            components.append(f"⚙️ Backend: {feature.backend}")
+        if feature.frontend:
+            components.append(f"🎨 Frontend: {feature.frontend}")
+        if feature.devops:
+            components.append(f"🔧 DevOps: {feature.devops}")
+        if feature.ui_ux:
+            components.append(f"🎯 UI/UX: {feature.ui_ux}")
 
         if components:
             message_parts.extend(["", "*Components:*"] + components)
@@ -599,11 +694,13 @@ class SynthPMUseCase:
             message_parts.append(f"🔗 *Jira:* {feature.jira_issue_key}")
 
         if feature.description:
-            message_parts.extend([
-                "",
-                f"📄 *Description:*",
-                feature.description
-            ])
+            message_parts.extend(
+                [
+                    "",
+                    "📄 *Description:*",
+                    feature.description,
+                ],
+            )
 
         # Add hashtags at the end
         if hashtags:
@@ -677,7 +774,7 @@ class SynthPMUseCase:
             features = await self.repository.get_developer_board_features()
             feature = next(
                 (f for f in features if f.jira_issue_key == issue_key),
-                None
+                None,
             )
 
             if not feature:
@@ -690,7 +787,10 @@ class SynthPMUseCase:
                 await self._handle_jira_issue_updated(feature, webhook_data)
                 return {"status": "success", "message": "Feature updated from Jira"}
 
-            return {"status": "ignored", "reason": f"Unhandled event type: {event_type}"}
+            return {
+                "status": "ignored",
+                "reason": f"Unhandled event type: {event_type}",
+            }
 
         except Exception as e:
             error_msg = f"Error handling Jira webhook: {e}"
@@ -700,7 +800,7 @@ class SynthPMUseCase:
     async def _handle_jira_issue_updated(
         self,
         feature: SynthPMFeatureEntity,
-        webhook_data: Dict[str, Any]
+        webhook_data: Dict[str, Any],
     ):
         """Handle Jira issue update events.
 
@@ -759,11 +859,13 @@ class SynthPMUseCase:
             if updates:
                 success = await self.repository.update_developer_board_feature(
                     feature.row_number,
-                    updates
+                    updates,
                 )
 
                 if success:
-                    LOGGER.info(f"Updated sheet for Jira issue {feature.jira_issue_key}")
+                    LOGGER.info(
+                        f"Updated sheet for Jira issue {feature.jira_issue_key}",
+                    )
 
                     # Create updated feature for checking if we should post
                     updated_feature = feature.copy(update=updates)
@@ -773,9 +875,15 @@ class SynthPMUseCase:
                         await self._post_to_telegram(updated_feature)
 
         except Exception as e:
-            LOGGER.error(f"Error handling Jira issue update for {feature.jira_issue_key}: {e}")
+            LOGGER.error(
+                f"Error handling Jira issue update for {feature.jira_issue_key}: {e}",
+            )
 
-    async def handle_sheet_update(self, row_number: int, updates: Dict[str, Any]) -> Dict[str, str]:
+    async def handle_sheet_update(
+        self,
+        row_number: int,
+        updates: Dict[str, Any],
+    ) -> Dict[str, str]:
         """Handle manual updates to Google Sheets.
 
         Args:
@@ -790,7 +898,7 @@ class SynthPMUseCase:
             features = await self.repository.get_developer_board_features()
             feature = next(
                 (f for f in features if f.row_number == row_number),
-                None
+                None,
             )
 
             if not feature:
@@ -806,7 +914,10 @@ class SynthPMUseCase:
             if self._should_post_to_telegram(feature):
                 await self._post_to_telegram(feature)
 
-            return {"status": "success", "message": "Sheet update processed successfully"}
+            return {
+                "status": "success",
+                "message": "Sheet update processed successfully",
+            }
 
         except Exception as e:
             error_msg = f"Error handling sheet update: {e}"

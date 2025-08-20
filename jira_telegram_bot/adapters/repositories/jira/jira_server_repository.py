@@ -92,9 +92,12 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 return board.id
         return None
 
-    def get_sprints(self, board_id):
+    def get_sprints(self, board_id, get_from_cache: bool = True):
         cache_key = ("get_sprints", board_id)
-        result = self._get_from_cache(cache_key, 8 * 3600)  # Cache for 8 hours
+        if get_from_cache:
+            result = self._get_from_cache(cache_key, 8 * 3600)  # Cache for 8 hours
+        else:
+            result = None
         if result is not None:
             return result
 
@@ -461,7 +464,6 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         Check if a user has Jira administrator privileges.
         """
         try:
-            user = self.jira.user(username)
             groups = self.jira.groups_for_user(username)
             admin_groups = [
                 "jira-administrators",
@@ -659,7 +661,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             Sprint details as a dictionary or None if not found
         """
         try:
-            sprints = self.get_sprints(board_id)
+            sprints = self.get_sprints(board_id, get_from_cache=False)
             for sprint in sprints:
                 if int(sprint.name.split(" ")[-1]) == int(sprint_id):
                     return {
@@ -690,7 +692,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             Sprint details as a dictionary or None if not found
         """
         try:
-            sprints = self.get_sprints(board_id)
+            sprints = self.get_sprints(board_id, get_from_cache=False)
             for sprint in sprints:
                 if sprint.name == sprint_name:
                     return {
@@ -725,6 +727,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         sprint_name: str,
         start_date: str,
         end_date: str,
+        goal: str = None,
     ) -> Optional[Dict[str, any]]:
         """
         Create a new sprint.
@@ -744,6 +747,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 board_id=board_id,
                 startDate=start_date,
                 endDate=end_date,
+                goal=goal,
             )
             return {
                 "id": sprint.id,
@@ -751,6 +755,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 "state": sprint.state,
                 "start_date": sprint.startDate,
                 "end_date": sprint.endDate,
+                "goal": goal,
             }
         except Exception as e:
             LOGGER.error(f"Error creating sprint '{sprint_name}': {e}")

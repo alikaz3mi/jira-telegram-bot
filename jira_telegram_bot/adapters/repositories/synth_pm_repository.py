@@ -211,7 +211,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Determine status based on components and current status
             jira_status = self._determine_jira_status(feature)
-            # FIXME: check if the issue exists. If it exists, update it instead of creating a new one. To check for the issue existance, check its label starting with PM, and its title
+            # FIXME: check if the issue exists. If it exists, update it instead of creating a new one.
+            # To check for the issue existance, check its label starting with PM, and its title
 
             # Map feature components to Jira components
             components = self._map_components(
@@ -245,7 +246,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             pm_board_issue = self.jira_repository.create_task(pm_board_task_data)
             LOGGER.info(
-                f"Created PM Board task {pm_board_issue.key} for feature: {feature.task_title}: {self.jira_repository.get_issue_url(pm_board_issue)}",
+                f"Created PM Board task {pm_board_issue.key} for feature:"
+                f"{feature.task_title}: {self.jira_repository.get_issue_url(pm_board_issue)}",
             )
 
             # Update status if needed
@@ -527,28 +529,34 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 end_date_str = f"{end_date[0]}-{end_date[1]:02d}-{end_date[2]:02d}"
                 sprint = self.jira_repository.create_sprint(
                     board_id=self.developer_board_id,
-                    sprint_name=f'{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}',
+                    sprint_name=f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}",
                     start_date=start_date_str,
                     end_date=end_date_str,
+                    goal=f"{sprint_info.start_date} to {sprint_info.end_date}",
                 )
 
             task_type = "Story" if len(assignees) > 1 else "Task"
             if task_type == "Task":
                 labels = None
+                description = feature.description
             else:
                 if assignees:
                     labels = [f"PM Board-{feature.jira_issue_key}", *assignees]
                 else:
                     # If no assignees, just use the PM Board issue key
                     labels = [f"PM Board-{feature.jira_issue_key}"]
+                description = (
+                    f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
+                    f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
+                    f"📝 *Original Time*: {feature.total_hours}h\n\n"
+                    f"✍️ *Description*: {feature.description}"
+                )
 
             # Create task with enhanced linking
             developer_board_task_data = TaskData(
                 project_key=self.settings.developer_board_project_key,
                 summary=f"{feature.task_title}",
-                description=f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
-                f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
-                f"📝 *Original Time*: {feature.total_hours}h\n\n",
+                description=description,
                 task_type=task_type,
                 priority=self._map_priority(feature.priority),
                 epic_link=epic_link,
@@ -569,10 +577,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 developer_board_task_data,
             )
 
-
-
             LOGGER.info(
-                f"Created task {self.jira_repository.get_issue_url_by_key(developer_board_issue.key)} for feature: {feature.task_title}",
+                f"Created task {self.jira_repository.get_issue_url_by_key(developer_board_issue.key)}"
+                f"for feature: {feature.task_title}",
             )
 
             if assignees and len(assignees) > 1 and task_type == "Story":
@@ -730,9 +737,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Update story points based on ETA hours
             if feature.total_hours:
-                update_fields[
-                    "customfield_10002"
-                ] = feature.total_hours / 8  # Story points field
+                update_fields["customfield_10002"] = (
+                    feature.total_hours / 8
+                )  # Story points field
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -1012,14 +1019,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # TODO: set multiple sprint for each task
             sprints = get_mapped_value("sprint")
-            if sprints != '' and len(sprints.split(',')) >= 1:
-                items = [p.strip() for p in sprints.split(',')]
-                max_item = max(items, key=lambda t: int(t.split(':', 1)[0]))
+            if sprints != "" and len(sprints.split(",")) >= 1:
+                items = [p.strip() for p in sprints.split(",")]
+                max_item = max(items, key=lambda t: int(t.split(":", 1)[0]))
 
                 # Results
-                number = int(max_item.split(':', 1)[0])          # 44
-                value  = max_item.split(':', 1)[1].strip()       # 'x to x'
-                last_sprint  = max_item
+                number = int(max_item.split(":", 1)[0])  # 44
+                value = max_item.split(":", 1)[1].strip()  # 'x to x'
+                last_sprint = max_item
                 sprint_list = items
 
             return SynthPMFeatureEntity(
@@ -1071,8 +1078,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 sprint=get_mapped_value("sprint")
                 if get_mapped_value("sprint") != "Select"
                 else None,
-                last_sprint=last_sprint if 'last_sprint' in locals() else None,
-                sprint_list=sprint_list if 'sprint_list' in locals() else None,
+                last_sprint=last_sprint if "last_sprint" in locals() else None,
+                sprint_list=sprint_list if "sprint_list" in locals() else None,
                 dependencies=get_mapped_value("dependencies")
                 if get_mapped_value("dependencies") != "Select"
                 else None,
@@ -1316,13 +1323,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             # Get available transitions
             transitions = self.jira_repository.get_transitions(issue_key)
-            transitioned = False
-            # Find the transition to target status
             for transition in transitions:
                 if transition["to"]["name"].lower() == target_status.lower():
                     self.jira_repository.transition_issue(issue_key, transition["id"])
                     LOGGER.info(f"Transitioned {issue_key} to {target_status}")
-                    transitioned = True
                     return
 
             LOGGER.warning(f"No transition found to {target_status} for {issue_key}")
