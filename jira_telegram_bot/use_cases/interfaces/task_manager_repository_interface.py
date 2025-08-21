@@ -347,3 +347,28 @@ class TaskManagerRepositoryInterface(ABC):
                 Sprint details as a dictionary or None if creation fails
             """
             pass
+
+        @abstractmethod
+        def link_issues(self, dependent_issue_key: str, dependency_issue_key: str, link_type: str = "Dependency") -> bool:
+            """
+            Link two Jira issues with a specified relationship.
+
+            Args:
+                dependent_issue_key: The issue that depends on another (outward issue)
+                dependency_issue_key: The issue that is depended upon (inward issue)
+                link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
+
+            Returns:
+                True if linking was successful, False otherwise
+            """
+            pass
+
+        @abstractmethod
+        def get_issue_link_types(self) -> List[Dict[str, str]]:
+            """
+            Get available issue link types in Jira.
+
+            Returns:
+                List of link types with their names and descriptions
+            """
+            pass

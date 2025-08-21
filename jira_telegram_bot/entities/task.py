@@ -41,6 +41,7 @@ class TaskData(BaseModel):
     sprint_name: Optional[str] = Field(default=None)
     epic_link: Optional[str] = Field(default=None)
     release: Optional[str] = Field(default=None)
+    releases: Optional[List[str]] = Field(default=None) # TODO: omit this one
     assignee: Optional[str] = Field(default=None)
     priority: Optional[str] = Field(default=None)
     create_another: bool = Field(default=False)

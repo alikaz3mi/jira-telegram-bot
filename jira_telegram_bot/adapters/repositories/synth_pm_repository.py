@@ -18,6 +18,7 @@ from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
+from jira_telegram_bot.entities.synth_pm.constants import SynthPMStatus
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
@@ -238,7 +239,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.warning(f"Could not transition issue to {jira_status}: {e}")
 
             await self.update_developer_board_feature(
-                feature.row_number,
+                feature.sheet_row_number,
                 {"jira_issue_key": pm_board_issue.key},
             )
 
@@ -263,14 +264,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         project_key: str,
     ):
         if feature.release:
-            if self.jira_repository.release_exist(project_key, feature.release):
-                task_data.release = feature.release
-            else:
+            if not self.jira_repository.release_exist(project_key, feature.release):
                 self.jira_repository.create_release(
                     project_key=project_key,
                     name=feature.release,
                 )
-                task_data.release = feature.release
+            task_data.releases = [feature.release]
+        if feature.version:
+            if not self.jira_repository.release_exist(project_key, feature.version):
+                self.jira_repository.create_release(
+                    project_key=project_key,
+                    name=feature.version,
+                )
+            task_data.releases = task_data.releases + [feature.version]
 
     async def update_jira_task_from_feature(
         self,
@@ -368,6 +374,30 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error retrieving release notes: {e}")
             return []
+
+    async def get_release_note_by_version(self, version: str) -> Optional[ReleaseNoteEntity]:
+        """Get a specific release note by version from Google Sheets.
+
+        Args:
+            version: Release version to search for
+
+        Returns:
+            ReleaseNoteEntity if found, None otherwise
+        """
+        try:
+            release_notes = await self.get_release_notes()
+            
+            for release_note in release_notes:
+                if release_note.release_version == version:
+                    LOGGER.info(f"Found release note for version: {version}")
+                    return release_note
+                    
+            LOGGER.warning(f"Release note not found for version: {version}")
+            return None
+
+        except Exception as e:
+            LOGGER.error(f"Error retrieving release note for version {version}: {e}")
+            return None
 
     async def update_release_note(
         self,
@@ -578,19 +608,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     f"Could not link issues {feature.jira_issue_key} and {developer_board_issue.key}: {e}",
                 )
 
-            try:
-                await self._add_label_to_issue(
-                    feature.jira_issue_key,
-                    f"{developer_board_issue.key}",
-                )
-            except Exception as e:
-                LOGGER.warning(f"Could not add label to PM Board issue: {e}")
-
             # Update the sheet with issue key
-            # await self.update_developer_board_feature(
-            #     feature.row_number,
-            #     {"developer_board_issue_key": developer_board_issue.key},
-            # )
+            await self.update_developer_board_feature(
+                feature.sheet_row_number,
+                {"developer_board_issue_key": developer_board_issue.key},
+            )
 
             return developer_board_issue.key
 
@@ -985,6 +1007,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             return SynthPMFeatureEntity(
                 row_number=get_mapped_value("row_number"),
+                sheet_row_number=row_number,
                 task_title=task_title,
                 epic=(
                     get_mapped_value("epic")
@@ -1267,17 +1290,46 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         return jira_status
 
     def _link_issues(self, pm_board_issue_key: str, developer_board_issue_key: str):
-        """Link PM Board and issues.
+        """Link PM Board and Developer Board issues.
 
         Args:
             pm_board_issue_key: PM Board issue key
-            developer_board_issue_key: issue key
+            developer_board_issue_key: Developer Board issue key
         """
         try:
-            # TODO This would need to be implemented based on your Jira repository
-            LOGGER.info(
-                f"Issues linked via labels: {pm_board_issue_key} <-> {developer_board_issue_key}",
+            # Log available link types for debugging
+            self._log_available_link_types()
+            
+            # Try to find the best link type for creating dependency
+            available_link_types = self.jira_repository.get_issue_link_types()
+            
+            # Preferred link types in order of preference
+            preferred_types = ["Dependency", "Blocks", "Relates to", "Relates"]
+            selected_link_type = "Relates"  # Default fallback
+            
+            for preferred in preferred_types:
+                for link_type in available_link_types:
+                    if link_type["name"].lower() == preferred.lower():
+                        selected_link_type = preferred
+                        break
+                if selected_link_type == preferred:
+                    break
+            
+            # Create dependency link: PM Board issue depends on Developer Board issue
+            success = self.jira_repository.link_issues(
+                dependent_issue_key=pm_board_issue_key,
+                dependency_issue_key=developer_board_issue_key,
+                link_type=selected_link_type,
             )
+            
+            if success:
+                LOGGER.info(
+                    f"Successfully linked issues: {pm_board_issue_key} -> {developer_board_issue_key} ({selected_link_type})",
+                )
+            else:
+                LOGGER.warning(
+                    f"Failed to link issues: {pm_board_issue_key} -> {developer_board_issue_key}",
+                )
         except Exception as e:
             LOGGER.error(
                 f"Error linking issues {pm_board_issue_key} and {developer_board_issue_key}: {e}",
@@ -1311,24 +1363,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         key_values = self._get_status_mapping()
         return {value: key for key, value in key_values.items()}
 
-    async def _add_label_to_issue(self, issue_key: str, label: str):
-        """Add a label to an existing Jira issue.
-
-        Args:
-            issue_key: Jira issue key
-            label: Label to add
-        """
-        # TODO: also, a label must be deleted (i.e, the assignees)
-        try:
-            issue = self.jira_repository.get_issue(issue_key)
-            if issue:
-                current_labels = issue.fields.labels
-                if label not in current_labels:
-                    current_labels.append(label)
-                    issue.update(update={"labels": [{"set": current_labels}]})
-                    LOGGER.info(f"Added label '{label}' to issue {issue_key}")
-        except Exception as e:
-            LOGGER.error(f"Error adding label to issue {issue_key}: {e}")
 
     async def _create_subtasks_for_assignees(
         self,
@@ -1507,3 +1541,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error parsing release note row {row_number}: {e}")
             return None
+
+    def _log_available_link_types(self):
+        """Log available Jira issue link types for debugging."""
+        try:
+            link_types = self.jira_repository.get_issue_link_types()
+            LOGGER.info(f"Available Jira link types: {[lt['name'] for lt in link_types]}")
+            for link_type in link_types:
+                LOGGER.debug(
+                    f"Link type: {link_type['name']} - "
+                    f"Inward: {link_type.get('inward', 'N/A')}, "
+                    f"Outward: {link_type.get('outward', 'N/A')}"
+                )
+        except Exception as e:
+            LOGGER.error(f"Error getting link types for debugging: {e}")

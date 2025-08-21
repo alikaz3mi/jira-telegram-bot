@@ -13,7 +13,7 @@ class SynthPMFeatureEntity(BaseModel):
 
     # FIXME: departments should be a list, not a string
 
-    row_number: int = Field(description="Row number in the sheet")
+    row_number: int = Field(description="Row number in the table")
     sheet_row_number: int = Field(description="Row number in the sheet")
     task_title: str = Field(description="Task title/وظیفه")
     epic: Optional[str] = Field(default=None, description="Epic")

@@ -238,8 +238,10 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             issue_fields[self.jira_sprint_id] = task_data.sprint_id
         if task_data.epic_link:
             issue_fields[self.jira_epic_link_id] = task_data.epic_link
+        if task_data.releases:
+            issue_fields["fixVersions"] = [{"name": release} for release in task_data.releases]
         if task_data.release:
-            issue_fields["fixVersions"] = [{"name": task_data.release}]
+            issue_fields["fixVersions"] = {"name": task_data.release}
         if task_data.assignee:
             issue_fields["assignee"] = {"name": task_data.assignee}
         if task_data.priority:
@@ -827,3 +829,86 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             payload["releaseDate"] = release_date
         version = self.jira.create_version(**payload)
         return Release(project=project_key, **version.raw)
+
+    def get_issue_link_types(self) -> List[Dict[str, str]]:
+        """Get available issue link types in Jira.
+
+        Returns:
+            List of link types with their names and descriptions
+        """
+        try:
+            link_types = self.jira.issue_link_types()
+            return [
+                {
+                    "name": link_type.name,
+                    "inward": link_type.inward,
+                    "outward": link_type.outward,
+                }
+                for link_type in link_types
+            ]
+        except Exception as e:
+            LOGGER.error(f"Error getting issue link types: {e}")
+            return []
+
+    def link_issues(self, dependent_issue_key: str, dependency_issue_key: str, link_type: str = "Dependency") -> bool:
+        """Link two Jira issues with a specified relationship.
+
+        Args:
+            dependent_issue_key: The issue that depends on another (outward issue)
+            dependency_issue_key: The issue that is depended upon (inward issue)
+            link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
+
+        Returns:
+            True if linking was successful, False otherwise
+        """
+        try:
+            # Get available link types to find a suitable one
+            available_link_types = self.get_issue_link_types()
+            
+            # First try to find the exact link type requested
+            selected_link_type = None
+            for link in available_link_types:
+                if link["name"].lower() == link_type.lower():
+                    selected_link_type = link["name"]
+                    break
+            
+            # If requested link type not found, try common alternatives
+            if not selected_link_type:
+                fallback_types = ["Blocks", "Relates to", "Relates", "Clones", "Duplicates"]
+                for fallback in fallback_types:
+                    for link in available_link_types:
+                        if link["name"].lower() == fallback.lower():
+                            selected_link_type = link["name"]
+                            LOGGER.warning(
+                                f"Link type '{link_type}' not found, using '{selected_link_type}' instead"
+                            )
+                            break
+                    if selected_link_type:
+                        break
+            
+            # If still no link type found, use the first available one
+            if not selected_link_type and available_link_types:
+                selected_link_type = available_link_types[0]["name"]
+                LOGGER.warning(
+                    f"Link type '{link_type}' not found, using first available: '{selected_link_type}'"
+                )
+            
+            if not selected_link_type:
+                LOGGER.error("No issue link types available in Jira")
+                return False
+
+            # Create the issue link
+            self.jira.create_issue_link(
+                type=selected_link_type,
+                inwardIssue=dependency_issue_key,
+                outwardIssue=dependent_issue_key,
+            )
+            LOGGER.info(
+                f"Successfully linked issues: {dependent_issue_key} -> {dependency_issue_key} ({selected_link_type})",
+            )
+            return True
+        except Exception as e:
+            LOGGER.error(
+                f"Error linking issues {dependent_issue_key} -> {dependency_issue_key}: {e}",
+            )
+            return False
