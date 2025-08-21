@@ -173,3 +173,12 @@ class SynthPMRepositoryInterface(ABC):
             True if successful, False otherwise
         """
         pass
+
+    @abstractmethod
+    def get_reverse_status_mapping(self) -> Dict[str, str]:
+        """Get the reverse status mapping for Jira statuses.
+        
+        Returns:
+            Dictionary mapping Jira statuses to their reverse values
+        """
+        pass

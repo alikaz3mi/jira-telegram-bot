@@ -22,15 +22,6 @@
 - نگاشت نام‌های فارسی به username های Jira
 - اولین فرد در لیست به عنوان assignee اصلی انتخاب می‌شود
 
-```python
-# نگاشت افراد
-people_mapping = {
-    "kazemi": "ali.kazemi",
-    "mousavi": "mousavi",
-    "moradi": "moradi",
-    # ... سایر افراد
-}
-```
 
 ### 5. ✅ همگام‌سازی ددلاین
 - ددلاین‌ها بین گوگل شیت، PM Board و Developers Board همگام می‌شوند

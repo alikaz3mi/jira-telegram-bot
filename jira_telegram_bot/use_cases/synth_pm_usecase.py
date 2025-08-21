@@ -819,17 +819,8 @@ class SynthPMUseCase:
             status = fields.get("status", {}).get("name")
             if status:
                 # Map Jira status to sheet status using reverse mapping
-                reverse_status_mapping = {
-                    "To Do": "۵",  # آماده پیاده سازی فنی
-                    "Selected for Development": "۵",  # آماده پیاده سازی فنی
-                    "In Progress": "۶",  # در حال پیاده سازی
-                    "Review": "۷",  # در مرحله تست فنی
-                    "Done": "۸",  # آماده تحویل
-                    # Legacy mappings
-                    "In Review": "بررسی",
-                    "Testing": "تست",
-                    "Ready for Release": "آماده انتشار",
-                }
+                reverse_status_mapping = self.repository.get_reverse_status_mapping()
+
 
                 sheet_status = reverse_status_mapping.get(status)
                 if sheet_status and sheet_status != feature.status:
