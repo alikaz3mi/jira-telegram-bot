@@ -301,7 +301,7 @@ class SynthPMUseCase:
         """
         try:
             # Always create PM Board task if needed
-            if not (feature.jira_issue_key and feature.task_title is not None):
+            if not (False):  # feature.jira_issue_key and feature.task_title is not None
                 if feature.last_sprint is None:
                     return
                 issue_key = await self.repository.create_jira_task_from_feature(feature)

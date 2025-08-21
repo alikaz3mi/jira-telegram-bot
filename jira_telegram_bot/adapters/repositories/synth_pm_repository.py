@@ -187,7 +187,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             epic_link = None
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
-                epic_exists, epic_key = self._create_epic_not_exist(
+                _, epic_key = self._create_epic_not_exist(
                     feature.epic,
                     self.settings.pm_project_key,
                 )
@@ -219,10 +219,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     "Active",
                     self.pm_board_id,
                 )
-            
-            if feature.release:
-                release = self.jira_repository.jira.
-                pm_board_task_data.release = feature.release
+
+            self._create_release_not_exist(
+                feature,
+                pm_board_task_data,
+                self.settings.pm_project_key,
+            )
 
             pm_board_issue = self.jira_repository.create_task(pm_board_task_data)
             LOGGER.info(
@@ -253,6 +255,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             )
 
             return None
+
+    def _create_release_not_exist(
+        self,
+        feature: SynthPMFeatureEntity,
+        task_data: TaskData,
+        project_key: str,
+    ):
+        if feature.release:
+            if self.jira_repository.release_exist(project_key, feature.release):
+                task_data.release = feature.release
+            else:
+                self.jira_repository.create_release(
+                    project_key=project_key,
+                    name=feature.release,
+                )
+                task_data.release = feature.release
 
     async def update_jira_task_from_feature(
         self,
@@ -520,6 +538,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 developer_board_task_data.sprint_id = sprint.get("id")
                 developer_board_task_data.sprint_name = sprint.get("name")
 
+            self._create_release_not_exist(
+                feature,
+                developer_board_task_data,
+                self.settings.developer_board_project_key,
+            )
+
             developer_board_issue = self.jira_repository.create_task(
                 developer_board_task_data,
             )
@@ -663,7 +687,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 new_labels = [
                     label
                     for label in current_labels
-                    if not any(person in label for person in self.user_config.list_jira_usernames())
+                    if not any(
+                        person in label
+                        for person in self.user_config.list_jira_usernames()
+                    )
                 ]
                 # Add new assignees as labels
                 new_labels.extend(assignees)
@@ -748,8 +775,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
                 pm_board_issue.update(
                     fields={
-                        self.jira_repository.jira_original_estimate_id: new_story_points
-                    }
+                        self.jira_repository.jira_original_estimate_id: new_story_points,
+                    },
                 )
 
                 LOGGER.info(

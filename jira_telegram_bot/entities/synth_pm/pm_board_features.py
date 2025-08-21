@@ -14,6 +14,7 @@ class SynthPMFeatureEntity(BaseModel):
     # FIXME: departments should be a list, not a string
 
     row_number: int = Field(description="Row number in the sheet")
+    sheet_row_number: int = Field(description="Row number in the sheet")
     task_title: str = Field(description="Task title/وظیفه")
     epic: Optional[str] = Field(default=None, description="Epic")
     release: Optional[str] = Field(default=None, description="Release/ریلیز")
@@ -24,7 +25,8 @@ class SynthPMFeatureEntity(BaseModel):
     total_hours: Optional[int] = Field(default=None, description="Total hours")
     departments: Optional[str] = Field(default=None, description="Departments")
     involved_people: Optional[str] = Field(
-        default=None, description="Involved people/افراد درگیر"
+        default=None,
+        description="Involved people/افراد درگیر",
     )
     ai: Optional[str] = Field(default=None, description="AI")
     backend: Optional[str] = Field(default=None, description="Backend")
@@ -32,31 +34,39 @@ class SynthPMFeatureEntity(BaseModel):
     devops: Optional[str] = Field(default=None, description="DevOPS")
     ui_ux: Optional[str] = Field(default=None, description="UI/UX")
     creation_date: Optional[datetime] = Field(
-        default=None, description="Creation date/تاریخ ایجاد"
+        default=None,
+        description="Creation date/تاریخ ایجاد",
     )
     implementation_start_date: Optional[datetime] = Field(
-        default=None, description="Implementation start date/تاریخ شروع پیاده سازی"
+        default=None,
+        description="Implementation start date/تاریخ شروع پیاده سازی",
     )
     deadline: Optional[datetime] = Field(default=None, description="Deadline/ددلاین")
     sprint: Optional[str] = Field(default=None, description="Sprint/اسپرینت")
     last_sprint: Optional[str] = Field(
-        default=None, description="Last sprint/آخرین اسپرینت"
+        default=None,
+        description="Last sprint/آخرین اسپرینت",
     )
     sprint_list: Optional[List[str]] = Field(
-        default=None, description="List of sprints/لیست اسپرینت ها"
+        default=None,
+        description="List of sprints/لیست اسپرینت ها",
     )
     dependencies: Optional[str] = Field(
-        default=None, description="Dependencies/وابستگی ها"
+        default=None,
+        description="Dependencies/وابستگی ها",
     )
     initial_delivery_time: Optional[datetime] = Field(
-        default=None, description="Initial delivery time/زمان تحویل اولیه"
+        default=None,
+        description="Initial delivery time/زمان تحویل اولیه",
     )
     description: Optional[str] = Field(default=None, description="Description/توضیحات")
     jira_issue_key: Optional[str] = Field(
-        default=None, description="Associated PM Board Jira issue key"
+        default=None,
+        description="Associated PM Board Jira issue key",
     )
     developer_board_issue_key: Optional[str] = Field(
-        default=None, description="Associated developer's board Jira issue key"
+        default=None,
+        description="Associated developer's board Jira issue key",
     )
     version: Optional[str] = Field(default=None, description="Release version number")
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -12,6 +13,7 @@ from jira import JIRA
 
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.release import Release
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
@@ -768,3 +770,60 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error creating sprint '{sprint_name}': {e}")
             return None
+
+    def get_releases(self, project_key: str) -> List[Release]:
+        """Get all releases for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+
+        Returns:
+            List of Release entities.
+        """
+        versions = self.jira.project_versions(project_key)
+        return [Release(project=project_key, **v.raw) for v in versions]
+
+    def release_exist(self, project_key: str, name: str) -> bool:
+        """Check if a release exists for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            name: Name of the release.
+
+        Returns:
+            True if the release exists, False otherwise.
+        """
+        releases = self.get_releases(project_key)
+        return any(release.name == name for release in releases)
+
+    def create_release(
+        self,
+        project_key: str,
+        name: str,
+        description: Optional[str] = None,
+        release_date: Optional[str] = None,
+        released: bool = False,
+    ) -> Release:
+        """Create a new release for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            name: Name of the release.
+            description: Optional description.
+            release_date: Optional release date (YYYY-MM-DD).
+            released: Whether the release is marked as released.
+
+        Returns:
+            The created Release entity.
+        """
+        payload: Dict[str, Any] = {
+            "project": project_key,
+            "name": name,
+            "released": released,
+        }
+        if description:
+            payload["description"] = description
+        if release_date:
+            payload["releaseDate"] = release_date
+        version = self.jira.create_version(**payload)
+        return Release(project=project_key, **version.raw)
