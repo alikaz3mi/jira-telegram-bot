@@ -171,122 +171,14 @@ class SynthPMUseCase:
         """
         assignees = []
 
-        # Get all user configurations
         all_user_configs = self.user_config.get_all_user_configs()
+        for user_config in all_user_configs.values():
+            assignee = user_config.jira_username
+            if user_config.google_sheet_name in feature.involved_people:
+                assignees.append(assignee)
 
-        # Create mapping from google_sheet_name to jira_username
-        google_sheet_to_jira = {}
-        for _, user_cfg in all_user_configs.items():
-            if (
-                hasattr(user_cfg, "google_sheet_name")
-                and hasattr(user_cfg, "jira_username")
-                and user_cfg.google_sheet_name
-                and user_cfg.jira_username
-            ):
-                google_sheet_to_jira[
-                    user_cfg.google_sheet_name.lower()
-                ] = user_cfg.jira_username
+        return assignees
 
-        # Get all feature attributes that might contain people assignments
-        # This will dynamically check all attributes of the feature
-        feature_dict = feature.dict() if hasattr(feature, "dict") else feature.__dict__
-
-        # Check each feature attribute for assignment
-        for attr_name, value in feature_dict.items():
-            # Skip non-people fields
-            if attr_name in [
-                "task_title",
-                "description",
-                "epic",
-                "priority",
-                "status",
-                "deadline",
-                "eta_hours",
-                "departments",
-                "involved_people",
-                "jira_issue_key",
-                "developer_board_issue_key",
-                "row_number",
-                "sprint",
-            ]:
-                continue
-
-            if value and str(value).strip() and str(value).strip() != "Select":
-                # If column has a value (hours or assignment), find corresponding user
-                if (
-                    str(value).strip().replace(".", "").isdigit()
-                    or ":" in str(value)
-                    or any(
-                        keyword in str(value).lower()
-                        for keyword in ["hour", "h", "ساعت"]
-                    )
-                ):
-                    # This attribute has hour assignment, try to find matching user
-                    # Look for google_sheet_name that might match this attribute
-                    for (
-                        google_sheet_name,
-                        jira_username,
-                    ) in google_sheet_to_jira.items():
-                        # Check if the google_sheet_name might correspond to this attribute
-                        # This is a fuzzy match to handle variations
-                        sheet_name_clean = google_sheet_name.replace(" ", "").lower()
-                        attr_name_clean = attr_name.replace("_", "").lower()
-
-                        # Try various matching strategies
-                        if (
-                            sheet_name_clean in attr_name_clean
-                            or attr_name_clean in sheet_name_clean
-                            or self._names_are_similar(
-                                attr_name_clean,
-                                sheet_name_clean,
-                            )
-                        ):
-                            assignees.append(jira_username)
-                            LOGGER.info(
-                                f"Matched attribute '{attr_name}' with user '{google_sheet_name}' -> '{jira_username}'",
-                            )
-                            break
-
-        # Fallback: use involved_people field if no specific people are assigned
-        if not assignees and feature.involved_people:
-            # Parse involved_people field for names
-            involved = feature.involved_people.split(",")
-            for person in involved:
-                person = person.strip()
-                # Try to find matching google_sheet_name
-                for google_sheet_name, jira_username in google_sheet_to_jira.items():
-                    if (
-                        person.lower() in google_sheet_name.lower()
-                        or google_sheet_name.lower() in person.lower()
-                    ):
-                        assignees.append(jira_username)
-                        break
-
-        LOGGER.info(
-            f"Extracted assignees for feature '{feature.task_title}': {assignees}",
-        )
-        return list(set(assignees))  # Remove duplicates
-
-    def _names_are_similar(self, name1: str, name2: str) -> bool:
-        """Check if two names are similar (basic fuzzy matching).
-
-        Args:
-            name1: First name to compare
-            name2: Second name to compare
-
-        Returns:
-            True if names are considered similar
-        """
-        # Remove common variations and check for similarity
-        name1_variants = [name1, name1.replace("dr_", ""), name1.replace("_", "")]
-        name2_variants = [name2, name2.replace("dr_", ""), name2.replace("_", "")]
-
-        for n1 in name1_variants:
-            for n2 in name2_variants:
-                if n1 == n2 or n1 in n2 or n2 in n1:
-                    return True
-
-        return False
 
     async def _process_feature(
         self,
@@ -300,8 +192,7 @@ class SynthPMUseCase:
             sync_results: Dictionary to track sync results
         """
         try:
-            # Always create PM Board task if needed
-            if not (feature.jira_issue_key and feature.task_title is not None):  # 
+            if not (feature.jira_issue_key and feature.task_title is not None and feature.developer_board_issue_key is not None):  #
                 if feature.last_sprint is None:
                     return
                 issue_key = await self.repository.create_jira_task_from_feature(feature)
@@ -333,8 +224,7 @@ class SynthPMUseCase:
                     )
                     return
 
-            # Check if existing Jira task needs updating
-            elif feature.jira_issue_key:
+            elif feature.jira_issue_key and feature.developer_board_issue_key:
                 success = await self.repository.update_jira_task_from_feature(feature)
                 if success:
                     sync_results["updated_jira_tasks"] += 1
@@ -344,7 +234,6 @@ class SynthPMUseCase:
                     )
 
                 if feature.developer_board_issue_key:
-                    # Update assignees based on current feature data
                     assignees = self._extract_assignees_from_feature(feature)
                     developer_board_success = (
                         await self.repository.update_developer_board_task_from_feature(
@@ -356,6 +245,10 @@ class SynthPMUseCase:
                         sync_results["updated_developer_board_tasks"] = (
                             sync_results.get("updated_developer_board_tasks", 0) + 1
                         )
+            else:
+                raise ValueError(
+                    f"Feature {feature.task_title} has no Jira or Developer Board issue key",
+                )
 
             # NO DIRECT TELEGRAM POSTING - Only for releases
             # Telegram notifications are now handled via sync_release_notes method
@@ -374,7 +267,6 @@ class SynthPMUseCase:
         try:
             LOGGER.info("Starting Release Notes synchronization")
 
-            # Get release notes from the Release Notes sheet
             release_notes = await self.repository.get_release_notes()
             if not release_notes:
                 return {"status": "success", "message": "No release notes found"}
@@ -387,12 +279,9 @@ class SynthPMUseCase:
 
             for release in release_notes:
                 try:
-                    # Check if this release needs to be posted or updated
                     if not release.telegram_message_id:
-                        # New release - post to Telegram
                         message_id = await self._post_release_to_telegram(release)
                         if message_id:
-                            # Update the sheet with message ID for tracking
                             await self.repository.update_release_note(
                                 release.row_number,
                                 {
@@ -402,7 +291,6 @@ class SynthPMUseCase:
                             )
                             sync_results["posted_releases"] += 1
                     else:
-                        # Existing release - check if needs updating
                         should_update = await self._should_update_release(release)
                         if should_update:
                             success = await self._update_release_in_telegram(release)
@@ -482,7 +370,6 @@ class SynthPMUseCase:
             )
 
             if success:
-                # Update last_updated timestamp
                 await self.repository.update_release_note(
                     release.row_number,
                     {"last_updated": datetime.now()},
@@ -546,7 +433,6 @@ class SynthPMUseCase:
                 ],
             )
 
-        # Add release hashtag
         release_hashtag = (
             f"#{release.release_version.replace(' ', '_').replace('.', '_')}"
         )
@@ -581,12 +467,10 @@ class SynthPMUseCase:
         Returns:
             True if should post, False otherwise
         """
-        # Post on status change to trigger value
         if feature.status == self.settings.status_trigger_value:
             return True
 
-        # Post on specific status changes that indicate progress
-        important_statuses = ["۶", "۷", "۸"]  # در حال پیاده سازی, تست فنی, آماده تحویل
+        important_statuses = ["۶", "۷", "۸"] 
         if feature.status in important_statuses:
             return True
 
@@ -636,7 +520,6 @@ class SynthPMUseCase:
         Returns:
             Formatted Telegram message
         """
-        # Start with epic hashtag if available
         hashtags = []
         if feature.epic:
             # Convert epic name to hashtag format
@@ -671,7 +554,6 @@ class SynthPMUseCase:
         if feature.involved_people:
             message_parts.append(f"👥 *Team:* {feature.involved_people}")
 
-        # Show component assignments
         components = []
         if feature.ai:
             components.append(f"🤖 AI: {feature.ai}")

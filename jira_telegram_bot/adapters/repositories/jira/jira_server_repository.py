@@ -912,3 +912,36 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 f"Error linking issues {dependent_issue_key} -> {dependency_issue_key}: {e}",
             )
             return False
+
+    def get_issue_subtasks(self, issue_key: str) -> List[Issue]:
+        """Get all subtasks for a given Jira issue.
+
+        Args:
+            issue_key: The key of the parent issue
+
+        Returns:
+            List of subtask issues
+        """
+        try:
+            issue = self.get_issue(issue_key)
+            return [subtask for subtask in issue.fields.subtasks]
+        except Exception as e:
+            LOGGER.error(f"Error getting subtasks for issue {issue_key}: {e}")
+            return []
+    
+    def delete_issue(self, issue_key: str) -> bool:
+        """Delete a Jira issue.
+
+        Args:
+            issue_key: The key of the issue to delete
+
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        try:
+            self.jira.delete_issue(issue_key)
+            LOGGER.info(f"Successfully deleted issue {issue_key}")
+            return True
+        except Exception as e:
+            LOGGER.error(f"Error deleting issue {issue_key}: {e}")
+            return False
