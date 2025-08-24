@@ -179,7 +179,6 @@ class SynthPMUseCase:
 
         return assignees
 
-
     async def _process_feature(
         self,
         feature: SynthPMFeatureEntity,
@@ -192,7 +191,11 @@ class SynthPMUseCase:
             sync_results: Dictionary to track sync results
         """
         try:
-            if not (feature.jira_issue_key and feature.task_title is not None and feature.developer_board_issue_key is not None):  #
+            if not (
+                feature.jira_issue_key
+                and feature.task_title is not None
+                and feature.developer_board_issue_key is not None
+            ):  #
                 if feature.last_sprint is None:
                     return
                 issue_key = await self.repository.create_jira_task_from_feature(feature)
@@ -238,7 +241,7 @@ class SynthPMUseCase:
                     developer_board_success = (
                         await self.repository.update_developer_board_task_from_feature(
                             feature,
-                            assignees=assignees,
+                            feature_assignees=assignees,
                         )
                     )
                     if developer_board_success:
@@ -470,7 +473,7 @@ class SynthPMUseCase:
         if feature.status == self.settings.status_trigger_value:
             return True
 
-        important_statuses = ["۶", "۷", "۸"] 
+        important_statuses = ["۶", "۷", "۸"]
         if feature.status in important_statuses:
             return True
 
@@ -702,7 +705,6 @@ class SynthPMUseCase:
             if status:
                 # Map Jira status to sheet status using reverse mapping
                 reverse_status_mapping = self.repository.get_reverse_status_mapping()
-
 
                 sheet_status = reverse_status_mapping.get(status)
                 if sheet_status and sheet_status != feature.status:

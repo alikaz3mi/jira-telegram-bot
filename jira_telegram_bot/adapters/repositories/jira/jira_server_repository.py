@@ -239,7 +239,9 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         if task_data.epic_link:
             issue_fields[self.jira_epic_link_id] = task_data.epic_link
         if task_data.releases:
-            issue_fields["fixVersions"] = [{"name": release} for release in task_data.releases]
+            issue_fields["fixVersions"] = [
+                {"name": release} for release in task_data.releases
+            ]
         if task_data.release:
             issue_fields["fixVersions"] = {"name": task_data.release}
         if task_data.assignee:
@@ -509,6 +511,18 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             )
         except Exception as e:
             LOGGER.error(f"Error updating time estimate for issue {issue_key}: {e}")
+
+    def get_issue_spent_time_in_seconds(self, issue_key: str) -> int:
+        """
+        Get the total time spent on an issue in seconds.
+        """
+        try:
+            worklogs = self.jira.worklogs(issue_key)
+            total_seconds = sum(worklog.timeSpentSeconds for worklog in worklogs)
+            return total_seconds
+        except Exception as e:
+            LOGGER.error(f"Error fetching worklogs for issue {issue_key}: {e}")
+            return 0
 
     def get_issues_with_approaching_deadlines(
         self,
@@ -850,7 +864,12 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             LOGGER.error(f"Error getting issue link types: {e}")
             return []
 
-    def link_issues(self, dependent_issue_key: str, dependency_issue_key: str, link_type: str = "Dependency") -> bool:
+    def link_issues(
+        self,
+        dependent_issue_key: str,
+        dependency_issue_key: str,
+        link_type: str = "Dependency",
+    ) -> bool:
         """Link two Jira issues with a specified relationship.
 
         Args:
@@ -864,35 +883,41 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         try:
             # Get available link types to find a suitable one
             available_link_types = self.get_issue_link_types()
-            
+
             # First try to find the exact link type requested
             selected_link_type = None
             for link in available_link_types:
                 if link["name"].lower() == link_type.lower():
                     selected_link_type = link["name"]
                     break
-            
+
             # If requested link type not found, try common alternatives
             if not selected_link_type:
-                fallback_types = ["Blocks", "Relates to", "Relates", "Clones", "Duplicates"]
+                fallback_types = [
+                    "Blocks",
+                    "Relates to",
+                    "Relates",
+                    "Clones",
+                    "Duplicates",
+                ]
                 for fallback in fallback_types:
                     for link in available_link_types:
                         if link["name"].lower() == fallback.lower():
                             selected_link_type = link["name"]
                             LOGGER.warning(
-                                f"Link type '{link_type}' not found, using '{selected_link_type}' instead"
+                                f"Link type '{link_type}' not found, using '{selected_link_type}' instead",
                             )
                             break
                     if selected_link_type:
                         break
-            
+
             # If still no link type found, use the first available one
             if not selected_link_type and available_link_types:
                 selected_link_type = available_link_types[0]["name"]
                 LOGGER.warning(
-                    f"Link type '{link_type}' not found, using first available: '{selected_link_type}'"
+                    f"Link type '{link_type}' not found, using first available: '{selected_link_type}'",
                 )
-            
+
             if not selected_link_type:
                 LOGGER.error("No issue link types available in Jira")
                 return False
@@ -928,7 +953,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error getting subtasks for issue {issue_key}: {e}")
             return []
-    
+
     def delete_issue(self, issue_key: str) -> bool:
         """Delete a Jira issue.
 
