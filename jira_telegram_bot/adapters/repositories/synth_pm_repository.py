@@ -177,6 +177,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             PM Board Jira issue key if successful, None otherwise
         """
+        # TODO: set start date and target end date for each task
         try:
             due_date = None
             if feature.deadline:
@@ -351,6 +352,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     update_fields["priority"] = {
                         "name": feature_priority,
                     }
+            
+            if feature.sprint is None and issue.fields.__dict__.get(self.jira_repository.jira_sprint_id) is not None:
+                update_fields[self.jira_repository.jira_sprint_id] = None
+                
+                # For PM board, no need to change the sprint. It is only in active sprint or no sprint
+
 
             if feature.deadline:
                 feature_duedate = feature.deadline.strftime("%Y-%m-%d")
@@ -380,7 +387,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             current_components = [comp.name for comp in issue.fields.components]
             if set(current_components) != set(components):
                 update_fields["components"] = [{"name": comp} for comp in components]
-
+            
             if feature.status:
                 jira_status = self._determine_jira_status(feature)
                 self._transition_issue_to_status(issue.key, jira_status)
@@ -390,7 +397,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     feature.developer_board_issue_key,
                 )
                 developer_assignee = (
-                    developer_issue.fields.assignee.name if developer_issue else None
+                    developer_issue.fields.assignee.name if developer_issue and developer_issue.fields.assignee else None
                 )
                 if developer_assignee:
                     sheet_username = self.user_config.get_user_config_by_jira_username(
@@ -415,7 +422,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if developer_issue:
                     developer_assignee = [developer_issue.fields.assignee.name]
                     subtasks_assignees = [
-                        subtask.fields.assignee.name
+                        self.jira_repository.get_issue(subtask.key).fields.assignee.name
                         for subtask in developer_issue.fields.subtasks
                     ]
                     all_assignees = list(set(developer_assignee + subtasks_assignees))
@@ -445,7 +452,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             else:
                 LOGGER.error(f"Invalid update. Not handled for {feature} and {issue}")
-                raise ValueError("Invalid issue type")
 
             if update_fields:
                 update_fields["project"] = {"key": self.settings.pm_project_key}
@@ -601,6 +607,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         # TODO: If task has two sprints, handle it.
         # TODO: If the issue is only updated in the google sheet board (i.e its times and stuff, handle it)
+        # TODO: set start date and target end date for each task
         try:
             if not feature.jira_issue_key:
                 LOGGER.error("Cannot create task without existing PM Board task")
@@ -788,6 +795,21 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         if release
                     ]
 
+            if feature.sprint is None and issue.fields.__dict__.get(self.jira_repository.jira_sprint_id) is not None:
+                update_fields[self.jira_repository.jira_sprint_id] = None
+
+            elif feature.sprint is not None and issue.fields.__dict__.get(self.jira_repository.jira_sprint_id) is not None:
+                # Check if sprints are equal
+                sprint_id = feature.sprint.split(':')[0]
+                sprint = self.jira_repository.get_sprint_by_id(sprint_id, self.developer_board_id)
+                if sprint.get('name') is None:
+                    update_fields[self.jira_repository.jira_sprint_id] = sprint.get('id') # TODO: test
+            elif feature.sprint is not None and issue.fields.__dict__.get(self.jira_repository.jira_sprint_id) is None:
+                sprint_id = feature.sprint.split(':')[0]
+                sprint = self.jira_repository.get_sprint_by_id(sprint_id, self.developer_board_id)
+                if sprint.get('state') != 'closed':
+                    update_fields[self.jira_repository.jira_sprint_id] = sprint.get('id') # TODO: test
+
             if feature_assignees and len(feature_assignees) > 1 and feature.description:
                 current_desc = issue.fields.description or ""
                 preserved_lines = []
@@ -965,7 +987,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             else:
                 LOGGER.error(f"Invalid update. Not handled for {feature} and {issue}")
-                raise ValueError("Invalid issue type")
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -1321,7 +1342,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 deadline=parse_date(get_mapped_value("deadline")),
                 sprint=(
                     get_mapped_value("sprint")
-                    if get_mapped_value("sprint") != "Select"
+                    if get_mapped_value("sprint") not in ["Select", ""]
                     else None
                 ),
                 last_sprint=last_sprint if "last_sprint" in locals() else None,
@@ -1659,7 +1680,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     assignee=assignee,
                     parent_issue_key=parent_issue_key,
                     due_date=due_date,
-                    story_points=story_points / 8 if story_points else 0,
+                    story_points=story_points / 8 if story_points else 0, # TODO: 0 or None?
                 )
 
                 subtask_issue = self.jira_repository.create_task(subtask_data)
