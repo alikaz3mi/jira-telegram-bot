@@ -275,7 +275,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     project_key=project_key,
                     name=feature.version,
                 )
-            task_data.releases = task_data.releases + [feature.version] if task_data.releases else [feature.version]
+            task_data.releases = (
+                task_data.releases + [feature.version]
+                if task_data.releases
+                else [feature.version]
+            )
 
     def _create_release_not_exist_during_update(
         self,
@@ -294,7 +298,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     project_key=project_key,
                     name=feature.version,
                 )
-        
+
     async def update_jira_task_from_feature(
         self,
         feature: SynthPMFeatureEntity,
@@ -325,10 +329,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if feature.release != None or feature.version != None:
                 if set([feature.release, feature.version]) != set(
-                    issue.fields.fixVersions
+                    issue.fields.fixVersions,
                 ):  # Replace with actual custom field ID
-                    self._create_release_not_exist_during_update(feature, self.settings.pm_project_key)
-                    update_fields["fixVersions"] = [{"name": release} for release in [feature.release, feature.version] if release]
+                    self._create_release_not_exist_during_update(
+                        feature,
+                        self.settings.pm_project_key,
+                    )
+                    update_fields["fixVersions"] = [
+                        {"name": release}
+                        for release in [feature.release, feature.version]
+                        if release
+                    ]
 
             if feature.description:
                 if feature.description != issue.fields.description:
@@ -352,7 +363,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     != issue.fields.timetracking.originalEstimateSeconds
                 ):
                     logged_time = self.jira_repository.get_issue_spent_time_in_seconds(
-                        issue.key
+                        issue.key,
                     )
                     remaining_estimate = (
                         int((feature.total_hours * 3600 - logged_time) / 3600)
@@ -376,14 +387,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if feature.involved_people and issue.fields.issuetype.name == "Task":
                 developer_issue = self.jira_repository.get_issue(
-                    feature.developer_board_issue_key
+                    feature.developer_board_issue_key,
                 )
                 developer_assignee = (
                     developer_issue.fields.assignee.name if developer_issue else None
                 )
                 if developer_assignee:
                     sheet_username = self.user_config.get_user_config_by_jira_username(
-                        developer_assignee
+                        developer_assignee,
                     ).google_sheet_name
                     for idx, label in enumerate(issue.fields.labels):
                         if sheet_username in label:
@@ -394,12 +405,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                                 update_fields["labels"] = list(
                                     set(issue.fields.labels)
                                     - {sheet_username}
-                                    + {feature.involved_people.replace(" ", "-")}
+                                    + {feature.involved_people.replace(" ", "-")},
                                 )
                                 break
             elif feature.involved_people and issue.fields.issuetype.name == "Story":
                 developer_issue = self.jira_repository.get_issue(
-                    feature.developer_board_issue_key
+                    feature.developer_board_issue_key,
                 )
                 if developer_issue:
                     developer_assignee = [developer_issue.fields.assignee.name]
@@ -413,7 +424,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     for assignee in all_assignees:
                         sheet_username = (
                             self.user_config.get_user_config_by_jira_username(
-                                assignee
+                                assignee,
                             ).google_sheet_name
                         )
                         sheet_usernames.append(sheet_username)
@@ -429,7 +440,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             ]
                             if set(sheet_usernames) != set(names):
                                 update_fields["labels"] = list(
-                                    set(issue.fields.labels) - {sheet_username}
+                                    set(issue.fields.labels) - {sheet_username},
                                 ) + [feature.involved_people.replace(" ", "-")]
 
             else:
@@ -485,7 +496,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             return []
 
     async def get_release_note_by_version(
-        self, version: str
+        self,
+        version: str,
     ) -> Optional[ReleaseNoteEntity]:
         """Get a specific release note by version from Google Sheets.
 
@@ -764,10 +776,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if feature.release != None or feature.version != None:
                 if set([feature.release, feature.version]) != set(
-                    issue.fields.fixVersions
+                    issue.fields.fixVersions,
                 ):  # Replace with actual custom field ID
-                    self._create_release_not_exist_during_update(feature, self.settings.developer_board_project_key)
-                    update_fields["fixVersions"] = [{"name": release} for release in [feature.release, feature.version] if release]
+                    self._create_release_not_exist_during_update(
+                        feature,
+                        self.settings.developer_board_project_key,
+                    )
+                    update_fields["fixVersions"] = [
+                        {"name": release}
+                        for release in [feature.release, feature.version]
+                        if release
+                    ]
 
             if feature_assignees and len(feature_assignees) > 1 and feature.description:
                 current_desc = issue.fields.description or ""
@@ -855,7 +874,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # TODO: previously assigned users must be removed + previously assigneed tasks
 
                 update_fields["labels"] = [
-                    {"name": list(set(issue.fields.labels + [feature.involved_people]))}
+                    {
+                        "name": list(
+                            set(issue.fields.labels + [feature.involved_people]),
+                        ),
+                    },
                 ]
             elif check_for_change_from_task_to_story:
                 # TODO: change task type to Story, and assignee to users
@@ -879,7 +902,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     ):
                         time_logged = (
                             self.jira_repository.get_issue_spent_time_in_seconds(
-                                issue.key
+                                issue.key,
                             )
                         )
                         remaining_estimate = (
@@ -901,22 +924,28 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if feature.involved_people and issue.fields.issuetype.name == "Task":
                 LOGGER.debug(
-                    "skip checks. issue of type task doesn't have label for assignees. Issue type must be changed to Story if more than one person is involved"
+                    "skip checks. issue of type task doesn't have label for assignees. Issue type must be changed to Story if more than one person is involved",
                 )
                 if len(feature_assignees) > 1:
                     update_fields["labels"] = [
-                        feature.involved_people.replace(" ", "-")
+                        feature.involved_people.replace(" ", "-"),
                     ]
             elif feature.involved_people and issue.fields.issuetype.name == "Story":
-                all_assignees = list(set([
-                    self.jira_repository.get_issue(subtask.key).fields.assignee.name
-                    for subtask in issue.fields.subtasks
-                ]))
+                all_assignees = list(
+                    set(
+                        [
+                            self.jira_repository.get_issue(
+                                subtask.key,
+                            ).fields.assignee.name
+                            for subtask in issue.fields.subtasks
+                        ],
+                    ),
+                )
                 sheet_usernames = []
                 label_index = None
                 for assignee in all_assignees:
                     sheet_username = self.user_config.get_user_config_by_jira_username(
-                        assignee
+                        assignee,
                     ).google_sheet_name
                     sheet_usernames.append(sheet_username)
                     if label_index is None:
@@ -931,7 +960,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     ]
                     if set(sheet_usernames) != set(names):
                         update_fields["labels"] = list(
-                            set(issue.fields.labels) - {sheet_username}
+                            set(issue.fields.labels) - {sheet_username},
                         ) + [name.replace(" ", "-") for name in names]
 
             else:
@@ -1615,7 +1644,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     )
 
                 story_points = self._get_assignee_story_points(
-                    assignee, feature, component
+                    assignee,
+                    feature,
+                    component,
                 )
 
                 subtask_data = TaskData(
@@ -1757,7 +1788,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             link_types = self.jira_repository.get_issue_link_types()
             LOGGER.info(
-                f"Available Jira link types: {[lt['name'] for lt in link_types]}"
+                f"Available Jira link types: {[lt['name'] for lt in link_types]}",
             )
             for link_type in link_types:
                 LOGGER.debug(
@@ -1788,8 +1819,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if component:
                 story_points = int(
                     feature.__getattribute__(
-                        component.lower().strip("-").replace("-", "")
-                    )
+                        component.lower().strip("-").replace("-", ""),
+                    ),
                 )
             else:
                 story_points = None
@@ -1797,7 +1828,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         except Exception as e:
             LOGGER.error(
-                f"Error calculating story points for {feature.task_title}: {e}"
+                f"Error calculating story points for {feature.task_title}: {e}",
             )
             return None
 
@@ -1836,7 +1867,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             subtask_assignees = {}
             for subtask in subtasks:
                 assignee_name = self.jira_repository.get_issue(
-                    subtask.key
+                    subtask.key,
                 ).fields.assignee.name
                 if assignee_name:
                     current_assignees.add(assignee_name)
@@ -1848,7 +1879,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # If assignees haven't changed, update time estimates on existing subtasks
             if set(feature_assignees) == current_assignees:
                 await self._update_subtask_time_estimates(
-                    subtasks, feature_assignees, feature
+                    subtasks,
+                    feature_assignees,
+                    feature,
                 )
                 return True
 
@@ -1863,7 +1896,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         # Delete the subtask
                         self.jira_repository.delete_issue(subtask.key)
                         LOGGER.info(
-                            f"Deleted subtask {subtask.key} for removed assignee {old_assignee}"
+                            f"Deleted subtask {subtask.key} for removed assignee {old_assignee}",
                         )
 
                 # Create or update subtasks for assignees (excluding main assignee)
@@ -1871,13 +1904,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if assignee not in subtask_assignees:
                         # Create new subtask
                         await self._create_subtask_for_assignee(
-                            issue_key, assignee, feature
+                            issue_key,
+                            assignee,
+                            feature,
                         )
                     else:
                         # Update existing subtask time estimate
                         subtask = subtask_assignees[assignee]
                         await self._update_subtask_time_estimate(
-                            subtask, assignee, feature
+                            subtask,
+                            assignee,
+                            feature,
                         )
 
             return True
@@ -1909,7 +1946,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             )
             if not component:
                 LOGGER.warning(
-                    f"No component found for user {assignee}, skipping component assignment"
+                    f"No component found for user {assignee}, skipping component assignment",
                 )
 
             # Get time allocation for this assignee
@@ -1933,7 +1970,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             subtask_issue = self.jira_repository.create_task(subtask_data)
             if subtask_issue:
                 LOGGER.info(
-                    f"Created subtask {subtask_issue.key} for assignee {assignee}"
+                    f"Created subtask {subtask_issue.key} for assignee {assignee}",
                 )
                 return subtask_issue.key
 
@@ -1958,7 +1995,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         for subtask in subtasks:
             subtask_assignee = self.jira_repository.get_issue(
-                subtask.key
+                subtask.key,
             ).fields.assignee.name
             if subtask_assignee in feature_assignees:
                 await self._update_subtask_time_estimate(
@@ -1989,7 +2026,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # Get time allocation for this assignee
             # TODO: get issue of subtask from the very first function call to avoid lots of redundant calls
             story_point_hour = self._get_assignee_story_points(
-                assignee, feature, component
+                assignee,
+                feature,
+                component,
             )
             issue = self.jira_repository.get_issue(subtask.key)
             # Update subtask if story points changed
@@ -2009,7 +2048,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # TODO: update the time correctly
                 logged_time = int(
                     self.jira_repository.get_issue_spent_time_in_seconds(subtask.key)
-                    / 3600
+                    / 3600,
                 )
                 remaining_estimate = (
                     story_point_hour - logged_time
@@ -2024,7 +2063,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 }
                 subtask.update(fields=update_fields)
                 LOGGER.info(
-                    f"Updated time estimate for subtask {subtask.key}: {story_point_hour} story points"
+                    f"Updated time estimate for subtask {subtask.key}: {story_point_hour} story points",
                 )
 
         except Exception as e:
