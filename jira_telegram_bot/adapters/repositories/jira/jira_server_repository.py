@@ -287,7 +287,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             sprint_name=None,
             epic_link=getattr(issue.fields, self.jira_epic_link_id, None),
             release=(
-                issue.fields.fixVersions[0].name if issue.fields.fixVersions else None
+                issue.fields.fixVersions[0].name if issue.fields.fixVersions else None   # TODO: only one relesase is set:-?
             ),
             assignee=getattr(issue.fields.assignee, "displayName", None),
             priority=getattr(issue.fields.priority, "name", None),

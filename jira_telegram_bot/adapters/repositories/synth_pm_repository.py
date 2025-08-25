@@ -275,8 +275,26 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     project_key=project_key,
                     name=feature.version,
                 )
-            task_data.releases = task_data.releases + [feature.version]
+            task_data.releases = task_data.releases + [feature.version] if task_data.releases else [feature.version]
 
+    def _create_release_not_exist_during_update(
+        self,
+        feature: SynthPMFeatureEntity,
+        project_key: str,
+    ):
+        if feature.release:
+            if not self.jira_repository.release_exist(project_key, feature.release):
+                self.jira_repository.create_release(
+                    project_key=project_key,
+                    name=feature.release,
+                )
+        if feature.version:
+            if not self.jira_repository.release_exist(project_key, feature.version):
+                self.jira_repository.create_release(
+                    project_key=project_key,
+                    name=feature.version,
+                )
+        
     async def update_jira_task_from_feature(
         self,
         feature: SynthPMFeatureEntity,
@@ -309,7 +327,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if set([feature.release, feature.version]) != set(
                     issue.fields.fixVersions
                 ):  # Replace with actual custom field ID
-                    update_fields["fixVersions"] = [feature.release, feature.version]
+                    self._create_release_not_exist_during_update(feature, self.settings.pm_project_key)
+                    update_fields["fixVersions"] = [{"name": release} for release in [feature.release, feature.version] if release]
 
             if feature.description:
                 if feature.description != issue.fields.description:
@@ -747,7 +766,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if set([feature.release, feature.version]) != set(
                     issue.fields.fixVersions
                 ):  # Replace with actual custom field ID
-                    update_fields["fixVersions"] = [feature.release, feature.version]
+                    self._create_release_not_exist_during_update(feature, self.settings.developer_board_project_key)
+                    update_fields["fixVersions"] = [{"name": release} for release in [feature.release, feature.version] if release]
 
             if feature_assignees and len(feature_assignees) > 1 and feature.description:
                 current_desc = issue.fields.description or ""
@@ -888,11 +908,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         feature.involved_people.replace(" ", "-")
                     ]
             elif feature.involved_people and issue.fields.issuetype.name == "Story":
-                all_assignees = [
-                    subtask.fields.assignee.name
+                all_assignees = list(set([
+                    self.jira_repository.get_issue(subtask.key).fields.assignee.name
                     for subtask in issue.fields.subtasks
-                    if subtask.fields.assignee
-                ]
+                ]))
                 sheet_usernames = []
                 label_index = None
                 for assignee in all_assignees:
@@ -902,18 +921,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     sheet_usernames.append(sheet_username)
                     if label_index is None:
                         for i, label in enumerate(issue.fields.labels):
-                            if label == sheet_username:
+                            if sheet_username in label:
                                 label_index = i
                                 break
-                    if label_index is not None:
-                        names = [
-                            name.strip(" ")
-                            for name in issue.fields.labels[label_index].split("-")
-                        ]
-                        if set(sheet_usernames) != set(names):
-                            update_fields["labels"] = list(
-                                set(issue.fields.labels) - {sheet_username}
-                            ) + [name.replace(" ", "-") for name in names]
+                if label_index is not None:
+                    names = [
+                        name.strip(" ")
+                        for name in issue.fields.labels[label_index].split("---")
+                    ]
+                    if set(sheet_usernames) != set(names):
+                        update_fields["labels"] = list(
+                            set(issue.fields.labels) - {sheet_username}
+                        ) + [name.replace(" ", "-") for name in names]
 
             else:
                 LOGGER.error(f"Invalid update. Not handled for {feature} and {issue}")
@@ -1609,7 +1628,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     assignee=assignee,
                     parent_issue_key=parent_issue_key,
                     due_date=due_date,
-                    story_points=story_points,
+                    story_points=story_points / 8 if story_points else 0,
                 )
 
                 subtask_issue = self.jira_repository.create_task(subtask_data)
@@ -1908,7 +1927,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 due_date=feature.deadline.strftime("%Y-%m-%d")
                 if feature.deadline
                 else None,
-                story_points=story_points,
+                story_points=story_points / 8 if story_points else 0,
             )
 
             subtask_issue = self.jira_repository.create_task(subtask_data)
