@@ -228,6 +228,8 @@ class SynthPMUseCase:
                     return
 
             elif feature.jira_issue_key and feature.developer_board_issue_key:
+                if feature.jira_issue_key == 'PCD-412':
+                    x = 1
                 success = await self.repository.update_jira_task_from_feature(feature)
                 if success:
                     sync_results["updated_jira_tasks"] += 1
