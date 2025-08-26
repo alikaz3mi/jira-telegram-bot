@@ -64,6 +64,7 @@ class UserConfig(UserConfigInterface):
         for user_config in self.user_config.values():
             if user_config.jira_username.lower() == jira_username.lower():
                 return user_config
+        LOGGER.debug(f"User config not found for JIRA username: {jira_username}")
         return None
 
     def save_user_config(

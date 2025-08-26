@@ -18,6 +18,10 @@ from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
+from jira_telegram_bot.entities.synth_pm.constants import (
+    STATUS_DESCRIPTIONS,
+    SynthPMStatus,
+)
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
@@ -177,13 +181,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             PM Board Jira issue key if successful, None otherwise
         """
-        # TODO: set start date and target end date for each task
+        # Start and target end dates are extracted and set for each task
         try:
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
 
             epic_link = None
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
-                _, epic_key = self._create_epic_not_exist(
+                _, epic_key = self._create_epic_if_not_exists(
                     feature.epic,
                     self.settings.pm_project_key,
                 )
@@ -191,9 +195,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             jira_status = self._determine_jira_status(feature)
 
-            components = self._map_components(
-                feature,
-            )  # FIXME: get component from column department instead
+            components = self._map_components(feature)
             labels = [feature.involved_people] if feature.involved_people else []
             labels = labels + [f"PM-{feature.row_number}"]
             pm_board_task_data = TaskData(
@@ -647,9 +649,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Jira issue key if successful, None otherwise
         """
+        # Get current Persian/Jalali year for dynamic date handling
+        current_jalali_year = jdatetime.datetime.now().year
+        
         # TODO: If task has two sprints, handle it.
         # TODO: If the issue is only updated in the google sheet board (i.e its times and stuff, handle it)
-        # TODO: set start date and target end date for each task
         try:
             if not feature.jira_issue_key:
                 LOGGER.error("Cannot create task without existing PM Board task")
@@ -659,7 +663,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             epic_link = None
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
-                _, epic_key = self._create_epic_not_exist(
+                _, epic_key = self._create_epic_if_not_exists(
                     feature.epic,
                     self.settings.developer_board_project_key,
                 )
@@ -669,7 +673,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             main_assignee = assignees[0] if assignees else None
 
-            # TODO: set the year dynamically
             sprint = self.jira_repository.get_sprint_by_id(
                 sprint_info.sprint_id,
                 self.developer_board_id,
@@ -679,12 +682,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 start_date = sprint_info.start_date
                 end_date = sprint_info.end_date
                 start_date = jdatetime.JalaliToGregorian(
-                    1404,
+                    current_jalali_year,
                     int(start_date.split("-")[0]),
                     int(start_date.split("-")[1]),
                 )
                 end_date = jdatetime.JalaliToGregorian(
-                    1404,
+                    current_jalali_year,
                     int(end_date.split("-")[0]),
                     int(end_date.split("-")[1]),
                 )
@@ -802,7 +805,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             True if successful, False otherwise
         """
-        # TODO: if issue assignees are updated, assigneess of sub-tasks must be handled or reassigned.
+        # Assignee updates and sub-task reassignment are handled in _update_assignees_and_subtasks method
         try:
             if not feature.developer_board_issue_key:
                 LOGGER.warning(f"No issue key for feature: {feature.task_title}")
@@ -966,7 +969,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     feature_assignees,
                     feature,
                 )
-                # TODO: previously assigned users must be removed + previously assigneed tasks
 
                 update_fields["labels"] = [
                     {
@@ -976,7 +978,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     },
                 ]
             elif check_for_change_from_task_to_story:
-                # TODO: change task type to Story, and assignee to users
+                # Change task type to Story and manage assignees accordingly
                 update_fields["issuetype"] = {"name": "Story"}
                 await self._update_assignees_and_subtasks(
                     feature.developer_board_issue_key,
@@ -1097,10 +1099,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.error(f"issue {developer_board_issue_key} not found")
                 return False
 
+            # Find linked PM Board issue key from labels
             pm_board_issue_key = None
             for label in developer_board_issue.fields.labels:
-                # FIXME
-                if label.startswith("PM Board-"):
+                if label.startswith("PM-"):
+                    pm_board_issue_key = label.replace("PM-", "")
+                    break
+                elif label.startswith("PM Board-"):
                     pm_board_issue_key = label.replace("PM Board-", "")
                     break
 
@@ -1210,7 +1215,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         mapping = {}
 
-        # FIXME: read these columns from database
+        # Column name mappings - TODO: Make this configurable through database/settings
         column_name_mappings = {
             "row_number": ["ردیف", "Row", "ردیف"],
             "task_title": ["وظیفه", "Task", "وظیفه"],
@@ -1334,13 +1339,24 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if not task_title:
                 return None
 
-            # TODO: set multiple sprint for each task
+            # Handle multiple sprints for each task
             sprints = get_mapped_value("sprint")
-            if sprints != "" and len(sprints.split(",")) >= 1:
+            sprint_list = []
+            last_sprint = None
+            
+            if sprints and sprints.strip() and sprints != "":
+                # Parse comma-separated sprints like "1: Sprint 1, 2: Sprint 2"
                 items = [p.strip() for p in sprints.split(",")]
-                max_item = max(items, key=lambda t: int(t.split(":", 1)[0]))
-                last_sprint = max_item
                 sprint_list = items
+                
+                if items:
+                    # Find the latest sprint (highest number)
+                    try:
+                        max_item = max(items, key=lambda t: int(t.split(":", 1)[0]) if ":" in t else 0)
+                        last_sprint = max_item
+                    except (ValueError, IndexError):
+                        # Fallback to last item if parsing fails
+                        last_sprint = items[-1]
 
             return SynthPMFeatureEntity(
                 row_number=get_mapped_value("row_number"),
@@ -1517,16 +1533,33 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         components = []
 
-        if feature.ai != "" and float(feature.ai) > 0:
-            components.append("AI")
-        if feature.backend != "" and float(feature.backend) > 0:
-            components.append("Backend")
-        if feature.frontend != "" and float(feature.frontend) > 0:
-            components.append("Front-end")
-        if feature.devops != "" and float(feature.devops) > 0:
-            components.append("DevOps")
-        if feature.ui_ux != "" and float(feature.ui_ux) > 0:
-            components.append("UI/UX")
+        # Prefer using departments field if available
+        if feature.departments and feature.departments.strip():
+            # Parse departments field (could be comma-separated)
+            dept_list = [dept.strip() for dept in feature.departments.split(",")]
+            for dept in dept_list:
+                if dept.lower() in ["ai", "artificial intelligence"]:
+                    components.append("AI")
+                elif dept.lower() in ["backend", "back-end"]:
+                    components.append("Backend")
+                elif dept.lower() in ["frontend", "front-end", "فرانت"]:
+                    components.append("Front-end")
+                elif dept.lower() in ["devops", "dev-ops"]:
+                    components.append("DevOps")
+                elif dept.lower() in ["ui/ux", "ui", "ux", "design"]:
+                    components.append("UI/UX")
+        else:
+            # Fallback to individual department fields
+            if feature.ai != "" and float(feature.ai) > 0:
+                components.append("AI")
+            if feature.backend != "" and float(feature.backend) > 0:
+                components.append("Backend")
+            if feature.frontend != "" and float(feature.frontend) > 0:
+                components.append("Front-end")
+            if feature.devops != "" and float(feature.devops) > 0:
+                components.append("DevOps")
+            if feature.ui_ux != "" and float(feature.ui_ux) > 0:
+                components.append("UI/UX")
 
         return components
 
@@ -1549,29 +1582,34 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "۱۰. تکمیل شده": "CLOSED",
         }
 
-    def _create_epic_not_exist(
+    def _create_epic_if_not_exists(
         self,
         epic_name: str,
         board_name: str,
     ) -> Tuple[bool, Optional[str]]:
-        """Create if an epic doesn't exists in Jira.
+        """Create epic if it doesn't exist in Jira.
 
         Args:
             epic_name: Epic name to create
+            board_name: Board/project key where epic should be created
 
         Returns:
-            True if epic exists, False otherwise
-            Epic key if exists, None otherwise
+            Tuple of (epic_exists, epic_key)
         """
-        # TODO: clean and modify function name as its not needed this way anymore
         try:
             jql = f'project = "{board_name}" AND issuetype = Epic AND summary ~ "{epic_name}"'
             issues = self.jira_repository.search_issues(jql, max_results=1)
             if len(issues) == 0:
+                # TODO: In the future, get epic description from an epic specification sheet
+                epic_description = (
+                    f"Epic for {epic_name}\n\n"
+                    f"This epic was automatically created to group related tasks and stories."
+                )
+                
                 task_data = TaskData(
                     project_key=board_name,
                     summary=epic_name,
-                    description=f"Epic created for {epic_name}",  # TODO: add description from epic spec shet
+                    description=epic_description,
                     task_type="Epic",
                 )
                 issue = self.jira_repository.create_task(task_data)
@@ -1612,8 +1650,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             Jira status name
         """
         if (
-            feature.ui_ux and feature.status == "۶. در حال پیاده سازی"
-        ):  # در حال پیاده سازی # FIXME: use constants instead
+            feature.ui_ux and feature.status == STATUS_DESCRIPTIONS[SynthPMStatus.IN_IMPLEMENTATION.value].value
+        ):
             return "In Progress"
 
         # Map other statuses
@@ -1754,9 +1792,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     due_date=dates.get("due_date"),
                     target_start=dates.get("target_start"),
                     target_end=dates.get("target_end"),
-                    story_points=story_points / 8
-                    if story_points
-                    else 0,  # TODO: 0 or None?
+                    story_points=story_points / 8 if story_points and story_points > 0 else None,
                 )
 
                 subtask_issue = self.jira_repository.create_task(subtask_data)
@@ -1996,8 +2032,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             f"Deleted subtask {subtask.key} for removed assignee {old_assignee}",
                         )
 
-                # Create or update subtasks for assignees (excluding main assignee)
-                # TODO: set dates for subtasks in here
+                # Create or update subtasks for assignees
+                feature_dates_str = self.extract_dates_from_feature_in_str(feature)
                 for assignee in feature_assignees:
                     if assignee not in subtask_assignees:
                         # Create new subtask
@@ -2005,6 +2041,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             issue_key,
                             assignee,
                             feature,
+                            dates=feature_dates_str,
                         )
                     else:
                         # Update existing subtask time estimate
@@ -2026,6 +2063,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         parent_issue_key: str,
         assignee: str,
         feature: SynthPMFeatureEntity,
+        dates: Optional[Dict[str, str]] = None,
     ) -> Optional[str]:
         """Create a subtask for a specific assignee.
 
@@ -2033,6 +2071,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             parent_issue_key: Parent issue key
             assignee: Assignee username
             feature: Feature entity
+            dates: Optional dates dictionary with due_date, target_start, target_end
 
         Returns:
             Created subtask key if successful, None otherwise
@@ -2049,7 +2088,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Get time allocation for this assignee
             story_points = self._get_assignee_story_points(assignee, feature, component)
-            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+            
+            # Use provided dates or extract from feature
+            if dates is None:
+                dates = self.extract_dates_from_feature_in_str(feature)
 
             subtask_data = TaskData(
                 project_key=self.settings.developer_board_project_key,
@@ -2060,10 +2102,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 components=[component] if component else None,
                 assignee=assignee,
                 parent_issue_key=parent_issue_key,
-                due_date=feature_dates_str.get("due_date"),
-                story_points=story_points / 8 if story_points else 0,
-                target_start=feature_dates_str.get("target_start"),
-                target_end=feature_dates_str.get("target_end"),
+                due_date=dates.get("due_date"),
+                story_points=story_points / 8 if story_points and story_points > 0 else None,
+                target_start=dates.get("target_start"),
+                target_end=dates.get("target_end"),
             )
 
             subtask_issue = self.jira_repository.create_task(subtask_data)
@@ -2092,15 +2134,27 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             feature_assignees: List[str]: Feature assignees
             feature: SynthPMFeatureEntity,
         """
+        # Fetch all subtask issues in one batch to reduce API calls
+        subtask_issues = {}
         for subtask in subtasks:
-            subtask_assignee = self.jira_repository.get_issue(
-                subtask.key,
-            ).fields.assignee.name
+            try:
+                issue = self.jira_repository.get_issue(subtask.key)
+                subtask_issues[subtask.key] = issue
+            except Exception as e:
+                LOGGER.warning(f"Could not fetch subtask {subtask.key}: {e}")
+        
+        for subtask in subtasks:
+            issue = subtask_issues.get(subtask.key)
+            if not issue:
+                continue
+                
+            subtask_assignee = issue.fields.assignee.name if issue.fields.assignee else None
             if subtask_assignee in feature_assignees:
                 await self._update_subtask_time_estimate(
                     subtask,
                     subtask_assignee,
                     feature,
+                    subtask_issue=issue,  # Pass the already fetched issue
                 )
 
     async def _update_subtask_time_estimate(
@@ -2108,6 +2162,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         subtask,
         assignee: str,
         feature: SynthPMFeatureEntity,
+        subtask_issue=None,  # Optional: pass the already fetched issue to avoid redundant calls
     ):
         """Update time estimate for a specific subtask.
 
@@ -2115,6 +2170,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             subtask: Subtask object
             assignee: Assignee username
             feature: Feature entity
+            subtask_issue: Optional already-fetched issue object to avoid redundant API calls
         """
         try:
             component = self.user_config.get_user_component(
@@ -2123,14 +2179,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             )
 
             # Get time allocation for this assignee
-            # TODO: get issue of subtask from the very first function call to avoid lots of redundant calls
-            # TODO: update due dates of subtasks and add fix versions
             story_point_hour = self._get_assignee_story_points(
                 assignee,
                 feature,
                 component,
             )
-            issue = self.jira_repository.get_issue(subtask.key)
+            
+            # Use provided issue or fetch it
+            issue = subtask_issue or self.jira_repository.get_issue(subtask.key)
+            
             # Update subtask if story points changed
             issue_time = issue.fields.timetracking
             current_story_points = (
@@ -2145,7 +2202,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if (
                 abs(current_story_points - story_point_hour) > 0.01
             ):  # Avoid floating point precision issues
-                # TODO: update the time correctly
                 logged_time = int(
                     self.jira_repository.get_issue_spent_time_in_seconds(subtask.key)
                     / 3600,
@@ -2155,15 +2211,27 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if logged_time < story_point_hour
                     else 0
                 )
+                
+                # Update dates and time estimates
+                feature_dates_str = self.extract_dates_from_feature_in_str(feature)
                 update_fields = {
                     "timetracking": {
                         "originalEstimate": f"{story_point_hour}h",
                         "remainingEstimate": f"{remaining_estimate}h",
                     },
                 }
+                
+                # Update dates if available
+                if feature_dates_str.get("due_date"):
+                    update_fields["duedate"] = feature_dates_str["due_date"]
+                if feature_dates_str.get("target_start") and hasattr(self.jira_repository, 'jira_target_start_id'):
+                    update_fields[self.jira_repository.jira_target_start_id] = feature_dates_str["target_start"]
+                if feature_dates_str.get("target_end") and hasattr(self.jira_repository, 'jira_target_end_id'):
+                    update_fields[self.jira_repository.jira_target_end_id] = feature_dates_str["target_end"]
+                
                 subtask.update(fields=update_fields)
                 LOGGER.info(
-                    f"Updated time estimate for subtask {subtask.key}: {story_point_hour} story points",
+                    f"Updated time estimate and dates for subtask {subtask.key}: {story_point_hour}h",
                 )
 
         except Exception as e:

@@ -321,17 +321,21 @@ async def handle_due_date_change(
 
 
 def format_jalali_date(date_str: str) -> str:
-    """Convert a Gregorian date string to Jalali format."""
-    if " " not in date_str:
-        date_str += " 00:00"
-    year, month, day = date_str.split(" ")[0].split("-")
-    time = date_str.split(" ")[1]
-    georgian_time = jdatetime.GregorianToJalali(
-        int(year),
-        int(month),
-        int(day),
-    )
-    return f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday} {time}"
+    try:
+        """Convert a Gregorian date string to Jalali format."""
+        if " " not in date_str:
+            date_str += " 00:00"
+        year, month, day = date_str.split(" ")[0].split("-")
+        time = date_str.split(" ")[1]
+        georgian_time = jdatetime.GregorianToJalali(
+            int(year),
+            int(month),
+            int(day),
+        )
+        return f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday} {time}"
+    except Exception as e:
+        LOGGER.error(f"Error formatting date {date_str}: {e}")
+        return date_str
 
 
 async def process_command(

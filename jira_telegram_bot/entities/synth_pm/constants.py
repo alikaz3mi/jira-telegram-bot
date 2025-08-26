@@ -73,7 +73,7 @@ class StatusDescriptions(Enum):
     STATUS_2 = "۲. تحلیل مسئله و RFP"
     STATUS_3 = "۳. برری بوردو اسپوری"
     STATUS_4 = "۴. در مرحله طراحی"
-    STATUS_5 = "۵. پیاده سازی فنی"
+    STATUS_5 = "۵. آماده پیاده سازی فنی"
     STATUS_6 = "۶. در حال پیاده سازی"
     STATUS_7 = "۷. تست فنی"
     STATUS_8 = "۸. آماده تحویل"
