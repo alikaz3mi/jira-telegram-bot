@@ -543,7 +543,7 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
     group_chat_id = message["chat"]["id"]
 
     if issue_key:
-        issue_link = f"{JIRA_SETTINGS.domain}/browse/{issue_key}"
+        issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
         issue_message = f"Jira Issue Created:\nLink: {issue_link}"
         if issue_key != "pending":
             send_telegram_message(
