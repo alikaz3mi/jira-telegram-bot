@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Optional
+from typing import Dict
 
 from pydantic import ValidationError
 
@@ -21,7 +22,7 @@ class UserConfig(UserConfigInterface):
         self.user_config_path = user_config_path
         self.user_config = self.load_user_config(user_config_path)
 
-    def load_user_config(self, user_config_path: str):
+    def load_user_config(self, user_config_path: str) -> Dict[str, UserConfigEntity]:
         try:
             # Ensure the directory exists
             os.makedirs(os.path.dirname(user_config_path), exist_ok=True)
@@ -56,6 +57,9 @@ class UserConfig(UserConfigInterface):
 
     def list_all_users(self):
         return self.user_config.keys()
+
+    def list_all_users_google_sheet_names(self):
+        return [username.google_sheet_name for username in self.user_config.values() if username.google_sheet_name]
 
     def get_user_config_by_jira_username(
         self,

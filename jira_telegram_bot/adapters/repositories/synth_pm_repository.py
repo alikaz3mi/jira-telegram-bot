@@ -92,10 +92,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if len(row) < 2:
                     continue
 
+                people_mapping = {}
+
+                for user in self.user_config.list_all_users_google_sheet_names():
+                    user_index = headers.index(user) if user in headers else None
+                    if user_index is not None:
+                        people_mapping[user] = user_index
+
                 feature = self._parse_row_to_feature_with_mapping(
                     idx,
                     row,
                     column_mapping,
+                    people_mapping
                 )
                 if feature:
                     features.append(feature)
@@ -652,7 +660,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         # Get current Persian/Jalali year for dynamic date handling
         current_jalali_year = jdatetime.datetime.now().year
         
-        # TODO: If task has two sprints, handle it.
+        # TODO: If task has two sprints, handle it: get the first active sprint or future sprint as the sprint for the task
         # TODO: If the issue is only updated in the google sheet board (i.e its times and stuff, handle it)
         try:
             if not feature.jira_issue_key:
@@ -671,12 +679,27 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             components = self._map_components(feature)
 
-            main_assignee = assignees[0] if assignees else None
-
-            sprint = self.jira_repository.get_sprint_by_id(
-                sprint_info.sprint_id,
-                self.developer_board_id,
-            )
+            feature.sprint_list
+            if len(feature.sprint_list) > 1:
+                # Sort sprints by the first number when splitting by ':'
+                sorted_sprints = sorted(
+                    feature.sprint_list,
+                    key=lambda s: int(s.split(':')[0]) if ':' in s else 0
+                )
+                
+                for s in sorted_sprints:
+                    sprint_info = SprintInfo.parse_sprint_string(s)
+                    sprint = self.jira_repository.get_sprint_by_id(
+                        sprint_info.sprint_id,
+                        self.developer_board_id,
+                    )
+                    if sprint is not None and sprint.get('state') == "closed":
+                        continue
+                    if sprint is not None and sprint.get('state') == "active":
+                        break
+                        
+                if sprint is None:
+                    sprint = sorted_sprints[0]
 
             if sprint is None:
                 start_date = sprint_info.start_date
@@ -729,7 +752,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 epic_link=epic_link,
                 labels=labels,
                 components=components,
-                assignee=main_assignee,
                 due_date=feature_dates_str.get("due_date"),
                 story_points=story_points,
                 target_start=feature_dates_str.get("target_start"),
@@ -1259,11 +1281,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "oruji": ["اروجی", "Oruji"],
             "lotfian": ["لطفیان", "Lotfian"],
             "adabi": ["آدابی", "Adabi"],
-            "dadjo": ["دادجو", "Dadjo"],
+            "dadjoo": ["دادجو", "Dadjoo"],
             "sadraei": ["صدرایی", "Sadraei"],
             "emam_dadi": ["امام دادی", "Emam Dadi"],
             "nasim": ["نسیم", "Nasim"],
-            "dr_heravi": ["دکتر هروی", "Dr Heravi"],
+            "heravi": ["هروی", "heravi"],
             "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key"],
             "developer_board_issue_key": ["developer_board_issue_key"],
             "version": ["version", "ریلیز اصلی"],
@@ -1282,11 +1304,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         return mapping
 
-    @staticmethod
     def _parse_row_to_feature_with_mapping(
+        self, 
         row_number: int,
         row: List[str],
         column_mapping: Dict[str, int],
+        people_mapping: Dict[str, int]
     ) -> Optional[SynthPMFeatureEntity]:
         """Parse a row from Google Sheets to SynthPMFeatureEntity using column mapping.
 
@@ -1357,6 +1380,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     except (ValueError, IndexError):
                         # Fallback to last item if parsing fails
                         last_sprint = items[-1]
+            times = {
+                
+            }
+                
 
             return SynthPMFeatureEntity(
                 row_number=get_mapped_value("row_number"),
@@ -1649,8 +1676,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Jira status name
         """
+        components = self._map_components(feature)
         if (
-            feature.ui_ux and feature.status == STATUS_DESCRIPTIONS[SynthPMStatus.IN_IMPLEMENTATION.value].value
+            'UI/UX' in components and feature.status == STATUS_DESCRIPTIONS[SynthPMStatus.IN_IMPLEMENTATION.value]
         ):
             return "In Progress"
 

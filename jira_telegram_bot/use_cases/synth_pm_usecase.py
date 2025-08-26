@@ -86,7 +86,8 @@ class SynthPMUseCase:
                     f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}",
                 )
                 try:
-                    await self._process_feature(feature, sync_results)
+                    if feature.row_number == 169:
+                        await self._process_feature(feature, sync_results)
                 except Exception as e:
                     error_msg = f"Error processing feature {feature.task_title}: {e}"
                     LOGGER.error(error_msg)
@@ -189,7 +190,7 @@ class SynthPMUseCase:
         Args:
             feature: feature entity
             sync_results: Dictionary to track sync results
-        """
+        """  # TODO: creation of jira task in pm, in developer board conditional checking must become separated. 
         try:
             if not (
                 feature.jira_issue_key
