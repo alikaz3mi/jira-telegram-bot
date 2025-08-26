@@ -13,11 +13,11 @@ services:
       python3 jira_telegram_bot
     restart: always
   
-  synth-pm:
+  synth-pm-api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: synth_pm
+    container_name: synth_pm_api
     image: jira_telegram_bot:v3
     volumes:
       - .:/app
