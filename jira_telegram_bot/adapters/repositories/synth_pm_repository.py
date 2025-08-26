@@ -179,12 +179,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         # TODO: set start date and target end date for each task
         try:
-            due_date = None
-            if feature.deadline:
-                if isinstance(feature.deadline, str):
-                    due_date = feature.deadline
-                else:
-                    due_date = feature.deadline.strftime("%Y-%m-%d")
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
 
             epic_link = None
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
@@ -212,7 +207,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 components=components,
                 story_points=feature.total_hours / 8 if feature.total_hours else 0,
                 assignee=None,
-                due_date=due_date,
+                due_date=feature_dates_str.get("due_date"),
+                target_start=feature_dates_str.get("target_start"),
+                target_end=feature_dates_str.get("target_end"),
             )
 
             if feature.sprint:
@@ -256,6 +253,32 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             )
 
             return None
+
+    def extract_dates_from_feature_in_str(self, feature) -> Dict[str, Optional[str]]:
+        due_date = None
+        if feature.deadline:
+            if isinstance(feature.deadline, str):
+                due_date = feature.deadline
+            else:
+                due_date = feature.deadline.strftime("%Y-%m-%d")
+        target_start = None
+        if feature.implementation_start_date:
+            if isinstance(feature.implementation_start_date, str):
+                target_start = feature.implementation_start_date
+            else:
+                target_start = feature.implementation_start_date.strftime("%Y-%m-%d")
+        target_end = None
+        if feature.deadline:
+            if isinstance(feature.deadline, str):
+                target_end = feature.deadline
+            else:
+                target_end = feature.deadline.strftime("%Y-%m-%d")
+        result = {
+            "due_date": due_date,
+            "target_start": target_start,
+            "target_end": target_end
+        }
+        return result
 
     def _create_release_not_exist(
         self,
@@ -352,6 +375,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     update_fields["priority"] = {
                         "name": feature_priority,
                     }
+
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+            if feature_dates_str:
+                if (
+                    feature_dates_str.get("target_start")
+                    != issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
+                ):
+                    update_fields[self.jira_repository.jira_target_start_id] = feature_dates_str.get("target_start")
+
+                if (
+                    feature_dates_str.get("target_end")
+                    != issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
+                ):
+                    update_fields[self.jira_repository.jira_target_end_id] = feature_dates_str.get("target_end")
 
             if (
                 feature.sprint is None
@@ -618,12 +655,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.error("Cannot create task without existing PM Board task")
                 return None
 
-            due_date = None
-            if feature.deadline:
-                if isinstance(feature.deadline, str):
-                    due_date = feature.deadline
-                else:
-                    due_date = feature.deadline.strftime("%Y-%m-%d")
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
 
             epic_link = None
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
@@ -695,8 +727,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 labels=labels,
                 components=components,
                 assignee=main_assignee,
-                due_date=due_date,
+                due_date=feature_dates_str.get("due_date"),
                 story_points=story_points,
+                target_start=feature_dates_str.get("target_start"),
+                target_end=feature_dates_str.get("target_end"),
             )
             if sprint and sprint.get("state") != "closed":
                 developer_board_task_data.sprint_id = sprint.get("id")
@@ -724,7 +758,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         assignees,
                         feature,
                         sprint_info,
-                        due_date,
+                        feature_dates_str
                     )
                     if subtask_keys:
                         LOGGER.info(
@@ -781,6 +815,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return False
 
             update_fields = {}
+            
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+            if feature_dates_str:
+                if (
+                    feature_dates_str.get("target_start")
+                    != issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
+                ):
+                    update_fields[self.jira_repository.jira_target_start_id] = feature_dates_str.get("target_start")
+
+                if (
+                    feature_dates_str.get("target_end")
+                    != issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
+                ):
+                    update_fields[self.jira_repository.jira_target_end_id] = feature_dates_str.get("target_end")
 
             if feature.task_title:
                 if feature.task_title != issue.fields.summary:
@@ -1490,11 +1538,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         return {
             "۱. ثبت و اولویت بندی": "BACKLOG",
-            "۲": "SELECTED FOR DEVELOPMENT",
             "۲. تحلیل مسئله و RFP": "SELECTED FOR DEVELOPMENT",
             "۳. آماده سازی یوزر استوری": "TO DO",
             "۴. در مرحله طراحی": "IN REVIEW",
-            "۵. پیاده سازی فنی": "OPEN",
+            "۵. آماده پیاده سازی فنی": "OPEN",
             "۶. در حال پیاده سازی": "IN PROGRESS",
             "۷. تست فنی": "REVIEW",
             "۸. آماده تحویل": "RESOLVED",
@@ -1658,7 +1705,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         assignees: List[str],
         feature: SynthPMFeatureEntity,
         sprint_info: SprintInfo,
-        due_date: Optional[str] = None,
+        dates: Optional[Dict[str, str]] = None,
     ) -> List[str]:
         """Create subtasks for each assignee.
 
@@ -1667,7 +1714,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             assignees: List of assignee usernames
             feature: Feature entity containing task details
             sprint_info: Sprint information
-            due_date: Due date for subtasks
+            dates: Due dates for subtasks
 
         Returns:
             List of created subtask keys
@@ -1704,7 +1751,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     components=[component] if component else None,
                     assignee=assignee,
                     parent_issue_key=parent_issue_key,
-                    due_date=due_date,
+                    due_date=dates.get("due_date"),
+                    target_start=dates.get("target_start"),
+                    target_end=dates.get("target_end"),
                     story_points=story_points / 8
                     if story_points
                     else 0,  # TODO: 0 or None?
@@ -1948,6 +1997,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         )
 
                 # Create or update subtasks for assignees (excluding main assignee)
+                # TODO: set dates for subtasks in here
                 for assignee in feature_assignees:
                     if assignee not in subtask_assignees:
                         # Create new subtask
@@ -1999,6 +2049,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Get time allocation for this assignee
             story_points = self._get_assignee_story_points(assignee, feature, component)
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
 
             subtask_data = TaskData(
                 project_key=self.settings.developer_board_project_key,
@@ -2009,10 +2060,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 components=[component] if component else None,
                 assignee=assignee,
                 parent_issue_key=parent_issue_key,
-                due_date=feature.deadline.strftime("%Y-%m-%d")
-                if feature.deadline
-                else None,
+                due_date=feature_dates_str.get("due_date"),
                 story_points=story_points / 8 if story_points else 0,
+                target_start=feature_dates_str.get("target_start"),
+                target_end=feature_dates_str.get("target_end"),
             )
 
             subtask_issue = self.jira_repository.create_task(subtask_data)
@@ -2073,6 +2124,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Get time allocation for this assignee
             # TODO: get issue of subtask from the very first function call to avoid lots of redundant calls
+            # TODO: update due dates of subtasks and add fix versions
             story_point_hour = self._get_assignee_story_points(
                 assignee,
                 feature,

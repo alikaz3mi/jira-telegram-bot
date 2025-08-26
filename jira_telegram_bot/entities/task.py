@@ -75,13 +75,9 @@ class TaskData(BaseModel):
     media_group_messages: Dict[str, List[Any]] = Field(
         default_factory=lambda: defaultdict(list),
     )
-    target_start_date: Optional[str] = Field(
+    target_start: Optional[str] = Field(
         default=None,
         description="The actual date for the task start_date in YYYY-MM-DD.",
-    )
-    target_end_date: Optional[str] = Field(
-        default=None,
-        description="The actual date for the task end_date in YYYY-MM-DD.",
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

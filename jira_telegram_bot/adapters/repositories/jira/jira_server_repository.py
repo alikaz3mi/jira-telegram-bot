@@ -43,6 +43,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         self.jira_sprint_id = "customfield_10104"
         self.jira_epic_link_id = "customfield_10100"
         self.jira_epic_name_id = "customfield_10102"
+        self.jira_target_end_id = "customfield_10110"
+        self.jira_target_start_id = "customfield_10109"
 
     def _get_from_cache(self, cache_key, max_age_seconds):
         entry = self.cache.get(cache_key)
@@ -266,6 +268,11 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         if task_data.task_type == "Epic":
             # For Epics, we need to set the epic name field
             issue_fields[self.jira_epic_name_id] = task_data.summary
+
+        if task_data.target_start:
+            issue_fields[self.jira_target_start_id] = task_data.target_start
+        if task_data.target_end:
+            issue_fields[self.jira_target_end_id] = task_data.target_end
 
         return issue_fields
 
