@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-__version__ = "2.32.31"
-__name__ = "jira_telegram_bot"
-
 import os
 from pathlib import Path
 
+from chromatrace import LoggingConfig
+from chromatrace import LoggingSettings
+
 from jira_telegram_bot.utils.basic_logger import loguru_logger
 
+__version__ = "2.33.41"
+__name__ = "jira_telegram_bot"
+
+
 DEFAULT_PATH = Path(os.path.realpath(__file__)).parents[1]
-
-
-from chromatrace import LoggingConfig, LoggingSettings
 
 
 DEFAULT_PATH = Path(os.path.realpath(__file__)).parents[1]
@@ -28,7 +29,7 @@ logging_config = LoggingConfig(
         enable_file_logging=True,
         max_bytes=10 * 1024 * 1024,
         backup_count=50,
-    )
+    ),
 )
 LOGGER = logging_config.get_logger(__name__)
 

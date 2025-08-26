@@ -6,12 +6,14 @@ import openai
 from loguru import logger
 from pydub import AudioSegment
 
-from jira_telegram_bot.settings import OPENAI_SETTINGS
+from jira_telegram_bot.settings.openai_settings import OpenAISettings
 
 
 class SpeechProcessor:
-    def __init__(self):
-        self.api_key = OPENAI_SETTINGS.token
+    def __init__(self,
+                 openai_settings: OpenAISettings
+                 ):
+        self.api_key = openai_settings.token
         openai.api_key = self.api_key
 
     async def convert_ogg_to_wav(self, ogg_path: str) -> str:

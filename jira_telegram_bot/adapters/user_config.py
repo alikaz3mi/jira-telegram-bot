@@ -13,7 +13,7 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
 
-USER_CONFIG_PATH = f"{DEFAULT_PATH}/jira_telegram_bot/settings/user_config.json"
+USER_CONFIG_PATH = f"{DEFAULT_PATH}/data/storage/user_config.json"
 
 
 class UserConfig(UserConfigInterface):
@@ -25,14 +25,16 @@ class UserConfig(UserConfigInterface):
         try:
             # Ensure the directory exists
             os.makedirs(os.path.dirname(user_config_path), exist_ok=True)
-            
+
             # Try to read the existing config
             if os.path.exists(user_config_path):
                 with open(user_config_path, "r") as file:
                     raw_data = json.load(file)
             else:
                 # Create a default empty config
-                LOGGER.warning(f"User config file not found at {user_config_path}. Creating an empty one.")
+                LOGGER.warning(
+                    f"User config file not found at {user_config_path}. Creating an empty one.",
+                )
                 raw_data = {}
                 with open(user_config_path, "w") as file:
                     json.dump(raw_data, file)
@@ -44,7 +46,7 @@ class UserConfig(UserConfigInterface):
                 except ValidationError as e:
                     LOGGER.error(f"Error loading config for {username}: {e}")
             return user_configurations
-            
+
         except Exception as e:
             LOGGER.error(f"Error loading user config: {e}")
             return {}
@@ -64,7 +66,11 @@ class UserConfig(UserConfigInterface):
                 return user_config
         return None
 
-    def save_user_config(self, telegram_username: str, user_cfg: UserConfigEntity) -> None:
+    def save_user_config(
+        self,
+        telegram_username: str,
+        user_cfg: UserConfigEntity,
+    ) -> None:
         self.user_config[telegram_username] = user_cfg
         configs = {
             username: user_cfg.dict() for username, user_cfg in self.user_config.items()
@@ -79,18 +85,74 @@ class UserConfig(UserConfigInterface):
     def get_group_chat_ids(self):
         """
         Get all configured Telegram group chat IDs.
-        
+
         Currently returns an empty list as group chats are not configured in user config.
         This can be extended to support group chat configuration.
         """
         # TODO: Implement group chat configuration
         # For now, return empty list or read from environment/config
         import os
-        group_chat_ids_str = os.environ.get('TELEGRAM_GROUP_CHAT_IDS', '')
+
+        group_chat_ids_str = os.environ.get("TELEGRAM_GROUP_CHAT_IDS", "")
         if group_chat_ids_str:
             try:
-                return [int(chat_id.strip()) for chat_id in group_chat_ids_str.split(',') if chat_id.strip()]
+                return [
+                    int(chat_id.strip())
+                    for chat_id in group_chat_ids_str.split(",")
+                    if chat_id.strip()
+                ]
             except ValueError as e:
                 LOGGER.error(f"Error parsing group chat IDs: {e}")
                 return []
         return []
+
+    def get_user_component(self, username: str, project_key: str) -> Optional[str]:
+        """
+        Get the user component for a specific user and project key.
+
+        Args:
+            username: The username to look up
+            project_key: The project key to filter components
+
+        Returns:
+            The component name if found, None otherwise
+        """
+        user_config = self.get_user_config_by_jira_username(username)
+        if user_config and user_config.user_components:
+            return user_config.user_components.get(project_key)
+        return None
+
+    def list_telegram_usernames(self):
+        """
+        List all Telegram usernames from the user configurations.
+
+        Returns:
+            List of Telegram usernames
+        """
+        return list(self.user_config.keys())
+
+    def list_jira_usernames(self):
+        """
+        List all Jira usernames from the user configurations.
+
+        Returns:
+            List of Jira usernames
+        """
+        return [
+            user_cfg.jira_username
+            for user_cfg in self.user_config.values()
+            if user_cfg.jira_username
+        ]
+
+    def list_telegram_user_ids(self):
+        """
+        List all Telegram user IDs from the user configurations.
+
+        Returns:
+            List of Telegram user IDs
+        """
+        return [
+            user_cfg.telegram_user_id
+            for user_cfg in self.user_config.values()
+            if user_cfg.telegram_user_id
+        ]

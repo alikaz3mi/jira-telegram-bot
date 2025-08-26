@@ -233,7 +233,7 @@ if __name__ == "__main__":
 
     report_json = generate_report_json(
         repo=repo,
-        project="PARSCHAT",
+        project="",
         start_date=start_dt.strftime("%Y-%m-%d"),  # e.g. "2025-05-24"
         end_date=end_dt.strftime("%Y-%m-%d"),      # e.g. "2025-05-28"
         # sprint_name="185",

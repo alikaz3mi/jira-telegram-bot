@@ -18,14 +18,12 @@ from tqdm import tqdm
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
-from jira_telegram_bot.settings import JIRA_SETTINGS
-# NOTE: This file contains legacy code that doesn't follow Clean Architecture.
-# It should be refactored to use dependency injection properly.
-
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 
 # Legacy direct instantiation - should be injected via DI
 _postgres_settings = PostgresSettings()
+_jira_settings = JiraConnectionSettings()
 DB_USER = _postgres_settings.db_user
 DB_PASSWORD = _postgres_settings.db_password
 DB_HOST = _postgres_settings.db_host
@@ -110,7 +108,7 @@ ensure_schema_updates()
 #    (If the table doesn't exist at all, this will create it; if it does, we're good)
 Base.metadata.create_all(engine)
 
-jira_repository = JiraServerRepository(settings=JIRA_SETTINGS)
+jira_repository = JiraServerRepository(settings=_jira_settings)
 
 
 def get_tasks_info(project_key: str) -> list[dict]:
@@ -277,16 +275,3 @@ def store_tasks_in_db(tasks: list[dict]):
     LOGGER.info(f"Upserted {len(tasks)} tasks into the database.")
 
 
-if __name__ == "__main__":
-    # Example usage:
-    parschat_tasks = get_tasks_info("PARSCHAT")
-
-    pct_tasks = get_tasks_info("PCT")
-
-    all_tasks = parschat_tasks + pct_tasks
-
-    df = pd.DataFrame(all_tasks)
-    LOGGER.info(f"DataFrame shape: {df.shape}")
-
-    store_tasks_in_db(all_tasks)
-    LOGGER.info("Tasks have been stored (upserted) in the PostgreSQL database.")

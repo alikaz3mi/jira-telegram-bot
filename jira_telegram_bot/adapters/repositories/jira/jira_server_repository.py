@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -12,6 +13,7 @@ from jira import JIRA
 
 from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.release import Release
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
@@ -25,21 +27,22 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         if self.settings.password:
             # Use basic authentication if password is provided
             self.jira = JIRA(
-            server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
-            basic_auth=(self.settings.username, self.settings.password),
-            # options={"verify": False}
+                server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
+                basic_auth=(self.settings.username, self.settings.password),
+                # options={"verify": False}
             )
         else:
             # Use API token authentication if password is empty
             self.jira = JIRA(
-            server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
-            token_auth=self.settings.api_token,
+                server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
+                token_auth=self.settings.api_token,
             )
         self.cache = {}
         self.jira_story_point_id = "customfield_10106"
         self.jira_original_estimate_id = "customfield_10111"
         self.jira_sprint_id = "customfield_10104"
         self.jira_epic_link_id = "customfield_10100"
+        self.jira_epic_name_id = "customfield_10102"
 
     def _get_from_cache(self, cache_key, max_age_seconds):
         entry = self.cache.get(cache_key)
@@ -91,9 +94,12 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 return board.id
         return None
 
-    def get_sprints(self, board_id):
+    def get_sprints(self, board_id, get_from_cache: bool = True):
         cache_key = ("get_sprints", board_id)
-        result = self._get_from_cache(cache_key, 8 * 3600)  # Cache for 8 hours
+        if get_from_cache:
+            result = self._get_from_cache(cache_key, 8 * 3600)  # Cache for 8 hours
+        else:
+            result = None
         if result is not None:
             return result
 
@@ -232,8 +238,12 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             issue_fields[self.jira_sprint_id] = task_data.sprint_id
         if task_data.epic_link:
             issue_fields[self.jira_epic_link_id] = task_data.epic_link
+        if task_data.releases:
+            issue_fields["fixVersions"] = [
+                {"name": release} for release in task_data.releases
+            ]
         if task_data.release:
-            issue_fields["fixVersions"] = [{"name": task_data.release}]
+            issue_fields["fixVersions"] = {"name": task_data.release}
         if task_data.assignee:
             issue_fields["assignee"] = {"name": task_data.assignee}
         if task_data.priority:
@@ -247,10 +257,15 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 label.replace(" ", "-") for label in task_data.labels
             ]
 
+        # FIXME: task_type must be literal
         if task_data.task_type == "Sub-task":
             issue_fields["parent"] = {"key": task_data.parent_issue_key}
             if issue_fields.get(self.jira_sprint_id):
                 del issue_fields[self.jira_sprint_id]
+
+        if task_data.task_type == "Epic":
+            # For Epics, we need to set the epic name field
+            issue_fields[self.jira_epic_name_id] = task_data.summary
 
         return issue_fields
 
@@ -272,7 +287,9 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             sprint_name=None,
             epic_link=getattr(issue.fields, self.jira_epic_link_id, None),
             release=(
-                issue.fields.fixVersions[0].name if issue.fields.fixVersions else None
+                issue.fields.fixVersions[0].name
+                if issue.fields.fixVersions
+                else None  # TODO: only one relesase is set:-?
             ),
             assignee=getattr(issue.fields.assignee, "displayName", None),
             priority=getattr(issue.fields.priority, "name", None),
@@ -455,10 +472,16 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         Check if a user has Jira administrator privileges.
         """
         try:
-            user = self.jira.user(username)
             groups = self.jira.groups_for_user(username)
-            admin_groups = ["jira-administrators", "jira-software-users", "administrators"]
-            return any(group.get("name", "").lower() in [g.lower() for g in admin_groups] for group in groups)
+            admin_groups = [
+                "jira-administrators",
+                "jira-software-users",
+                "administrators",
+            ]
+            return any(
+                group.get("name", "").lower() in [g.lower() for g in admin_groups]
+                for group in groups
+            )
         except Exception as e:
             LOGGER.error(f"Error checking admin status for user {username}: {e}")
             return False
@@ -481,26 +504,40 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         try:
             fields = {
                 "timetracking": {
-                    "remainingEstimate": remaining_estimate
-                }
+                    "remainingEstimate": remaining_estimate,
+                },
             }
             self.update_issue_from_fields(issue_key, fields)
-            LOGGER.info(f"Updated remaining estimate for {issue_key} to {remaining_estimate}")
+            LOGGER.info(
+                f"Updated remaining estimate for {issue_key} to {remaining_estimate}",
+            )
         except Exception as e:
             LOGGER.error(f"Error updating time estimate for issue {issue_key}: {e}")
 
+    def get_issue_spent_time_in_seconds(self, issue_key: str) -> int:
+        """
+        Get the total time spent on an issue in seconds.
+        """
+        try:
+            worklogs = self.jira.worklogs(issue_key)
+            total_seconds = sum(worklog.timeSpentSeconds for worklog in worklogs)
+            return total_seconds
+        except Exception as e:
+            LOGGER.error(f"Error fetching worklogs for issue {issue_key}: {e}")
+            return 0
+
     def get_issues_with_approaching_deadlines(
-        self, 
+        self,
         lookahead_days: int = 7,
         additional_jql: Optional[str] = None,
     ) -> List[Issue]:
         """
         Get issues with deadlines within the specified lookahead period.
-        
+
         Args:
             lookahead_days: Number of days to look ahead for deadlines
             additional_jql: Additional JQL filter to apply
-            
+
         Returns:
             List of Jira issues with approaching deadlines
         """
@@ -508,14 +545,14 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             jql = f"duedate <= {lookahead_days}d AND resolution = Unresolved"
             if additional_jql:
                 jql += f" AND {additional_jql}"
-            
+
             return self.search_for_issues(jql)
         except Exception as e:
             LOGGER.error(f"Error fetching issues with approaching deadlines: {e}")
             return []
 
     def search_issues(
-        self, 
+        self,
         jql: str,
         start_at: int = 0,
         max_results: int = 100,
@@ -523,13 +560,13 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
     ) -> List[Issue]:
         """
         Search for issues using JQL.
-        
+
         Args:
             jql: JQL query string
             start_at: Starting index for pagination
             max_results: Maximum number of results to return
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             List of matching Jira issues
         """
@@ -538,7 +575,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                 jql,
                 startAt=start_at,
                 maxResults=max_results,
-                expand=expand
+                expand=expand,
             )
         except Exception as e:
             LOGGER.error(f"Error searching issues with JQL '{jql}': {e}")
@@ -547,16 +584,391 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
     def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
         """
         Get a single issue with expanded fields.
-        
+
         Args:
             issue_key: The issue key
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             Jira issue with expanded fields or None
         """
         try:
             return self.jira.issue(issue_key, expand=expand)
         except Exception as e:
-            LOGGER.error(f"Error fetching issue {issue_key} with expand '{expand}': {e}")
+            LOGGER.error(
+                f"Error fetching issue {issue_key} with expand '{expand}': {e}",
+            )
             return None
+
+    def get_issue_by_summary(self, summary: str, board: str) -> Issue | None:
+        query = f'project = {board} AND summary ~ "{summary}"'
+        results = self.search_issues(query)
+        for result in results:
+            if result.field.summary == summary:
+                return result
+        return None
+
+    def get_issue_url(self, issue: Issue) -> str:
+        """
+        Get the URL for a Jira issue.
+
+        Args:
+            issue: The Jira issue object
+
+        Returns:
+            URL string for the issue
+        """
+        return (
+            f"{self.settings.domain.scheme}://{self.settings.domain.host}/browse/{issue.key}"
+            if issue
+            else ""
+        )
+
+    def get_issue_url_by_key(self, issue_key: str) -> str:
+        """
+        Get the URL for a Jira issue by its key.
+
+        Args:
+            issue_key: The key of the Jira issue
+
+        Returns:
+            URL string for the issue
+        """
+        return f"{self.settings.domain.scheme}://{self.settings.domain.host}/browse/{issue_key}"
+
+    def get_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+        """
+        Get available transitions for an issue.
+
+        Args:
+            issue_key: The key of the Jira issue
+
+        Returns:
+            List of available transitions with their IDs and names
+        """
+        try:
+            transitions = self.jira.transitions(issue_key)
+            return transitions
+        except Exception as e:
+            LOGGER.error(f"Error fetching transitions for issue {issue_key}: {e}")
+            return []
+
+    def transition_issue(self, issue_key: str, transition_id: str) -> None:
+        """
+        Transition an issue to a new status.
+
+        Args:
+            issue_key: The key of the Jira issue
+            transition_id: The ID of the transition to apply
+
+        Raises:
+            Exception if the transition fails
+        """
+        try:
+            self.jira.transition_issue(issue_key, transition_id)
+            LOGGER.info(f"Issue {issue_key} transitioned to {transition_id}")
+        except Exception as e:
+            LOGGER.error(
+                f"Error transitioning issue {issue_key} to {transition_id}: {e}",
+            )
+            raise e
+
+    def get_sprint_by_id(
+        self,
+        sprint_id: str,
+        board_id: str,
+    ) -> Optional[Dict[str, any]]:
+        """
+        Get sprint details by ID.
+
+        Args:
+            sprint_id: The ID of the sprint
+            board_id: The ID of the board
+
+        Returns:
+            Sprint details as a dictionary or None if not found
+        """
+        try:
+            sprints = self.get_sprints(board_id, get_from_cache=False)
+            for sprint in sprints:
+                if int(sprint.name.split(" ")[-1]) == int(sprint_id):
+                    return {
+                        "id": sprint.id,
+                        "name": sprint.name,
+                        "state": sprint.state,
+                        "startDate": sprint.startDate,
+                        "endDate": sprint.endDate,
+                    }
+            return None
+        except Exception as e:
+            LOGGER.error(f"Error fetching sprint {sprint_id} for board {board_id}: {e}")
+            return None
+
+    def get_sprint_by_name(
+        self,
+        sprint_name: str,
+        board_id: str,
+    ) -> Optional[Dict[str, any]]:
+        """
+        Get sprint details by name.
+
+        Args:
+            sprint_name: The name of the sprint
+            board_id: The ID of the board
+
+        Returns:
+            Sprint details as a dictionary or None if not found
+        """
+        try:
+            sprints = self.get_sprints(board_id, get_from_cache=False)
+            for sprint in sprints:
+                if sprint.name == sprint_name:
+                    return {
+                        "id": sprint.id,
+                        "name": sprint.name,
+                        "state": sprint.state,
+                        "startDate": sprint.startDate,
+                        "endDate": sprint.endDate,
+                    }
+            return {
+                "id": None,
+                "name": None,
+                "state": None,
+                "startDate": None,
+                "endDate": None,
+            }
+        except Exception as e:
+            LOGGER.error(
+                f"Error fetching sprint {sprint_name} for board {board_id}: {e}",
+            )
+            return {
+                "id": None,
+                "name": None,
+                "state": None,
+                "startDate": None,
+                "endDate": None,
+            }
+
+    def create_sprint(
+        self,
+        board_id: int,
+        sprint_name: str,
+        start_date: str,
+        end_date: str,
+        goal: str = None,
+    ) -> Optional[Dict[str, any]]:
+        """
+        Create a new sprint.
+
+        Args:
+            board_id: The ID of the board to create the sprint in
+            sprint_name: The name of the new sprint
+            start_date: The start date of the sprint in ISO format
+            end_date: The end date of the sprint in ISO format
+
+        Returns:
+            Sprint details as a dictionary or None if creation fails
+        """
+        try:
+            sprint = self.jira.create_sprint(
+                name=sprint_name,
+                board_id=board_id,
+                startDate=start_date,
+                endDate=end_date,
+                goal=goal,
+            )
+            return {
+                "id": sprint.id,
+                "name": sprint.name,
+                "state": sprint.state,
+                "start_date": sprint.startDate,
+                "end_date": sprint.endDate,
+                "goal": goal,
+            }
+        except Exception as e:
+            LOGGER.error(f"Error creating sprint '{sprint_name}': {e}")
+            return None
+
+    def get_releases(self, project_key: str) -> List[Release]:
+        """Get all releases for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+
+        Returns:
+            List of Release entities.
+        """
+        versions = self.jira.project_versions(project_key)
+        return [Release(project=project_key, **v.raw) for v in versions]
+
+    def release_exist(self, project_key: str, name: str) -> bool:
+        """Check if a release exists for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            name: Name of the release.
+
+        Returns:
+            True if the release exists, False otherwise.
+        """
+        releases = self.get_releases(project_key)
+        return any(release.name == name for release in releases)
+
+    def create_release(
+        self,
+        project_key: str,
+        name: str,
+        description: Optional[str] = None,
+        release_date: Optional[str] = None,
+        released: bool = False,
+    ) -> Release:
+        """Create a new release for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            name: Name of the release.
+            description: Optional description.
+            release_date: Optional release date (YYYY-MM-DD).
+            released: Whether the release is marked as released.
+
+        Returns:
+            The created Release entity.
+        """
+        payload: Dict[str, Any] = {
+            "project": project_key,
+            "name": name,
+            "released": released,
+        }
+        if description:
+            payload["description"] = description
+        if release_date:
+            payload["releaseDate"] = release_date
+        version = self.jira.create_version(**payload)
+        return Release(project=project_key, **version.raw)
+
+    def get_issue_link_types(self) -> List[Dict[str, str]]:
+        """Get available issue link types in Jira.
+
+        Returns:
+            List of link types with their names and descriptions
+        """
+        try:
+            link_types = self.jira.issue_link_types()
+            return [
+                {
+                    "name": link_type.name,
+                    "inward": link_type.inward,
+                    "outward": link_type.outward,
+                }
+                for link_type in link_types
+            ]
+        except Exception as e:
+            LOGGER.error(f"Error getting issue link types: {e}")
+            return []
+
+    def link_issues(
+        self,
+        dependent_issue_key: str,
+        dependency_issue_key: str,
+        link_type: str = "Dependency",
+    ) -> bool:
+        """Link two Jira issues with a specified relationship.
+
+        Args:
+            dependent_issue_key: The issue that depends on another (outward issue)
+            dependency_issue_key: The issue that is depended upon (inward issue)
+            link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
+
+        Returns:
+            True if linking was successful, False otherwise
+        """
+        try:
+            # Get available link types to find a suitable one
+            available_link_types = self.get_issue_link_types()
+
+            # First try to find the exact link type requested
+            selected_link_type = None
+            for link in available_link_types:
+                if link["name"].lower() == link_type.lower():
+                    selected_link_type = link["name"]
+                    break
+
+            # If requested link type not found, try common alternatives
+            if not selected_link_type:
+                fallback_types = [
+                    "Blocks",
+                    "Relates to",
+                    "Relates",
+                    "Clones",
+                    "Duplicates",
+                ]
+                for fallback in fallback_types:
+                    for link in available_link_types:
+                        if link["name"].lower() == fallback.lower():
+                            selected_link_type = link["name"]
+                            LOGGER.warning(
+                                f"Link type '{link_type}' not found, using '{selected_link_type}' instead",
+                            )
+                            break
+                    if selected_link_type:
+                        break
+
+            # If still no link type found, use the first available one
+            if not selected_link_type and available_link_types:
+                selected_link_type = available_link_types[0]["name"]
+                LOGGER.warning(
+                    f"Link type '{link_type}' not found, using first available: '{selected_link_type}'",
+                )
+
+            if not selected_link_type:
+                LOGGER.error("No issue link types available in Jira")
+                return False
+
+            # Create the issue link
+            self.jira.create_issue_link(
+                type=selected_link_type,
+                inwardIssue=dependency_issue_key,
+                outwardIssue=dependent_issue_key,
+            )
+            LOGGER.info(
+                f"Successfully linked issues: {dependent_issue_key} -> {dependency_issue_key} ({selected_link_type})",
+            )
+            return True
+        except Exception as e:
+            LOGGER.error(
+                f"Error linking issues {dependent_issue_key} -> {dependency_issue_key}: {e}",
+            )
+            return False
+
+    def get_issue_subtasks(self, issue_key: str) -> List[Issue]:
+        """Get all subtasks for a given Jira issue.
+
+        Args:
+            issue_key: The key of the parent issue
+
+        Returns:
+            List of subtask issues
+        """
+        try:
+            issue = self.get_issue(issue_key)
+            return [subtask for subtask in issue.fields.subtasks]
+        except Exception as e:
+            LOGGER.error(f"Error getting subtasks for issue {issue_key}: {e}")
+            return []
+
+    def delete_issue(self, issue_key: str) -> bool:
+        """Delete a Jira issue.
+
+        Args:
+            issue_key: The key of the issue to delete
+
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        try:
+            self.jira.delete_issue(issue_key)
+            LOGGER.info(f"Successfully deleted issue {issue_key}")
+            return True
+        except Exception as e:
+            LOGGER.error(f"Error deleting issue {issue_key}: {e}")
+            return False

@@ -86,7 +86,7 @@ class TaskManagerRepositoryInterface(ABC):
 
     @abstractmethod
     def get_stories_by_project(
-        self, 
+        self,
         project_key: str,
         epic_link: str = None,
         status: str = None,
@@ -122,10 +122,10 @@ class TaskManagerRepositoryInterface(ABC):
     def is_user_jira_admin(self, username: str) -> bool:
         """
         Check if a user has Jira administrator privileges.
-        
+
         Args:
             username: Jira username to check
-            
+
         Returns:
             True if user is Jira admin, False otherwise
         """
@@ -135,10 +135,10 @@ class TaskManagerRepositoryInterface(ABC):
     def get_available_transitions(self, issue_key: str) -> List[Dict[str, str]]:
         """
         Get available transitions for an issue.
-        
+
         Args:
             issue_key: The issue key
-            
+
         Returns:
             List of transitions with id and name
         """
@@ -148,7 +148,7 @@ class TaskManagerRepositoryInterface(ABC):
     def update_time_estimate(self, issue_key: str, remaining_estimate: str) -> None:
         """
         Update the remaining time estimate for an issue.
-        
+
         Args:
             issue_key: The issue key
             remaining_estimate: New remaining estimate (e.g., "0h", "2d")
@@ -169,17 +169,17 @@ class TaskManagerRepositoryInterface(ABC):
 
     @abstractmethod
     def get_issues_with_approaching_deadlines(
-        self, 
+        self,
         lookahead_days: int = 7,
         additional_jql: Optional[str] = None,
     ) -> List[Issue]:
         """
         Get issues with deadlines within the specified lookahead period.
-        
+
         Args:
             lookahead_days: Number of days to look ahead for deadlines
             additional_jql: Additional JQL filter to apply
-            
+
         Returns:
             List of Jira issues with approaching deadlines
         """
@@ -187,7 +187,7 @@ class TaskManagerRepositoryInterface(ABC):
 
     @abstractmethod
     def search_issues(
-        self, 
+        self,
         jql: str,
         start_at: int = 0,
         max_results: int = 100,
@@ -195,13 +195,13 @@ class TaskManagerRepositoryInterface(ABC):
     ) -> List[Issue]:
         """
         Search for issues using JQL.
-        
+
         Args:
             jql: JQL query string
             start_at: Starting index for pagination
             max_results: Maximum number of results to return
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             List of matching Jira issues
         """
@@ -211,12 +211,164 @@ class TaskManagerRepositoryInterface(ABC):
     def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
         """
         Get a single issue with expanded fields.
-        
+
         Args:
             issue_key: The issue key
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             Jira issue with expanded fields or None
         """
         pass
+
+        @abstractmethod
+        def get_issue_by_summary(self, summary: str, board: str) -> Optional[Issue]:
+            """
+            Get a Jira issue by its summary and board.
+
+            Args:
+                summary: The summary of the issue
+                board: The board/project key
+
+            Returns:
+                Jira issue or None
+            """
+            pass
+
+        @abstractmethod
+        def get_issue_url(self, issue: Issue) -> str:
+            """
+            Get the URL for a Jira issue.
+
+            Args:
+                issue: The Jira issue object
+
+            Returns:
+                URL string for the issue
+            """
+            pass
+
+        @abstractmethod
+        def get_issue_url_by_key(self, issue_key: str) -> str:
+            """
+            Get the URL for a Jira issue by its key.
+
+            Args:
+                issue_key: The key of the Jira issue
+
+            Returns:
+                URL string for the issue
+            """
+            pass
+
+        @abstractmethod
+        def get_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+            """
+            Get available transitions for an issue.
+
+            Args:
+                issue_key: The key of the Jira issue
+
+            Returns:
+                List of available transitions with their IDs and names
+            """
+            pass
+
+        @abstractmethod
+        def transition_issue(self, issue_key: str, transition_id: str) -> None:
+            """
+            Transition an issue to a new status.
+
+            Args:
+                issue_key: The key of the Jira issue
+                transition_id: The ID of the transition to apply
+
+            Raises:
+                Exception if the transition fails
+            """
+            pass
+
+        @abstractmethod
+        def get_sprint_by_id(
+            self,
+            sprint_id: str,
+            board_id: str,
+        ) -> Optional[Dict[str, any]]:
+            """
+            Get sprint details by ID.
+
+            Args:
+                sprint_id: The ID of the sprint
+                board_id: The ID of the board
+
+            Returns:
+                Sprint details as a dictionary or None if not found
+            """
+            pass
+
+        @abstractmethod
+        def get_sprint_by_name(
+            self,
+            sprint_name: str,
+            board_id: str,
+        ) -> Optional[Dict[str, any]]:
+            """
+            Get sprint details by name.
+
+            Args:
+                sprint_name: The name of the sprint
+                board_id: The ID of the board
+
+            Returns:
+                Sprint details as a dictionary or None if not found
+            """
+            pass
+
+        @abstractmethod
+        def create_sprint(
+            self,
+            board_id: int,
+            sprint_name: str,
+            start_date: str,
+            end_date: str,
+            goal: str = None,
+        ) -> Optional[Dict[str, any]]:
+            """
+            Create a new sprint.
+
+            Args:
+                board_id: The ID of the board to create the sprint in
+                sprint_name: The name of the new sprint
+                start_date: The start date of the sprint in ISO format
+                end_date: The end date of the sprint in ISO format
+                goal: The goal of the sprint (optional)
+
+            Returns:
+                Sprint details as a dictionary or None if creation fails
+            """
+            pass
+
+        @abstractmethod
+        def link_issues(self, dependent_issue_key: str, dependency_issue_key: str, link_type: str = "Dependency") -> bool:
+            """
+            Link two Jira issues with a specified relationship.
+
+            Args:
+                dependent_issue_key: The issue that depends on another (outward issue)
+                dependency_issue_key: The issue that is depended upon (inward issue)
+                link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
+
+            Returns:
+                True if linking was successful, False otherwise
+            """
+            pass
+
+        @abstractmethod
+        def get_issue_link_types(self) -> List[Dict[str, str]]:
+            """
+            Get available issue link types in Jira.
+
+            Returns:
+                List of link types with their names and descriptions
+            """
+            pass

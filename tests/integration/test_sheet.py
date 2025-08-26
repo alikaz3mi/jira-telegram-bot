@@ -8,7 +8,7 @@ def test_google_sheets_connection():
     try:
         # Load credentials
         credentials = Credentials.from_service_account_file(
-            f'{DEFAULT_PATH}/parschat-684f8662ca98.json',
+            f'{DEFAULT_PATH}/684f8662ca98.json',
             scopes=[
                 'https://www.googleapis.com/auth/spreadsheets',
                 'https://www.googleapis.com/auth/drive'

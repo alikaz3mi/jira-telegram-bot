@@ -14,7 +14,7 @@ from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import 
 # Configuration
 # --------------------------------------------------------------------------- #
 
-PROJECT_KEY = "PARSCHAT"  # ← board / project you want to touch
+PROJECT_KEY = ""  # ← board / project you want to touch
 MAX_RESULTS = 1_000  # jira‘s REST default is 50 – bump it up
 BATCH_LOG_EVERY = 20  # how often to log progress
 

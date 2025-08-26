@@ -73,7 +73,7 @@ class TestCurrentStoriesService(unittest.TestCase):
     def test_create_assignee_abbreviation_multiple_underscores(self):
         """Test assignee abbreviation creation with multiple underscores."""
         # Arrange
-        assignee_name = "m_mousavi_developer"
+        assignee_name = "john_due_developer"
         
         # Act
         result = self.service.create_assignee_abbreviation(assignee_name)

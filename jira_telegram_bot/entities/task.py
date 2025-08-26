@@ -41,6 +41,7 @@ class TaskData(BaseModel):
     sprint_name: Optional[str] = Field(default=None)
     epic_link: Optional[str] = Field(default=None)
     release: Optional[str] = Field(default=None)
+    releases: Optional[List[str]] = Field(default=None) # TODO: omit this one
     assignee: Optional[str] = Field(default=None)
     priority: Optional[str] = Field(default=None)
     create_another: bool = Field(default=False)
@@ -73,6 +74,14 @@ class TaskData(BaseModel):
     task_types: List[str] = Field(default_factory=list)
     media_group_messages: Dict[str, List[Any]] = Field(
         default_factory=lambda: defaultdict(list),
+    )
+    target_start_date: Optional[str] = Field(
+        default=None,
+        description="The actual date for the task start_date in YYYY-MM-DD.",
+    )
+    target_end_date: Optional[str] = Field(
+        default=None,
+        description="The actual date for the task end_date in YYYY-MM-DD.",
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

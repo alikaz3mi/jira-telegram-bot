@@ -69,7 +69,7 @@ container[ScheduledReportUseCase] = Singleton(
     lambda c: ScheduledReportUseCase(
         report_use_case=c[GenerateJiraReportUseCase],
         scheduler_service=c[SchedulerServiceInterface],
-        project_keys=["PARSCHAT", "PCT", "YOUR_PROJECT"],  # Add your projects here
+        project_keys=["YOUR_PROJECT"],  # Add your projects here
     )
 )
 ```

@@ -10,6 +10,7 @@ from typing import List
 from typing import Optional
 
 import gspread
+from gspread.exceptions import APIError
 from oauth2client.service_account import ServiceAccountCredentials
 
 from jira_telegram_bot import LOGGER
@@ -17,8 +18,12 @@ from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import 
     JiraServerRepository,
 )
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings.google_sheets_settings import GoogleSheetsConnectionSettings
-from jira_telegram_bot.use_cases.interfaces.google_sheet_client_interface import GoogleSheetClientInterface
+from jira_telegram_bot.settings.google_sheets_settings import (
+    GoogleSheetsConnectionSettings,
+)
+from jira_telegram_bot.use_cases.interfaces.google_sheet_client_interface import (
+    GoogleSheetClientInterface,
+)
 
 
 class ISheetClient(ABC):
@@ -152,7 +157,9 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             except Exception:
                 # Worksheet doesn't exist, create it
                 worksheet = spreadsheet.add_worksheet(
-                    title=worksheet_name, rows=1000, cols=20
+                    title=worksheet_name,
+                    rows=1000,
+                    cols=20,
                 )
 
             # Write headers
@@ -175,32 +182,32 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         self,
         spreadsheet_id: str,
         range_name: str,
-        values: List[List[Any]]
+        values: List[List[Any]],
     ) -> bool:
         """Append rows to a Google Sheet.
-        
+
         Args:
             spreadsheet_id: The Google Sheet ID
             range_name: Range to append to (e.g., "Sheet1!A:Z")
             values: List of row data to append
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             spreadsheet = self.client.open_by_key(spreadsheet_id)
-            
+
             # Extract sheet name from range
-            sheet_name = range_name.split('!')[0] if '!' in range_name else 'Sheet1'
+            sheet_name = range_name.split("!")[0] if "!" in range_name else "Sheet1"
             worksheet = spreadsheet.worksheet(sheet_name)
-            
+
             # Append each row
             for row in values:
                 worksheet.append_row(row)
-            
+
             LOGGER.info(f"Successfully appended {len(values)} rows to {spreadsheet_id}")
             return True
-            
+
         except Exception as e:
             LOGGER.error(f"Error appending rows to {spreadsheet_id}: {e}")
             return False
@@ -209,31 +216,42 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         self,
         spreadsheet_id: str,
         range_name: str,
-        values: List[List[Any]]
+        values: List[List[Any]],
     ) -> bool:
         """Update specific cells in a Google Sheet.
-        
+
         Args:
             spreadsheet_id: The Google Sheet ID
             range_name: Range to update (e.g., "Sheet1!A1:C3")
             values: 2D list of values to update
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             spreadsheet = self.client.open_by_key(spreadsheet_id)
-            
+
             # Extract sheet name from range
-            sheet_name = range_name.split('!')[0] if '!' in range_name else 'Sheet1'
+            sheet_name = range_name.split("!")[0] if "!" in range_name else "Sheet1"
             worksheet = spreadsheet.worksheet(sheet_name)
-            
+
             # Update the range
             worksheet.update(range_name, values)
-            
-            LOGGER.info(f"Successfully updated cells in {spreadsheet_id}, range {range_name}")
+
+            LOGGER.info(
+                f"Successfully updated cells in {spreadsheet_id}, range {range_name}",
+            )
             return True
-            
+
+        except APIError as e:
+            # FIXME: Handle APIError specifically to retry with worksheet update
+            sheet_name = range_name.split("!")[1] if "!" in range_name else "Sheet1"
+            LOGGER.warning(
+                f"API error updating cells in {spreadsheet_id}, range {range_name} (sheet: {sheet_name}): {e}",
+            )
+            worksheet.update(sheet_name, values)
+            return True
+
         except Exception as e:
             LOGGER.error(f"Error updating cells in {spreadsheet_id}: {e}")
             return False
@@ -241,34 +259,34 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
     async def get_values(
         self,
         spreadsheet_id: str,
-        range_name: str
+        range_name: str,
     ) -> List[List[Any]]:
         """Get values from a Google Sheet range.
-        
+
         Args:
             spreadsheet_id: The Google Sheet ID
             range_name: Range to read (e.g., "Sheet1!A1:Z100")
-            
+
         Returns:
             2D list of cell values
         """
         try:
             spreadsheet = self.client.open_by_key(spreadsheet_id)
-            
+
             # Extract sheet name from range
-            sheet_name = range_name.split('!')[0] if '!' in range_name else 'Sheet1'
+            sheet_name = range_name.split("!")[0] if "!" in range_name else "Sheet1"
             worksheet = spreadsheet.worksheet(sheet_name)
-            
+
             # Get all values from the range
-            if '!' in range_name:
-                cell_range = range_name.split('!')[1]
+            if "!" in range_name:
+                cell_range = range_name.split("!")[1]
                 values = worksheet.get(cell_range)
             else:
                 values = worksheet.get_all_values()
-            
+
             LOGGER.debug(f"Retrieved {len(values)} rows from {spreadsheet_id}")
             return values
-            
+
         except Exception as e:
             LOGGER.error(f"Error getting values from {spreadsheet_id}: {e}")
             return []
@@ -276,37 +294,48 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
     async def create_sheet(
         self,
         spreadsheet_id: str,
-        sheet_name: str
+        sheet_name: str,
     ) -> bool:
         """Create a new sheet within a spreadsheet.
-        
+
         Args:
             spreadsheet_id: The Google Sheet ID
             sheet_name: Name for the new sheet
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             spreadsheet = self.client.open_by_key(spreadsheet_id)
-            
+
             # Add new worksheet
             worksheet = spreadsheet.add_worksheet(
-                title=sheet_name, 
-                rows=1000, 
-                cols=26
+                title=sheet_name,
+                rows=1000,
+                cols=26,
             )
-            
-            LOGGER.info(f"Successfully created sheet '{sheet_name}' in {spreadsheet_id}")
+
+            LOGGER.info(
+                f"Successfully created sheet '{sheet_name}' in {spreadsheet_id}",
+            )
             return True
-            
+
         except Exception as e:
-            LOGGER.error(f"Error creating sheet '{sheet_name}' in {spreadsheet_id}: {e}")
+            LOGGER.error(
+                f"Error creating sheet '{sheet_name}' in {spreadsheet_id}: {e}",
+            )
             return False
 
-    def write_hyperlink_formula(self, worksheet, row: int, col: int, url: str, text: str):
+    def write_hyperlink_formula(
+        self,
+        worksheet,
+        row: int,
+        col: int,
+        url: str,
+        text: str,
+    ):
         """Write a hyperlink formula to a specific cell.
-        
+
         Args:
             worksheet: The worksheet object
             row: Row number (1-indexed)
@@ -322,16 +351,16 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             LOGGER.error(f"Failed to write hyperlink formula: {e}")
             # Fallback to plain text if formula fails
             worksheet.update_cell(row, col, text)
-    
+
     def add_conditional_formatting(
-        self, 
-        sheet_id: str, 
-        worksheet_name: str, 
-        column_index: int, 
-        conditions: Dict[str, Dict[str, float]]
+        self,
+        sheet_id: str,
+        worksheet_name: str,
+        column_index: int,
+        conditions: Dict[str, Dict[str, float]],
     ):
         """Add conditional formatting to a column.
-        
+
         Args:
             sheet_id: The Google Sheet ID
             worksheet_name: Name of the worksheet
@@ -341,49 +370,53 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         try:
             spreadsheet = self.client.open_by_key(sheet_id)
             worksheet = spreadsheet.worksheet(worksheet_name)
-            
+
             requests = []
             for i, (value, color) in enumerate(conditions.items()):
-                requests.append({
-                    "addConditionalFormatRule": {
-                        "rule": {
-                            "ranges": [{
-                                "sheetId": worksheet.id,
-                                "startRowIndex": 1,
-                                "endRowIndex": 1000,
-                                "startColumnIndex": column_index,
-                                "endColumnIndex": column_index + 1
-                            }],
-                            "booleanRule": {
-                                "condition": {
-                                    "type": "TEXT_EQ",
-                                    "values": [{"userEnteredValue": value}]
+                requests.append(
+                    {
+                        "addConditionalFormatRule": {
+                            "rule": {
+                                "ranges": [
+                                    {
+                                        "sheetId": worksheet.id,
+                                        "startRowIndex": 1,
+                                        "endRowIndex": 1000,
+                                        "startColumnIndex": column_index,
+                                        "endColumnIndex": column_index + 1,
+                                    },
+                                ],
+                                "booleanRule": {
+                                    "condition": {
+                                        "type": "TEXT_EQ",
+                                        "values": [{"userEnteredValue": value}],
+                                    },
+                                    "format": {
+                                        "backgroundColor": color,
+                                    },
                                 },
-                                "format": {
-                                    "backgroundColor": color
-                                }
-                            }
+                            },
+                            "index": i,
                         },
-                        "index": i
-                    }
-                })
-            
+                    },
+                )
+
             if requests:
                 spreadsheet.batch_update({"requests": requests})
                 LOGGER.info(f"Added conditional formatting to column {column_index}")
-                
+
         except Exception as e:
             LOGGER.error(f"Failed to add conditional formatting: {e}")
-    
+
     def create_filter_view(
-        self, 
-        sheet_id: str, 
-        worksheet_name: str, 
-        view_name: str, 
-        filter_criteria: Dict[int, Dict]
+        self,
+        sheet_id: str,
+        worksheet_name: str,
+        view_name: str,
+        filter_criteria: Dict[int, Dict],
     ):
         """Create a filter view with specific criteria.
-        
+
         Args:
             sheet_id: The Google Sheet ID
             worksheet_name: Name of the worksheet
@@ -393,32 +426,39 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         try:
             spreadsheet = self.client.open_by_key(sheet_id)
             worksheet = spreadsheet.worksheet(worksheet_name)
-            
-            requests = [{
-                "addFilterView": {
-                    "filter": {
-                        "title": view_name,
-                        "range": {
-                            "sheetId": worksheet.id,
-                            "startRowIndex": 0,
-                            "endRowIndex": 1000,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": 13
+
+            requests = [
+                {
+                    "addFilterView": {
+                        "filter": {
+                            "title": view_name,
+                            "range": {
+                                "sheetId": worksheet.id,
+                                "startRowIndex": 0,
+                                "endRowIndex": 1000,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 13,
+                            },
+                            "criteria": filter_criteria,
                         },
-                        "criteria": filter_criteria
-                    }
-                }
-            }]
-            
+                    },
+                },
+            ]
+
             spreadsheet.batch_update({"requests": requests})
             LOGGER.info(f"Created filter view: {view_name}")
-            
+
         except Exception as e:
             LOGGER.error(f"Failed to create filter view: {e}")
-    
-    def freeze_rows(self, sheet_id: str, worksheet_name: str, frozen_row_count: int = 1):
+
+    def freeze_rows(
+        self,
+        sheet_id: str,
+        worksheet_name: str,
+        frozen_row_count: int = 1,
+    ):
         """Freeze header rows.
-        
+
         Args:
             sheet_id: The Google Sheet ID
             worksheet_name: Name of the worksheet
@@ -427,28 +467,30 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         try:
             spreadsheet = self.client.open_by_key(sheet_id)
             worksheet = spreadsheet.worksheet(worksheet_name)
-            
-            requests = [{
-                "updateSheetProperties": {
-                    "properties": {
-                        "sheetId": worksheet.id,
-                        "gridProperties": {
-                            "frozenRowCount": frozen_row_count
-                        }
+
+            requests = [
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": worksheet.id,
+                            "gridProperties": {
+                                "frozenRowCount": frozen_row_count,
+                            },
+                        },
+                        "fields": "gridProperties.frozenRowCount",
                     },
-                    "fields": "gridProperties.frozenRowCount"
-                }
-            }]
-            
+                },
+            ]
+
             spreadsheet.batch_update({"requests": requests})
             LOGGER.info(f"Froze {frozen_row_count} rows")
-            
+
         except Exception as e:
             LOGGER.error(f"Failed to freeze rows: {e}")
-    
+
     def add_auto_filter(self, sheet_id: str, worksheet_name: str, data_rows: int):
         """Add auto filter to the worksheet.
-        
+
         Args:
             sheet_id: The Google Sheet ID
             worksheet_name: Name of the worksheet
@@ -457,23 +499,25 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         try:
             spreadsheet = self.client.open_by_key(sheet_id)
             worksheet = spreadsheet.worksheet(worksheet_name)
-            
-            requests = [{
-                "setBasicFilter": {
-                    "filter": {
-                        "range": {
-                            "sheetId": worksheet.id,
-                            "startRowIndex": 0,
-                            "endRowIndex": data_rows + 1,
-                            "startColumnIndex": 0,
-                            "endColumnIndex": 13
-                        }
-                    }
-                }
-            }]
-            
+
+            requests = [
+                {
+                    "setBasicFilter": {
+                        "filter": {
+                            "range": {
+                                "sheetId": worksheet.id,
+                                "startRowIndex": 0,
+                                "endRowIndex": data_rows + 1,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 13,
+                            },
+                        },
+                    },
+                },
+            ]
+
             spreadsheet.batch_update({"requests": requests})
             LOGGER.info("Added auto filter")
-            
+
         except Exception as e:
             LOGGER.error(f"Failed to add auto filter: {e}")

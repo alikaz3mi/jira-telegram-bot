@@ -16,6 +16,8 @@ class UserConfig(BaseModel):
     telegram_user_chat_id: int
     jira_username: str
     gitlab_username: Optional[str] = None
+    google_sheet_name: Optional[str] = None
+    user_components: Optional[dict] = None  
     project: FieldConfig = FieldConfig()
     component: FieldConfig = FieldConfig()
     task_type: FieldConfig = FieldConfig()

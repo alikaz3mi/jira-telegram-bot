@@ -56,7 +56,7 @@ class TelegramWebhookEndpoint(ServiceAPIEndpointBluePrint):
                 
                 # Process the update
                 result = await self.telegram_webhook_use_case.process_update(update_data)
-                return JSONResponse(content=result.dict())
+                return JSONResponse(content=result.model_dump())
                 
             except Exception as e:
                 LOGGER.error(f"Error handling Telegram webhook: {str(e)}", exc_info=True)
@@ -64,7 +64,7 @@ class TelegramWebhookEndpoint(ServiceAPIEndpointBluePrint):
                     content=WebhookResponse(
                         status="error",
                         message=f"Error: {str(e)}"
-                    ).dict(),
+                    ).model_dump(),
                     status_code=500
                 )
         

@@ -20,6 +20,7 @@ from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings, Jir
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.fast_api_settings import FastAPISettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
+from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings, TelegramWebhookConnectionSettings
 
 # AI Models and Services imports
@@ -39,6 +40,7 @@ from jira_telegram_bot.adapters.repositories.file_storage.file_progress_report_r
 from jira_telegram_bot.adapters.repositories.jira.jira_cloud_repository import JiraCloudRepository
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraReportRepository
+from jira_telegram_bot.adapters.repositories.synth_pm_repository import SynthPMRepository
 
 # Service imports
 from jira_telegram_bot.adapters.services.telegram.telegram_gateway import NotificationGateway
@@ -58,7 +60,11 @@ from jira_telegram_bot.use_cases.generate_jira_report_use_case import GenerateJi
 from jira_telegram_bot.use_cases.scheduled_report_use_case import ScheduledReportUseCase
 from jira_telegram_bot.use_cases.project_status import GetProjectStatusUseCase, UpdateProjectTrackingUseCase
 from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
+from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
+
+# Interface imports
+from jira_telegram_bot.use_cases.interfaces.database_connection_interface import DatabaseConnectionInterface
 
 # AI Agent use case imports
 from jira_telegram_bot.use_cases.ai_agents.board_summarizer import BoardSummarizerUseCase, TaskGrouper
@@ -68,7 +74,6 @@ from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecom
 from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
 from jira_telegram_bot.use_cases.ai_agents.agent_generate_use_story import AgentGenerateUserStory
 
-
 # Webhook use case imports
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWebhookUseCase
 
@@ -76,14 +81,12 @@ from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWeb
 from jira_telegram_bot.use_cases.metrics.process_jira_event_use_case import ProcessJiraEventUseCase
 from jira_telegram_bot.use_cases.metrics.process_gitlab_event_use_case import ProcessGitlabEventUseCase
 from jira_telegram_bot.use_cases.metrics.update_sheet_use_case import UpdateSheetUseCase
-
-# Interface imports
-from jira_telegram_bot.use_cases.interfaces.database_connection_interface import DatabaseConnectionInterface
 from jira_telegram_bot.use_cases.interfaces.llm_model_interface import LLMModelInterface
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import AIServiceProtocol, PromptCatalogProtocol
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import NotificationGatewayInterface
 from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import ProjectInfoRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import SpeechProcessorInterface
+from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import SynthPMRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.user_authentication_interface import UserAuthenticationInterface
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
@@ -111,6 +114,7 @@ from jira_telegram_bot.frameworks.api.entry_point import FastAPIConfig
 from jira_telegram_bot.frameworks.api.endpoints import JiraWebhookEndpoint, TelegramWebhookEndpoint, MetricsWebhookEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.health_check import HealthCheckEndpoint
 from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.synth_pm_endpoint import SynthPMEndpoint
 
 # Framework imports - Scheduler
 from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
@@ -176,6 +180,8 @@ def configure_container() -> Container:
     # Configure metrics tracking
     _configure_metrics_tracking(container)
     
+    _configure_synth_pm_board(container)
+    
     return container
 
 
@@ -240,12 +246,9 @@ def _configure_repositories(container: Container, data_dir: Path, config_dir: Pa
 def _configure_services_and_gateways(container: Container) -> None:
     """Configure service implementations and gateways."""
     # Google Sheets
-    try:
-        container[GoogleSheetClient] = Singleton(
-            lambda c: GoogleSheetClient(c[GoogleSheetsConnectionSettings])
-        )
-    except Exception as e:
-        LOGGER.warning(f"GoogleSheetsConnectionSettings not registered: {e}")
+    container[GoogleSheetClient] = Singleton(
+        lambda c: GoogleSheetClient(c[GoogleSheetsConnectionSettings])
+    )
     
     # Notification services
     container[NotificationGatewayInterface] = Singleton(
@@ -367,7 +370,7 @@ def _configure_use_cases(container: Container) -> None:
         lambda c: TelegramWebhookUseCase(
             create_task_use_case=c[CreateTaskUseCase],
             parse_prompt_use_case=c[ParseJiraPromptUseCase],
-            task_manager_repository=c[TaskManagerRepositoryInterface],
+            task_manager_repository=c[TaskManagerRepositoryInterface]
         )
     )
     
@@ -489,6 +492,39 @@ def _configure_metrics_tracking(container: Container) -> None:
             jira_webhook_controller=c[JiraWebhookController],
             gitlab_webhook_controller=c[GitlabWebhookController]
         )
+    )
+
+
+def _configure_synth_pm_board(container: Container) -> None:
+    """Configure SynthPM components."""
+    # Settings
+    container[SynthPMSettings] = Singleton(
+        lambda: SynthPMSettings()
+    )
+    
+    # Repository
+    container[SynthPMRepositoryInterface] = Singleton(
+        lambda c: SynthPMRepository(
+            google_sheet_client=c[GoogleSheetClient],
+            jira_repository=c[TaskManagerRepositoryInterface],
+            settings=c[SynthPMSettings],
+            user_config=c[UserConfigInterface]
+        )
+    )
+    
+    # Use case
+    container[SynthPMUseCase] = Singleton(
+        lambda c: SynthPMUseCase(
+            repository=c[SynthPMRepositoryInterface],
+            settings=c[SynthPMSettings],
+            user_config=c[UserConfigInterface],
+            notification_gateway=NotificationGateway(token=c[SynthPMSettings].telegram_bot_token)
+        )
+    )
+    
+    # Endpoint (will be imported when needed)
+    container[SynthPMEndpoint] = Singleton(
+        lambda c: SynthPMEndpoint(c[SynthPMUseCase])
     )
 
 

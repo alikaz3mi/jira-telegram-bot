@@ -88,3 +88,57 @@ class UserConfigInterface(ABC):
             List of group chat IDs where bot should send notifications
         """
         pass
+
+    @abstractmethod
+    def get_user_component(self, username: str, project_key: str) -> Optional[str]:
+        """
+        Get user component for a specific project.
+
+        Args:
+            username: JIRA username
+            project_key: Project key (e.g., "PARSCHAT")
+
+        Returns:
+            Component name or None if not found
+        """
+        pass
+
+    @abstractmethod
+    def list_all_users(self) -> List[str]:
+        """
+        List all users in the configuration.
+
+        Returns:
+            List of usernames
+        """
+        pass
+
+    @abstractmethod
+    def list_jira_usernames(self) -> List[str]:
+        """
+        List all Jira usernames in the configuration.
+
+        Returns:
+            List of Jira usernames
+        """
+        pass
+
+    @abstractmethod
+    def list_telegram_usernames(self) -> List[str]:
+        """
+        List all Telegram usernames in the configuration.
+
+        Returns:
+            List of Telegram usernames
+        """
+        pass
+
+    @abstractmethod
+    def list_telegram_user_ids(self) -> List[int]:
+        """
+        List all Telegram user IDs in the configuration.
+
+        Returns:
+            List of Telegram user IDs
+        """
+        pass
