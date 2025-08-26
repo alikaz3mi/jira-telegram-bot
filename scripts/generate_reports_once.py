@@ -17,7 +17,7 @@ async def main() -> None:
         report_use_case = container[GenerateJiraReportUseCase]
         
         # Configure project keys as needed
-        project_keys = ["PARSCHAT", "PCT"]
+        project_keys = ["PCT"]
         
         reports = await report_use_case.generate_multi_project_report(project_keys)
         

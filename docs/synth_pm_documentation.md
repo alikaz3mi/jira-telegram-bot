@@ -2,7 +2,7 @@
 
 ## Overview
 
-SynthPM is a comprehensive feature that provides bidirectional synchronization between Google Sheets, Jira boards (PM Board and PARSCHAT), and Telegram notifications. This feature enables seamless project management across multiple platforms with automatic task creation, status synchronization, and team notifications.
+SynthPM is a comprehensive feature that provides bidirectional synchronization between Google Sheets, Jira boards (PM Board and Developer), and Telegram notifications. This feature enables seamless project management across multiple platforms with automatic task creation, status synchronization, and team notifications.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ The SynthPM feature follows Clean Architecture principles with proper dependency
 1. **Repository Layer** (`SynthPMRepository`)
    - Handles Google Sheets ↔ Jira ↔ Telegram synchronization
    - Implements header-based column mapping for flexibility
-   - Manages dual board creation (PM Board + PARSCHAT)
+   - Manages dual board creation (PM Board + Developer)
 
 2. **Use Case Layer** (`SynthPMUseCase`)
    - Contains business logic for feature synchronization
@@ -32,8 +32,8 @@ The SynthPM feature follows Clean Architecture principles with proper dependency
 ## Key Features
 
 ### ✅ **Dual Board Creation**
-- Tasks are automatically created in both **PM Board** and **PARSCHAT** boards
-- PARSCHAT tasks are linked to PM Board tasks via Jira issue linking
+- Tasks are automatically created in both **PM Board** and **Developer** boards
+- Developer tasks are linked to PM Board tasks via Jira issue linking
 - Both issue keys are stored in Google Sheet for tracking
 
 ### ✅ **Smart Status Mapping**
@@ -66,7 +66,7 @@ The SynthPM feature follows Clean Architecture principles with proper dependency
 
 ```python
 # Persian to Jira Status Mapping
-PARSCHAT_TO_JIRA_STATUS = {
+Developer_TO_JIRA_STATUS = {
     "۵": "To Do",                    # آماده پیاده سازی فنی
     "۶": "In Progress",              # در حال پیاده سازی
     "۴": "In Progress",              # در مرحله طراحی (UI/UX)
@@ -126,7 +126,7 @@ COLUMN_MAPPING = {
 Enhanced Telegram notifications include:
 
 ```python
-def _format_telegram_message(self, feature: ParsChatFeatureEntity, action: str) -> str:
+def _format_telegram_message(self, feature: DeveloperFeatureEntity, action: str) -> str:
     """Format enhanced Telegram message with icons and hashtags."""
     
     # Epic hashtag
@@ -149,7 +149,7 @@ def _format_telegram_message(self, feature: ParsChatFeatureEntity, action: str) 
 
 🔗 **Jira Links**:
 • PM Board: [{feature.jira_issue_key}]({jira_link})
-• PARSCHAT: [{feature.parschat_issue_key}]({parschat_link})
+• Developer: [{feature.developer_issue_key}]({developer_link})
 """
     return message
 ```
@@ -174,14 +174,14 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
 # SynthPM Specific
-SYNTH_PARSCHAT_ENABLED=true
-SYNTH_PARSCHAT_SYNC_INTERVAL=300  # seconds
+SYNTH_PM_ENABLED=true
+SYNTH_PM_SYNC_INTERVAL=300  # seconds
 ```
 
 ### Dependency Injection Setup
 
 ```python
-def _configure_synth_parschat(container: Container) -> None:
+def _configure_synth_pm(container: Container) -> None:
     """Configure SynthPM components."""
     # Settings
     container[SynthPMSettings] = Singleton(
@@ -209,16 +209,16 @@ def _configure_synth_parschat(container: Container) -> None:
 ### Google Sheets Setup
 
 1. Create a Google Sheets document with the required columns
-2. Name the worksheet as configured in settings (default: "ParsChat Features")
+2. Name the worksheet as configured in settings (default: "developer Features")
 3. Ensure the service account has edit permissions on the sheet
 4. Set up the header row with Persian/English column names as specified
 
 ### Jira Setup
 
-1. Ensure both **PM Board** and **PARSCHAT** projects exist in Jira
+1. Ensure both **PM Board** and **Developer** projects exist in Jira
 2. Configure appropriate statuses, priorities, and workflows for both boards
 3. Set up webhooks to point to your API endpoint for bidirectional sync
-4. Configure issue linking between PM Board and PARSCHAT boards
+4. Configure issue linking between PM Board and Developer boards
 
 ### Telegram Setup
 
@@ -235,18 +235,18 @@ from jira_telegram_bot.app_container import get_container
 
 # Get configured use case
 container = get_container()
-synth_parschat_usecase = container[SynthPMUseCase]
+synth_pm_usecase = container[SynthPMUseCase]
 
 # Sync Google Sheets with Jira
-sync_status = await synth_parschat_usecase.sync_sheet_with_jira()
+sync_status = await synth_pm_usecase.sync_sheet_with_jira()
 print(f"Synced {sync_status.processed_count} features")
 ```
 
 ### Manual Task Creation
 
 ```python
-# Create task in both PM Board and PARSCHAT boards
-feature_data = ParsChatFeatureEntity(
+# Create task in both PM Board and Developer boards
+feature_data = developerFeatureEntity(
     task_title="New Feature Implementation",
     epic="Epic Name",
     priority="High",
@@ -255,15 +255,15 @@ feature_data = ParsChatFeatureEntity(
     departments="Backend,Frontend"
 )
 
-result = await synth_parschat_usecase.create_jira_task_from_feature(feature_data)
-print(f"Created PM Board: {result.pm_board_key}, PARSCHAT: {result.parschat_key}")
+result = await synth_pm_usecase.create_jira_task_from_feature(feature_data)
+print(f"Created PM Board: {result.pm_board_key}, Developer: {result.developer_key}")
 ```
 
 ## API Endpoints
 
 ### Sync Endpoint
 ```http
-POST /api/synth-parschat/sync
+POST /api/synth-developer/sync
 Content-Type: application/json
 
 {
@@ -274,7 +274,7 @@ Content-Type: application/json
 
 ### Status Update Endpoint
 ```http
-POST /api/synth-parschat/status
+POST /api/synth-developer/status
 Content-Type: application/json
 
 {
@@ -291,7 +291,7 @@ Content-Type: application/json
 The system maintains sync status for each row:
 
 ```python
-class ParsChatSheetSyncStatus:
+class developerSheetSyncStatus:
     total_rows: int
     processed_count: int
     error_count: int
@@ -322,7 +322,7 @@ LOGGER.error(f"Failed to create Jira task: {error}")
 
 2. **Jira API Errors**
    - Verify API token permissions
-   - Check project permissions for both PM Board and PARSCHAT
+   - Check project permissions for both PM Board and Developer
    - Validate issue type and field configurations
 
 3. **Status Mapping Errors** 
@@ -392,7 +392,7 @@ Enable debug logging for detailed troubleshooting:
 
 ```python
 import logging
-logging.getLogger('jira_telegram_bot.adapters.repositories.synth_parschat_repository').setLevel(logging.DEBUG)
+logging.getLogger('jira_telegram_bot.adapters.repositories.synth_pm_repository').setLevel(logging.DEBUG)
 ```
 
 ### Common Debug Commands
@@ -429,8 +429,8 @@ For additional support:
 }
 ```
 
-#### POST /synth-parschat/jira-webhook
-Handle Jira webhook events for ParsChat features.
+#### POST /synth-developer/jira-webhook
+Handle Jira webhook events for developer features.
 
 **Request Body:**
 ```json
@@ -446,7 +446,7 @@ Handle Jira webhook events for ParsChat features.
 }
 ```
 
-#### POST /synth-parschat/sheet-update
+#### POST /synth-developer/sheet-update
 Handle manual Google Sheets updates.
 
 **Request Body:**
@@ -473,22 +473,22 @@ Use the provided script for various operations:
 
 ```bash
 # One-time synchronization
-python scripts/run_synth_parschat.py sync
+python scripts/run_synth_pm.py sync
 
 # Run as background service
-python scripts/run_synth_parschat.py service
+python scripts/run_synth_pm.py service
 
 # Test connections
-python scripts/run_synth_parschat.py test
+python scripts/run_synth_pm.py test
 ```
 
 ### Integration with FastAPI
 
 The SynthPM endpoints are automatically registered when the API server starts. They are available at:
 
-- `http://your-domain/synth-parschat/sync`
-- `http://your-domain/synth-parschat/jira-webhook`
-- `http://your-domain/synth-parschat/sheet-update`
+- `http://your-domain/synth-developer/sync`
+- `http://your-domain/synth-developer/jira-webhook`
+- `http://your-domain/synth-developer/sheet-update`
 
 ### Background Synchronization
 
@@ -563,7 +563,7 @@ The system maintains sync status information including:
 
 ### Adding New Fields
 
-1. Update `ParsChatFeatureEntity` in `entities/parschat_feature.py`
+1. Update `developerFeatureEntity` in `entities/developer_feature.py`
 2. Modify `_parse_row_to_feature` in the repository
 3. Update `_get_field_column_mapping` for column positions
 4. Add field handling in sync logic
