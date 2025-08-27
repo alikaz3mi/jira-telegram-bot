@@ -463,9 +463,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             ] != feature.involved_people.replace(" ", "-"):
                                 update_fields["labels"] = list(
                                     set(issue.fields.labels)
-                                    - {sheet_username}
-                                    + {feature.involved_people.replace(" ", "-")},
-                                )
+                                    - {issue.fields.labels[label_index]}
+                                ) + [feature.involved_people.replace(" ", "-")]
                                 break
             elif feature.involved_people and issue.fields.issuetype.name == "Story":
                 developer_issue = self.jira_repository.get_issue(
@@ -499,11 +498,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             ]
                             if set(sheet_usernames) != set(names):
                                 update_fields["labels"] = list(
-                                    set(issue.fields.labels) - {sheet_username},
+                                    set(issue.fields.labels) - {sheet_username}
                                 ) + [feature.involved_people.replace(" ", "-")]
 
             else:
-                LOGGER.error(f"Invalid update. Not handled for {feature} and {issue}")
+                LOGGER.warning(f"Invalid update. Not handled for {feature} and {issue}")
 
             if update_fields:
                 update_fields["project"] = {"key": self.settings.pm_project_key}
@@ -907,6 +906,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     update_fields[self.jira_repository.jira_sprint_id] = sprint.get(
                         "id"
                     )  # TODO: test
+                if sprint.get("state") == "closed":
+                    LOGGER.debug(f"{issue.key} with sprint {sprint.get('name')} is close. no need for update")
+                    return True
 
             if feature_assignees and len(feature_assignees) > 1 and feature.description:
                 current_desc = issue.fields.description or ""
@@ -973,6 +975,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 and len(feature_assignees) > 1
                 and issue.fields.issuetype.name == "Task"
             )
+            check_for_updating_assignees = (
+                feature_assignees
+                and len(feature_assignees) > 1
+                and issue.fields.issuetype.name == "Story"
+            )
+            
             if check_for_task_assignee_change:
                 if feature_assignees[0] != issue.fields.assignee.name:
                     update_fields["assignee"] = {
@@ -1002,6 +1010,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             elif check_for_change_from_task_to_story:
                 # Change task type to Story and manage assignees accordingly
                 update_fields["issuetype"] = {"name": "Story"}
+                await self._update_assignees_and_subtasks(
+                    feature.developer_board_issue_key,
+                    feature_assignees,
+                    feature,
+                )
+            elif check_for_updating_assignees:
                 await self._update_assignees_and_subtasks(
                     feature.developer_board_issue_key,
                     feature_assignees,
@@ -1083,7 +1097,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         ) + [name.replace(" ", "-") for name in names]
 
             else:
-                LOGGER.error(f"Invalid update. Not handled for {feature} and {issue}")
+                LOGGER.warning(f"Invalid update. Not handled for {feature} and {issue}")
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -1980,7 +1994,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if component:
                 story_points = int(
                     feature.__getattribute__(
-                        component.lower().strip("-").replace("-", ""),
+                        component.lower().strip("-").replace("-", "").replace("/","_"),
                     ),
                 )
             else:
@@ -2027,9 +2041,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             subtasks = issue.fields.subtasks
             subtask_assignees = {}
             for subtask in subtasks:
-                assignee_name = self.jira_repository.get_issue(
+                assignee = self.jira_repository.get_issue(
                     subtask.key,
-                ).fields.assignee.name
+                ).fields.assignee
+                assignee_name = assignee.name if assignee else None
                 if assignee_name:
                     current_assignees.add(assignee_name)
                     if assignee_name not in subtask_assignees:
@@ -2038,7 +2053,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         subtask_assignees[assignee_name].append(subtask)
 
             # If assignees haven't changed, update time estimates on existing subtasks
-            if set(feature_assignees) == current_assignees:
+            feature_assignees = set(feature_assignees)
+            if feature_assignees == current_assignees:
                 await self._update_subtask_time_estimates(
                     subtasks,
                     feature_assignees,
@@ -2054,11 +2070,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         and old_assignee in subtask_assignees
                     ):
                         subtask = subtask_assignees[old_assignee]
-                        # Delete the subtask
-                        self.jira_repository.delete_issue(subtask.key)
-                        LOGGER.info(
-                            f"Deleted subtask {subtask.key} for removed assignee {old_assignee}",
-                        )
+                        if isinstance(subtask, list):
+                            for sub in subtask:
+                                self.jira_repository.delete_issue(sub.key)
+                                LOGGER.info(
+                                    f"Deleted subtask {sub.key} for removed assignee {old_assignee}",
+                                )
+                        else:
+                            self.jira_repository.delete_issue(subtask.key)
+                            LOGGER.info(
+                                f"Deleted subtask {subtask.key} for removed assignee {old_assignee}",
+                            )
 
                 # Create or update subtasks for assignees
                 feature_dates_str = self.extract_dates_from_feature_in_str(feature)
@@ -2074,11 +2096,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     else:
                         # Update existing subtask time estimate
                         subtask = subtask_assignees[assignee]
-                        await self._update_subtask_time_estimate(
-                            subtask,
-                            assignee,
-                            feature,
-                        )
+                        if isinstance(subtask, list):
+                            for tak in subtask:
+                                await self._update_subtask_time_estimate_and_dates(
+                                    tak,
+                                    assignee,
+                                    feature,
+                                )
+                        else:
+                            await self._update_subtask_time_estimate_and_dates(
+                                subtask,
+                                assignee,
+                                feature,
+                            )
 
             return True
 
@@ -2178,14 +2208,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 
             subtask_assignee = issue.fields.assignee.name if issue.fields.assignee else None
             if subtask_assignee in feature_assignees:
-                await self._update_subtask_time_estimate(
+                await self._update_subtask_time_estimate_and_dates(
                     subtask,
                     subtask_assignee,
                     feature,
                     subtask_issue=issue,  # Pass the already fetched issue
                 )
 
-    async def _update_subtask_time_estimate(
+    async def _update_subtask_time_estimate_and_dates(
         self,
         subtask,
         assignee: str,
@@ -2206,17 +2236,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 self.settings.developer_board_project_key,
             )
 
-            # Get time allocation for this assignee
             story_point_hour = self._get_assignee_story_points(
                 assignee,
                 feature,
                 component,
             )
             
-            # Use provided issue or fetch it
             issue = subtask_issue or self.jira_repository.get_issue(subtask.key)
             
-            # Update subtask if story points changed
             issue_time = issue.fields.timetracking
             current_story_points = (
                 getattr(
@@ -2226,6 +2253,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 )
                 / 3600
             )
+            
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+            update_fields = {}
+            
+            if feature_dates_str.get("due_date") and issue.fields.duedate != feature_dates_str["due_date"]:
+                update_fields["duedate"] = feature_dates_str["due_date"]
+            if feature_dates_str.get("target_start") and issue.fields.__dict__.get(self.jira_repository.jira_target_start_id) != feature_dates_str["target_start"]:
+                update_fields[self.jira_repository.jira_target_start_id] = feature_dates_str["target_start"]
+            if feature_dates_str.get("target_end") and issue.fields.__dict__.get(self.jira_repository.jira_target_end_id) != feature_dates_str["target_end"]:
+                update_fields[self.jira_repository.jira_target_end_id] = feature_dates_str["target_end"]
+            
 
             if (
                 abs(current_story_points - story_point_hour) > 0.01
@@ -2241,26 +2279,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 )
                 
                 # Update dates and time estimates
-                feature_dates_str = self.extract_dates_from_feature_in_str(feature)
                 update_fields = {
                     "timetracking": {
                         "originalEstimate": f"{story_point_hour}h",
                         "remainingEstimate": f"{remaining_estimate}h",
                     },
                 }
-                
-                # Update dates if available
-                if feature_dates_str.get("due_date"):
-                    update_fields["duedate"] = feature_dates_str["due_date"]
-                if feature_dates_str.get("target_start") and hasattr(self.jira_repository, 'jira_target_start_id'):
-                    update_fields[self.jira_repository.jira_target_start_id] = feature_dates_str["target_start"]
-                if feature_dates_str.get("target_end") and hasattr(self.jira_repository, 'jira_target_end_id'):
-                    update_fields[self.jira_repository.jira_target_end_id] = feature_dates_str["target_end"]
-                
-                subtask.update(fields=update_fields)
+
                 LOGGER.info(
                     f"Updated time estimate and dates for subtask {subtask.key}: {story_point_hour}h",
                 )
 
+            if update_fields:
+                subtask.update(fields=update_fields)
+                LOGGER.debug(f"Updated fields for subtask {subtask.key}")
+
         except Exception as e:
-            LOGGER.error(f"Error updating time estimate for subtask {subtask.key}: {e}")
+            LOGGER.error(f"Error updating time estimate for subtask {subtask}: {e}")
