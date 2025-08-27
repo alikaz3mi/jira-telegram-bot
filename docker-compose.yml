@@ -69,5 +69,16 @@ services:
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
+  
 
-
+  deadline-notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deadline_notifier
+    image: jira_telegram_bot:v3
+    volumes:
+      - .:/app
+    command: >
+      python3 jira_telegram_bot/frameworks/scheduler/cron_job.py
+    restart: always
