@@ -86,8 +86,7 @@ class SynthPMUseCase:
                     f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}",
                 )
                 try:
-                    if feature.row_number == 169:
-                        await self._process_feature(feature, sync_results)
+                    await self._process_feature(feature, sync_results)
                 except Exception as e:
                     error_msg = f"Error processing feature {feature.task_title}: {e}"
                     LOGGER.error(error_msg)
