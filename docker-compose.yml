@@ -13,19 +13,19 @@ services:
       python3 jira_telegram_bot
     restart: always
   
-  synth-pm-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: synth_pm_api
-    image: jira_telegram_bot:v3
-    volumes:
-      - .:/app
-    command: >
-      python3 jira_telegram_bot/frameworks/api/main.py
-    restart: always
-    ports:
-      - "2318:2318"
+  # synth-pm-api:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: synth_pm_api
+  #   image: jira_telegram_bot:v3
+  #   volumes:
+  #     - .:/app
+  #   command: >
+  #     python3 jira_telegram_bot/frameworks/api/main.py
+  #   restart: always
+  #   ports:
+  #     - "2318:2318"
 
   ticketing-bot:
     build:
@@ -55,20 +55,20 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
 
-  synth-pm-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: synth_pm
-    image: jira_telegram_bot:v3
-    volumes:
-      - .:/app
-    command: >
-      python3 scripts/run_synth_pm.py service
-    restart: always
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
+  # synth-pm-service:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: synth_pm
+  #   image: jira_telegram_bot:v3
+  #   volumes:
+  #     - .:/app
+  #   command: >
+  #     python3 scripts/run_synth_pm.py service
+  #   restart: always
+  #   environment:
+  #     - POSTGRES_HOST=postgres
+  #     - POSTGRES_PORT=5432
   
 
   deadline-notifier:

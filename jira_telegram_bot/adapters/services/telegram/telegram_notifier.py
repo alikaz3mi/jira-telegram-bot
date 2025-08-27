@@ -160,7 +160,7 @@ class TelegramNotifier(TelegramNotifierInterface):
                 issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>"
                 deadline_line = f"  {deadline_text}{mention_text}"
                 
-                message_parts.extend([issue_line, deadline_line])
+                message_parts.extend([issue_line, deadline_line, ""])
             
             message_parts.append("")
         
