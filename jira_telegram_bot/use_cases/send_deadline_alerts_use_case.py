@@ -188,7 +188,10 @@ class SendDeadlineAlertsUseCase:
         stats = {"sent": 0, "skipped": 0}
         # TODO: add group chat id later
         # group_chat_ids = self.user_config_repository.get_group_chat_ids()
-        group_chat_ids = [self.user_config_repository.get_user_config_by_jira_username("ali_kazemi").telegram_user_chat_id]
+        group_chat_ids = [
+            self.user_config_repository.get_user_config_by_jira_username("ali_kazemi").telegram_user_chat_id,
+            self.user_config_repository.get_user_config_by_jira_username("a_heravi").telegram_user_chat_id
+            ]
         
         today = datetime.now().date()
         
