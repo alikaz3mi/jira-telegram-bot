@@ -1,6 +1,7 @@
 .idea
 *.env
 *.json
+*.jsonl
 *.jpg
 *.png
 *.csv

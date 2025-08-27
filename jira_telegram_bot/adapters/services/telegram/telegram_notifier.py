@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import textwrap
 from typing import List
 from typing import Optional
 
@@ -20,6 +21,7 @@ class TelegramNotifier(TelegramNotifierInterface):
         self,
         telegram_settings: TelegramConnectionSettings,
         user_config_repository: UserConfigInterface,
+        
     ):
         self.telegram_settings = telegram_settings
         self.user_config_repository = user_config_repository
@@ -64,10 +66,10 @@ class TelegramNotifier(TelegramNotifierInterface):
         """Format a deadline alert as a Telegram message."""
         urgency_emoji = self._get_urgency_emoji(alert.urgency_level)
         
-        # Build message header
-        header = f"{urgency_emoji} *Deadline Alert*"
+        # Build mention text
+        mention_text = ""
         if include_mention and telegram_username:
-            header += f" @{telegram_username}"
+            mention_text = f" @{telegram_username}"
         
         # Build deadline info
         deadline_text = "No deadline set"
@@ -82,25 +84,30 @@ class TelegramNotifier(TelegramNotifierInterface):
             else:
                 deadline_text = f"📅 Due in {alert.days_remaining} days ({deadline_date})"
         
-        # Build message body
-        message_parts = [
-            header,
-            "",
-            f"🎫 *Issue:* [{alert.issue_key}]({alert.issue_url})",
-            f"📝 *Summary:* {alert.summary}",
-            f"⏳ *Deadline:* {deadline_text}",
-            f"📊 *Status:* {alert.status}",
-            f"🏷️ *Project:* {alert.project_key}",
-        ]
-        
-        if alert.assignee:
-            message_parts.append(f"👤 *Assignee:* {alert.assignee}")
-        
+        # Build priority text
+        priority_text = ""
         if alert.priority:
             priority_emoji = self._get_priority_emoji(alert.priority)
-            message_parts.append(f"{priority_emoji} *Priority:* {alert.priority}")
+            priority_text = f"\n<b>🔸 Priority:</b> <code>{alert.priority}</code> {priority_emoji}"
         
-        return "\n".join(message_parts)
+        # Build assignee text
+        assignee_text = ""
+        if alert.assignee:
+            assignee_text = f"\n<b>🔸 Assignee:</b> <code>{alert.assignee}</code>"
+        
+        message = f"""<b>{urgency_emoji} Deadline Alert{mention_text}</b>
+
+<b>🔸 Issue:</b> <code>{alert.issue_key}</code>
+<b>🔹 Project:</b> <code>{alert.project_key}</code>
+<b>🔹 Status:</b> <code>{alert.status}</code>
+<b>🔹 Deadline:</b> <code>{deadline_text}</code>{assignee_text}{priority_text}
+
+<b>📄 Summary:</b>
+<pre>{alert.summary}</pre>
+
+<a href="{alert.issue_url}">🔗 View Issue in Jira</a>"""
+        
+        return message
     
     async def _format_group_message(
         self,
@@ -123,13 +130,13 @@ class TelegramNotifier(TelegramNotifierInterface):
             )
         )
         
-        header = f"🚨 *Team Deadline Report* ({len(alerts)} issues)"
-        message_parts = [header, ""]
-        
         # Group by urgency level
         urgency_groups = {}
         for alert in sorted_alerts:
             urgency_groups.setdefault(alert.urgency_level, []).append(alert)
+        
+        # Build the message
+        message_parts = [f"<b>🚨 Team Deadline Report ({len(alerts)} issues)</b>\n"]
         
         for urgency_level in ["overdue", "today", "urgent", "high"]:
             if urgency_level not in urgency_groups:
@@ -138,7 +145,7 @@ class TelegramNotifier(TelegramNotifierInterface):
             group_alerts = urgency_groups[urgency_level]
             urgency_emoji = self._get_urgency_emoji(urgency_level)
             
-            message_parts.append(f"{urgency_emoji} **{urgency_level.upper()}** ({len(group_alerts)} issues)")
+            message_parts.append(f"<b>{urgency_emoji} {urgency_level.upper()} ({len(group_alerts)} issues)</b>")
             
             for alert in group_alerts:
                 # Get telegram username for mention
@@ -148,11 +155,12 @@ class TelegramNotifier(TelegramNotifierInterface):
                 
                 mention_text = f" @{telegram_username}" if telegram_username else ""
                 deadline_text = self._get_short_deadline_text(alert)
+                summary_text = alert.summary[:50] + ('...' if len(alert.summary) > 50 else '')
                 
-                message_parts.append(
-                    f"• [{alert.issue_key}]({alert.issue_url}): {alert.summary[:50]}{'...' if len(alert.summary) > 50 else ''}"
-                )
-                message_parts.append(f"  {deadline_text}{mention_text}")
+                issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>"
+                deadline_line = f"  {deadline_text}{mention_text}"
+                
+                message_parts.extend([issue_line, deadline_line])
             
             message_parts.append("")
         
@@ -164,8 +172,7 @@ class TelegramNotifier(TelegramNotifierInterface):
         payload = {
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True,
+            "parse_mode": "HTML",
         }
         
         try:

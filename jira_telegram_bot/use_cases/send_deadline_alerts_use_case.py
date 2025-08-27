@@ -132,7 +132,6 @@ class SendDeadlineAlertsUseCase:
     async def _send_personal_notifications(self, alerts: List[DeadlineAlert]) -> Dict[str, int]:
         """Send personal notifications to assignees."""
         stats = {"sent": 0, "skipped": 0}
-        user_configs = self.user_config_repository.get_all_user_configs()
         today = datetime.now().date()
         
         # Group alerts by assignee
@@ -143,13 +142,7 @@ class SendDeadlineAlertsUseCase:
         
         for jira_username, assignee_alerts in alerts_by_assignee.items():
             try:
-                # Find user config for this assignee
-                user_config = None
-                for config in user_configs.values():
-                    if config.jira_username == jira_username:
-                        user_config = config
-                        break
-                
+                user_config = self.user_config_repository.get_user_config_by_jira_username(jira_username)
                 if not user_config or not user_config.telegram_user_chat_id:
                     LOGGER.warning(f"No telegram config found for user {jira_username}")
                     continue
@@ -193,7 +186,10 @@ class SendDeadlineAlertsUseCase:
     async def _send_group_notifications(self, alerts: List[DeadlineAlert]) -> Dict[str, int]:
         """Send group notifications to configured group chats."""
         stats = {"sent": 0, "skipped": 0}
-        group_chat_ids = self.user_config_repository.get_group_chat_ids()
+        # TODO: add group chat id later
+        # group_chat_ids = self.user_config_repository.get_group_chat_ids()
+        group_chat_ids = [self.user_config_repository.get_user_config_by_jira_username("ali_kazemi").telegram_user_chat_id]
+        
         today = datetime.now().date()
         
         if not group_chat_ids:

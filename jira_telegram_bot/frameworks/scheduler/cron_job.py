@@ -18,10 +18,18 @@ class CronJob:
     def __init__(
         self,
         send_deadline_alerts_use_case: SendDeadlineAlertsUseCase,
-        cron_schedule: str = "0 9 * * *",  # Daily at 9 AM
+        cron_schedule: str = "* 9 * * *",  # Every day at 9 AM
         lookahead_days: int = 7,
         additional_jql: Optional[str] = None,
     ):
+        """Initialize the CronJob with deadline alerts configuration.
+
+        Args:
+            send_deadline_alerts_use_case: Use case for sending deadline alerts.
+            cron_schedule: Cron expression for scheduling (defaults to every 30 seconds).
+            lookahead_days: Number of days to look ahead for deadlines.
+            additional_jql: Additional JQL filter for issues.
+        """
         self.send_deadline_alerts_use_case = send_deadline_alerts_use_case
         self.cron_schedule = cron_schedule
         self.lookahead_days = lookahead_days
@@ -69,7 +77,6 @@ class CronJob:
     async def _run_scheduler(self) -> None:
         """Run the scheduler loop."""
         cron = croniter(self.cron_schedule, datetime.now())
-        
         while self.running:
             try:
                 # Calculate next run time
@@ -131,8 +138,8 @@ async def main():
     from jira_telegram_bot.app_container import get_container
     
     # Get configuration from environment
-    cron_schedule = os.environ.get("DEADLINE_NOTIFIER_CRON", "0 9 * * *")
-    lookahead_days = int(os.environ.get("DEADLINE_NOTIFIER_LOOKAHEAD_DAYS", "7"))
+    cron_schedule = os.environ.get("DEADLINE_NOTIFIER_CRON", "* 5 * * *")
+    lookahead_days = int(os.environ.get("DEADLINE_NOTIFIER_LOOKAHEAD_DAYS", "3"))
     additional_jql = os.environ.get("DEADLINE_NOTIFIER_ADDITIONAL_JQL")
     
     # Get dependencies from container
