@@ -834,6 +834,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Similar to update_jira_task_from_feature but for
             issue = self.jira_repository.get_issue(feature.developer_board_issue_key)
+            if issue.key == "PARSCHAT-3449":
+                x = 1
             if not issue:
                 LOGGER.warning(f"issue {feature.developer_board_issue_key} not found")
                 return False
@@ -909,6 +911,32 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if sprint.get("state") == "closed":
                     LOGGER.debug(f"{issue.key} with sprint {sprint.get('name')} is close. no need for update")
                     return True
+
+            elif (
+                feature.sprint is not None
+                and issue.fields.__dict__.get(self.jira_repository.jira_sprint_id)
+                is not None
+            ):
+                sprint_id = feature.sprint.split(":")[0]
+                sprint = self.jira_repository.get_sprint_by_id(
+                    sprint_id, self.developer_board_id
+                )
+                
+                current_sprint_data = issue.fields.__dict__.get(self.jira_repository.jira_sprint_id)
+                current_sprint_id = None
+                
+                if current_sprint_data and isinstance(current_sprint_data, list) and len(current_sprint_data) > 0:
+                    sprint_str = current_sprint_data[0]
+                    if "id=" in sprint_str:
+                        id_start = sprint_str.find("id=") + 3
+                        id_end = sprint_str.find(",", id_start)
+                        if id_end == -1:
+                            id_end = sprint_str.find("]", id_start)
+                        current_sprint_id = int(sprint_str[id_start:id_end])
+                
+                if current_sprint_id != int(sprint_id) and sprint.get("state") != "closed":
+                    update_fields[self.jira_repository.jira_sprint_id] = sprint.get("id")
+                    LOGGER.debug(f"Updating sprint for {issue.key} from {current_sprint_id} to {sprint_id}")
 
             if feature_assignees and len(feature_assignees) > 1 and feature.description:
                 current_desc = issue.fields.description or ""

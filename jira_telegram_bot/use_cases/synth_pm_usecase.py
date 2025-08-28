@@ -337,7 +337,7 @@ class SynthPMUseCase:
             sent_message_id = await self.notification_gateway.send_message_async(
                 chat_id=int(self.settings.telegram_channel_id),
                 text=message,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
 
             if sent_message_id:

@@ -973,7 +973,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             True if deletion was successful, False otherwise
         """
         try:
-            self.jira.delete_issue(issue_key)
+            issue = self.get_issue(issue_key)
+            issue.delete()
             LOGGER.info(f"Successfully deleted issue {issue_key}")
             return True
         except Exception as e:
