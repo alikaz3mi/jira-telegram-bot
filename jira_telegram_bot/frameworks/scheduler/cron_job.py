@@ -77,6 +77,7 @@ class CronJob:
     async def _run_scheduler(self) -> None:
         """Run the scheduler loop."""
         cron = croniter(self.cron_schedule, datetime.now())
+        await self._execute_job()
         while self.running:
             try:
                 # Calculate next run time

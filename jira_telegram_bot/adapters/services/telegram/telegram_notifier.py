@@ -51,8 +51,21 @@ class TelegramNotifier(TelegramNotifierInterface):
             if not alerts:
                 return True
             
-            message = await self._format_group_message(alerts, mention_users)
-            return await self._send_message(chat_id, message)
+            messages = await self._format_group_messages(alerts, mention_users)
+            
+            # Send all messages
+            all_sent = True
+            for i, message in enumerate(messages):
+                success = await self._send_message(chat_id, message)
+                if not success:
+                    all_sent = False
+                    LOGGER.error(f"Failed to send group notification part {i+1}/{len(messages)} to {chat_id}")
+                
+                # Small delay between messages to avoid rate limiting
+                if i < len(messages) - 1:
+                    await asyncio.sleep(0.5)
+            
+            return all_sent
         except Exception as e:
             LOGGER.error(f"Error sending group notification to {chat_id}: {e}")
             return False
@@ -109,6 +122,100 @@ class TelegramNotifier(TelegramNotifierInterface):
         
         return message
     
+    async def _format_group_messages(
+        self,
+        alerts: List[DeadlineAlert],
+        mention_users: bool = True,
+    ) -> List[str]:
+        """Format multiple alerts for group messages, splitting if needed."""
+        if not alerts:
+            return [""]
+        
+        # Sort alerts by urgency and days remaining
+        sorted_alerts = sorted(
+            alerts,
+            key=lambda a: (
+                0 if a.urgency_level == "overdue" else
+                1 if a.urgency_level == "today" else
+                2 if a.urgency_level == "urgent" else
+                3,
+                a.days_remaining,
+            )
+        )
+        
+        # Group by urgency level
+        urgency_groups = {}
+        for alert in sorted_alerts:
+            urgency_groups.setdefault(alert.urgency_level, []).append(alert)
+        
+        messages = []
+        current_message_parts = []
+        max_length = 4000  # Leave some buffer below Telegram's 4096 limit
+        message_count = 1
+        
+        # Start first message with header
+        header = f"<b>🚨 Team Deadline Report ({len(alerts)} issues)</b>"
+        current_message_parts = [header, ""]
+        
+        for urgency_level in ["overdue", "today", "urgent", "high"]:
+            if urgency_level not in urgency_groups:
+                continue
+            
+            group_alerts = urgency_groups[urgency_level]
+            urgency_emoji = self._get_urgency_emoji(urgency_level)
+            
+            group_header = f"<b>{urgency_emoji} {urgency_level.upper()} ({len(group_alerts)} issues)</b>"
+            
+            # Check if we need to start a new message
+            current_length = len("\n".join(current_message_parts))
+            if current_length + len(group_header) > max_length and current_message_parts:
+                # Finalize current message
+                messages.append("\n".join(current_message_parts))
+                message_count += 1
+                
+                # Start new message
+                new_header = f"<b>🚨 Team Deadline Report (Part {message_count})</b>"
+                current_message_parts = [new_header, "", group_header]
+            else:
+                current_message_parts.append(group_header)
+            
+            for alert in group_alerts:
+                # Get telegram username for mention
+                telegram_username = None
+                if mention_users and alert.assignee:
+                    telegram_username = await self._get_telegram_username(alert.assignee)
+                
+                mention_text = f" @{telegram_username}" if telegram_username else ""
+                deadline_text = self._get_short_deadline_text(alert)
+                summary_text = alert.summary[:40] + ('...' if len(alert.summary) > 40 else '')
+                
+                issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>"
+                deadline_line = f"  {deadline_text}{mention_text}"
+                
+                # Check if adding this issue would exceed the limit
+                issue_text = f"{issue_line}\n{deadline_line}\n"
+                current_length = len("\n".join(current_message_parts))
+                
+                if current_length + len(issue_text) > max_length:
+                    # Finalize current message
+                    current_message_parts.append("")  # Add spacing before split
+                    messages.append("\n".join(current_message_parts))
+                    message_count += 1
+                    
+                    # Start new message
+                    new_header = f"<b>🚨 Team Deadline Report (Part {message_count})</b>"
+                    current_message_parts = [new_header, "", group_header, issue_line, deadline_line, ""]
+                else:
+                    current_message_parts.extend([issue_line, deadline_line, ""])
+            
+            current_message_parts.append("")
+        
+        # Add the final message if there's content
+        if current_message_parts and len(current_message_parts) > 2:  # More than just header
+            messages.append("\n".join(current_message_parts))
+        
+        return messages if messages else ["<b>🚨 No deadline alerts found</b>"]
+
     async def _format_group_message(
         self,
         alerts: List[DeadlineAlert],
@@ -135,8 +242,10 @@ class TelegramNotifier(TelegramNotifierInterface):
         for alert in sorted_alerts:
             urgency_groups.setdefault(alert.urgency_level, []).append(alert)
         
-        # Build the message
+        # Build the message with length control
         message_parts = [f"<b>🚨 Team Deadline Report ({len(alerts)} issues)</b>\n"]
+        total_issues_added = 0
+        max_issues = 100  # Limit to prevent message being too long
         
         for urgency_level in ["overdue", "today", "urgent", "high"]:
             if urgency_level not in urgency_groups:
@@ -145,9 +254,16 @@ class TelegramNotifier(TelegramNotifierInterface):
             group_alerts = urgency_groups[urgency_level]
             urgency_emoji = self._get_urgency_emoji(urgency_level)
             
+            # Check if we have room for this urgency group
+            if total_issues_added >= max_issues:
+                break
+                
             message_parts.append(f"<b>{urgency_emoji} {urgency_level.upper()} ({len(group_alerts)} issues)</b>")
             
             for alert in group_alerts:
+                if total_issues_added >= max_issues:
+                    break
+                    
                 # Get telegram username for mention
                 telegram_username = None
                 if mention_users and alert.assignee:
@@ -155,14 +271,20 @@ class TelegramNotifier(TelegramNotifierInterface):
                 
                 mention_text = f" @{telegram_username}" if telegram_username else ""
                 deadline_text = self._get_short_deadline_text(alert)
-                summary_text = alert.summary[:50] + ('...' if len(alert.summary) > 50 else '')
+                summary_text = alert.summary[:40] + ('...' if len(alert.summary) > 40 else '')
                 
                 issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>"
                 deadline_line = f"  {deadline_text}{mention_text}"
                 
                 message_parts.extend([issue_line, deadline_line, ""])
+                total_issues_added += 1
             
             message_parts.append("")
+        
+        # Add truncation notice if there are more issues
+        if len(alerts) > max_issues:
+            remaining = len(alerts) - max_issues
+            message_parts.append(f"<i>... and {remaining} more issues</i>")
         
         return "\n".join(message_parts)
     

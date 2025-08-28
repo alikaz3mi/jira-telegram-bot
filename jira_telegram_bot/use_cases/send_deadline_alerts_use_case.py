@@ -55,6 +55,7 @@ class SendDeadlineAlertsUseCase:
             }
             
             # Get issues with approaching deadlines
+            LOGGER.debug(f"additional_jql: {additional_jql}, lookahead_days: {lookahead_days}")
             issues = self.task_manager_repository.get_issues_with_approaching_deadlines(
                 lookahead_days=lookahead_days,
                 additional_jql=additional_jql,
