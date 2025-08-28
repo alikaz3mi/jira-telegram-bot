@@ -135,9 +135,11 @@ class CronJob:
 async def main():
     """Main function for running the cron job standalone."""
     import os
+    from dotenv import load_dotenv
     from jira_telegram_bot.app_container import get_container
     
     # Get configuration from environment
+    load_dotenv()
     cron_schedule = os.environ.get("DEADLINE_NOTIFIER_CRON", "* 5 * * *")
     lookahead_days = int(os.environ.get("DEADLINE_NOTIFIER_LOOKAHEAD_DAYS", "3"))
     additional_jql = os.environ.get("DEADLINE_NOTIFIER_ADDITIONAL_JQL")
