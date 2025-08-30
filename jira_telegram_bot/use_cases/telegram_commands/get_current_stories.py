@@ -10,6 +10,7 @@ from jira_telegram_bot.entities.current_stories_report import CurrentStoriesRepo
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import CurrentStoriesServiceInterface
 from jira_telegram_bot.use_cases.interfaces.xlsx_report_service_interface import XlsxReportServiceInterface
+from datetime import datetime, timedelta
 
 
 class GetCurrentStoriesUseCase:
@@ -62,11 +63,25 @@ class GetCurrentStoriesUseCase:
             return []
         
         sprints = self.task_manager_repository.get_sprints(board_id)
-        active_sprints = [
-            sprint for sprint in sprints 
-            if sprint.state in ("active", "future")
-        ]
+        # Get current time for comparison
+        two_weeks_ago = datetime.now() - timedelta(weeks=2)
         
+        active_sprints = []
+        for sprint in sprints:
+            # Include active and future sprints
+            if sprint.state in ("active", "future"):
+                active_sprints.append(sprint)
+            # Include recently closed sprints (within 2 weeks)
+            elif sprint.state == "closed" and sprint.endDate:
+                try:
+                    # Parse sprint end date (assuming ISO format)
+                    end_date = datetime.fromisoformat(
+                    sprint.endDate.replace('Z', '+00:00')
+                    ).replace(tzinfo=None)
+                    if end_date >= two_weeks_ago:
+                        active_sprints.append(sprint)
+                except Exception as e:
+                    LOGGER.warning(f"Failed to parse sprint end date for {sprint.name}: {e}")
         return [
             {"id": str(sprint.id), "name": sprint.name} 
             for sprint in active_sprints
