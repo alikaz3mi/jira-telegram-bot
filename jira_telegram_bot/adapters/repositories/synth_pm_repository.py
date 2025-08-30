@@ -678,7 +678,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             components = self._map_components(feature)
 
-            feature.sprint_list
             if len(feature.sprint_list) > 1:
                 # Sort sprints by the first number when splitting by ':'
                 sorted_sprints = sorted(
@@ -699,6 +698,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         
                 if sprint is None:
                     sprint = sorted_sprints[0]
+            elif len(feature.sprint_list) == 1:
+                sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
+                sprint = self.jira_repository.get_sprint_by_id(
+                    sprint_info.sprint_id,
+                    self.developer_board_id,
+                )
+            else:
+                return None
 
             if sprint is None:
                 start_date = sprint_info.start_date

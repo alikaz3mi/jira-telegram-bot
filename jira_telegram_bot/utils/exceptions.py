@@ -105,3 +105,16 @@ class DatabaseConnectionError(Exception):
         """
         self.message = message
         super().__init__(self.message)
+
+
+class RepositoryError(Exception):
+    """Exception raised for repository operation errors."""
+    
+    def __init__(self, message: str):
+        """Initialize the repository error.
+        
+        Args:
+            message: The error message
+        """
+        self.message = message
+        super().__init__(self.message)

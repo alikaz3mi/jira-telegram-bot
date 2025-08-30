@@ -980,3 +980,209 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error deleting issue {issue_key}: {e}")
             return False
+
+    async def get_sprint(self, sprint_id: int):
+        """Get sprint information by ID.
+        
+        Args:
+            sprint_id: The sprint ID
+            
+        Returns:
+            Sprint object with dates, name, and ID
+        """
+        try:
+            # Use Jira API to get sprint by ID
+            sprint = self.jira.sprint(sprint_id)
+            return sprint
+        except Exception as e:
+            LOGGER.error(f"Error fetching sprint {sprint_id}: {e}")
+            return None
+
+    async def get_sprint_issues(self, project_keys: List[str], sprint_id: int) -> List:
+        """Get all issues for a sprint across projects.
+        
+        Args:
+            project_keys: List of project keys to search
+            sprint_id: The sprint ID
+            
+        Returns:
+            List of IssueSnapshot objects
+        """
+        from jira_telegram_bot.entities.team_evaluation import IssueSnapshot
+        
+        try:
+            # Build JQL to get issues for the sprint
+            projects_filter = " OR ".join([f'project = "{key}"' for key in project_keys])
+            jql = f"({projects_filter}) AND sprint = {sprint_id}"
+            
+            issues = self.search_for_issues(jql)
+            
+            # Convert to IssueSnapshot objects
+            snapshots = []
+            for issue in issues:
+                try:
+                    # Get linked issues
+                    linked_issues = []
+                    if hasattr(issue.fields, 'issuelinks'):
+                        for link in issue.fields.issuelinks:
+                            if hasattr(link, 'outwardIssue'):
+                                linked_issues.append(link.outwardIssue.key)
+                            if hasattr(link, 'inwardIssue'):
+                                linked_issues.append(link.inwardIssue.key)
+                    
+                    # Get epic information
+                    epic_key = getattr(issue.fields, self.jira_epic_link_id, None)
+                    epic_name = None
+                    if epic_key:
+                        epic_name = await self.get_issue_epic(epic_key)
+                    
+                    snapshot = IssueSnapshot(
+                        key=issue.key,
+                        issue_type=issue.fields.issuetype.name,
+                        priority=getattr(issue.fields.priority, 'name', None) if issue.fields.priority else None,
+                        labels=getattr(issue.fields, 'labels', []),
+                        components=[c.name for c in getattr(issue.fields, 'components', [])],
+                        epic_key=epic_key,
+                        epic_name=epic_name,
+                        due_date=self._parse_jira_date(getattr(issue.fields, 'duedate', None)),
+                        status=issue.fields.status.name,
+                        assignee=getattr(issue.fields.assignee, 'name', None) if issue.fields.assignee else None,
+                        project_key=issue.fields.project.key,
+                        project_name=issue.fields.project.name,
+                        resolution_date=self._parse_jira_date(getattr(issue.fields, 'resolutiondate', None)),
+                        created_date=self._parse_jira_date(issue.fields.created),
+                        updated_date=self._parse_jira_date(issue.fields.updated),
+                        linked_issues=linked_issues
+                    )
+                    snapshots.append(snapshot)
+                except Exception as e:
+                    LOGGER.warning(f"Error converting issue {issue.key} to snapshot: {e}")
+                    continue
+            
+            return snapshots
+            
+        except Exception as e:
+            LOGGER.error(f"Error fetching sprint issues: {e}")
+            return []
+
+    async def get_issue_worklogs(self, issue_keys: List[str]) -> List:
+        """Get worklogs for multiple issues.
+        
+        Args:
+            issue_keys: List of issue keys
+            
+        Returns:
+            List of WorklogSlice objects
+        """
+        from jira_telegram_bot.entities.team_evaluation import WorklogSlice
+        
+        worklogs = []
+        
+        for issue_key in issue_keys:
+            try:
+                issue_worklogs = self.jira.worklogs(issue_key)
+                
+                for worklog in issue_worklogs:
+                    try:
+                        worklog_slice = WorklogSlice(
+                            issue_key=issue_key,
+                            author=worklog.author.name,
+                            started_at=self._parse_jira_date(worklog.started),
+                            hours=worklog.timeSpentSeconds / 3600.0
+                        )
+                        worklogs.append(worklog_slice)
+                    except Exception as e:
+                        LOGGER.warning(f"Error parsing worklog for {issue_key}: {e}")
+                        continue
+                        
+            except Exception as e:
+                LOGGER.warning(f"Error fetching worklogs for {issue_key}: {e}")
+                continue
+        
+        return worklogs
+
+    async def get_issue_changelogs(self, issue_keys: List[str]) -> Dict[str, List]:
+        """Get changelogs for multiple issues.
+        
+        Args:
+            issue_keys: List of issue keys
+            
+        Returns:
+            Dictionary mapping issue keys to list of ChangeLogEvent objects
+        """
+        from jira_telegram_bot.entities.team_evaluation import ChangeLogEvent
+        
+        changelogs = {}
+        
+        for issue_key in issue_keys:
+            try:
+                issue = self.jira.issue(issue_key, expand='changelog')
+                issue_events = []
+                
+                if hasattr(issue, 'changelog') and hasattr(issue.changelog, 'histories'):
+                    for history in issue.changelog.histories:
+                        for item in history.items:
+                            try:
+                                event = ChangeLogEvent(
+                                    issue_key=issue_key,
+                                    field=item.field,
+                                    from_status=item.fromString,
+                                    to_status=item.toString,
+                                    changed_at=self._parse_jira_date(history.created),
+                                    author=history.author.name
+                                )
+                                issue_events.append(event)
+                            except Exception as e:
+                                LOGGER.warning(f"Error parsing changelog item for {issue_key}: {e}")
+                                continue
+                
+                changelogs[issue_key] = issue_events
+                
+            except Exception as e:
+                LOGGER.warning(f"Error fetching changelog for {issue_key}: {e}")
+                changelogs[issue_key] = []
+        
+        return changelogs
+
+    async def get_issue_epic(self, issue_key: str) -> Optional[str]:
+        """Get epic name for an issue.
+        
+        Args:
+            issue_key: The issue key
+            
+        Returns:
+            Epic name if found, None otherwise
+        """
+        try:
+            issue = self.get_issue(issue_key)
+            if issue and issue.fields.issuetype.name == "Epic":
+                return getattr(issue.fields, self.jira_epic_name_id, None)
+            return None
+        except Exception as e:
+            LOGGER.warning(f"Error fetching epic name for {issue_key}: {e}")
+            return None
+
+    def _parse_jira_date(self, date_str):
+        """Parse Jira date string to datetime.
+        
+        Args:
+            date_str: Jira date string
+            
+        Returns:
+            datetime object or None
+        """
+        if not date_str:
+            return None
+        
+        try:
+            # Jira typically returns dates in ISO format
+            from datetime import datetime
+            if isinstance(date_str, str):
+                if "T" in date_str:
+                    return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                else:
+                    return datetime.strptime(date_str, "%Y-%m-%d")
+            return date_str
+        except Exception as e:
+            LOGGER.warning(f"Error parsing date '{date_str}': {e}")
+            return None

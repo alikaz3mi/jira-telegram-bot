@@ -85,6 +85,8 @@ class SynthPMUseCase:
                 LOGGER.info(
                     f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}",
                 )
+                # if feature.row_number != 170:
+                #     continue
                 try:
                     await self._process_feature(feature, sync_results)
                 except Exception as e:

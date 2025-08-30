@@ -182,6 +182,9 @@ def configure_container() -> Container:
     
     _configure_synth_pm_board(container)
     
+    # Configure team evaluation
+    configure_team_evaluation_dependencies(container)
+    
     return container
 
 
@@ -429,12 +432,6 @@ def _configure_api_endpoints(container: Container) -> None:
     container[FastAPIConfig] = Singleton(lambda: FastAPIConfig())
     
     # Controllers
-    container[JiraWebhookController] = Singleton(
-        lambda c: JiraWebhookController(
-            jira_webhook_use_case=c[JiraWebhookUseCase],
-            process_jira_event_use_case=c[ProcessJiraEventUseCase]
-        )
-    )
     container[GitlabWebhookController] = Singleton(
         lambda c: GitlabWebhookController(
             process_gitlab_event_use_case=c[ProcessGitlabEventUseCase]
@@ -525,6 +522,69 @@ def _configure_synth_pm_board(container: Container) -> None:
     # Endpoint (will be imported when needed)
     container[SynthPMEndpoint] = Singleton(
         lambda c: SynthPMEndpoint(c[SynthPMUseCase])
+    )
+
+
+def configure_team_evaluation_dependencies(container: Container):
+    """Configure team evaluation specific dependencies."""
+    from jira_telegram_bot.settings.team_evaluation_settings import TeamEvaluationSettings
+    from jira_telegram_bot.adapters.repositories.calendar import JsonCalendarRepository
+    from jira_telegram_bot.adapters.repositories.leave import JsonLeaveRepository
+    from jira_telegram_bot.adapters.gateways.google_sheets.team_evaluation_gateway import TeamEvaluationGoogleSheetGateway
+    from jira_telegram_bot.adapters.controllers.jira_webhook_controller import JiraWebhookController
+    from jira_telegram_bot.use_cases.interfaces.calendar_repository_interface import CalendarRepositoryInterface
+    from jira_telegram_bot.use_cases.interfaces.leave_repository_interface import LeaveRepositoryInterface
+    from jira_telegram_bot.use_cases.interfaces.google_sheet_gateway_interface import GoogleSheetGatewayInterface
+    from jira_telegram_bot.use_cases.team_evaluation import SprintClosedTeamEvaluationUseCase, SprintWebhookHandler
+    from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase
+    from jira_telegram_bot.use_cases.metrics.process_jira_event_use_case import ProcessJiraEventUseCase
+    
+    # Settings
+    container[TeamEvaluationSettings] = Singleton(
+        lambda: TeamEvaluationSettings()
+    )
+    
+    # Repositories
+    container[CalendarRepositoryInterface] = Singleton(
+        lambda: JsonCalendarRepository()
+    )
+    
+    container[LeaveRepositoryInterface] = Singleton(
+        lambda: JsonLeaveRepository()
+    )
+    
+    # Gateways
+    container[GoogleSheetGatewayInterface] = Singleton(
+        lambda c: TeamEvaluationGoogleSheetGateway(
+            google_sheet_client=c[GoogleSheetClient]
+        )
+    )
+    
+    # Use cases
+    container[SprintClosedTeamEvaluationUseCase] = Singleton(
+        lambda c: SprintClosedTeamEvaluationUseCase(
+            task_manager_repo=c[TaskManagerRepositoryInterface],
+            user_config_service=c[UserConfigInterface],
+            google_sheet_gateway=c[GoogleSheetGatewayInterface],
+            calendar_repo=c[CalendarRepositoryInterface],
+            leave_repo=c[LeaveRepositoryInterface],
+            settings=c[TeamEvaluationSettings]
+        )
+    )
+    
+    container[SprintWebhookHandler] = Singleton(
+        lambda c: SprintWebhookHandler(
+            team_evaluation_use_case=c[SprintClosedTeamEvaluationUseCase]
+        )
+    )
+    
+    # Override JiraWebhookController to include sprint handler
+    container[JiraWebhookController] = Singleton(
+        lambda c: JiraWebhookController(
+            jira_webhook_use_case=c[JiraWebhookUseCase],
+            process_jira_event_use_case=c[ProcessJiraEventUseCase],
+            sprint_webhook_handler=c[SprintWebhookHandler]
+        )
     )
 
 

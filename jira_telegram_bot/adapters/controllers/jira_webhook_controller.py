@@ -9,6 +9,7 @@ from jira_telegram_bot.adapters.controllers.base_webhook_controller import BaseW
 from jira_telegram_bot.entities.api_schemas import WebhookResponse
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase
 from jira_telegram_bot.use_cases.metrics.process_jira_event_use_case import ProcessJiraEventUseCase
+from jira_telegram_bot.use_cases.team_evaluation import SprintWebhookHandler
 
 
 class JiraWebhookController(BaseWebhookController):
@@ -17,17 +18,20 @@ class JiraWebhookController(BaseWebhookController):
     def __init__(
         self,
         jira_webhook_use_case: JiraWebhookUseCase,
-        process_jira_event_use_case: ProcessJiraEventUseCase
+        process_jira_event_use_case: ProcessJiraEventUseCase,
+        sprint_webhook_handler: SprintWebhookHandler = None
     ):
         """Initialize the Jira webhook controller.
         
         Args:
             jira_webhook_use_case: Use case for handling Jira webhooks
             process_jira_event_use_case: Use case for processing Jira events into metrics
+            sprint_webhook_handler: Handler for sprint-related events (optional)
         """
         super().__init__()
         self.jira_webhook_use_case = jira_webhook_use_case
         self.process_jira_event_use_case = process_jira_event_use_case
+        self.sprint_webhook_handler = sprint_webhook_handler
     
     def _validate_webhook_data(self, webhook_data: Dict[str, Any]) -> WebhookResponse | None:
         """Validate Jira webhook data.
@@ -78,6 +82,15 @@ class JiraWebhookController(BaseWebhookController):
         else:
             results.append("Metrics: Processing failed")
         
+        # Process sprint events if handler is available
+        if self.sprint_webhook_handler and self._is_sprint_event(webhook_data):
+            try:
+                await self.sprint_webhook_handler.handle_sprint_event(webhook_data)
+                results.append("Sprint: Successfully processed team evaluation")
+            except Exception as e:
+                LOGGER.error(f"Sprint webhook processing failed: {e}")
+                results.append(f"Sprint: Processing failed - {e}")
+        
         # Combine results
         combined_message = f"Processed {event_type} for {issue_key}. " + " | ".join(results)
         
@@ -88,3 +101,15 @@ class JiraWebhookController(BaseWebhookController):
             return self._create_ignored_response(combined_message)
         else:
             return self._create_error_response(combined_message)
+
+    def _is_sprint_event(self, webhook_data: Dict[str, Any]) -> bool:
+        """Check if the webhook is a sprint-related event.
+        
+        Args:
+            webhook_data: Webhook payload
+            
+        Returns:
+            True if this is a sprint event
+        """
+        event_type = webhook_data.get("webhookEvent", "")
+        return event_type in ["sprint_closed", "sprint_started", "sprint_updated"]

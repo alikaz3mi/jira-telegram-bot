@@ -372,3 +372,64 @@ class TaskManagerRepositoryInterface(ABC):
                 List of link types with their names and descriptions
             """
             pass
+
+        @abstractmethod
+        async def get_sprint(self, sprint_id: int):
+            """Get sprint information by ID.
+            
+            Args:
+                sprint_id: The sprint ID
+                
+            Returns:
+                Sprint object with dates, name, and ID
+            """
+            pass
+
+        @abstractmethod
+        async def get_sprint_issues(self, project_keys: List[str], sprint_id: int) -> List:
+            """Get all issues for a sprint across projects.
+            
+            Args:
+                project_keys: List of project keys to search
+                sprint_id: The sprint ID
+                
+            Returns:
+                List of IssueSnapshot objects
+            """
+            pass
+
+        @abstractmethod
+        async def get_issue_worklogs(self, issue_keys: List[str]) -> List:
+            """Get worklogs for multiple issues.
+            
+            Args:
+                issue_keys: List of issue keys
+                
+            Returns:
+                List of WorklogSlice objects
+            """
+            pass
+
+        @abstractmethod
+        async def get_issue_changelogs(self, issue_keys: List[str]) -> Dict[str, List]:
+            """Get changelogs for multiple issues.
+            
+            Args:
+                issue_keys: List of issue keys
+                
+            Returns:
+                Dictionary mapping issue keys to list of ChangeLogEvent objects
+            """
+            pass
+
+        @abstractmethod
+        async def get_issue_epic(self, issue_key: str) -> Optional[str]:
+            """Get epic name for an issue.
+            
+            Args:
+                issue_key: The issue key
+                
+            Returns:
+                Epic name if found, None otherwise
+            """
+            pass
