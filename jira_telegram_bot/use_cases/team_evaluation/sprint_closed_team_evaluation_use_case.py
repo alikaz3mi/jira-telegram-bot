@@ -80,6 +80,9 @@ class SprintClosedTeamEvaluationUseCase:
                 LOGGER.error(f"Sprint {event.sprint_id} not found")
                 return
             
+            # Use actual sprint name from the sprint object if available
+            actual_sprint_name = getattr(sprint, 'name', event.sprint_name) or event.sprint_name
+            
             # Get all issues in the sprint
             sprint_issues = await self.task_manager_repo.get_sprint_issues(
                 project_keys=event.project_keys,
@@ -93,7 +96,7 @@ class SprintClosedTeamEvaluationUseCase:
             LOGGER.info(f"Found {len(sprint_issues)} issues in sprint")
             
             # Get additional data
-            issue_keys = [issue.key for issue in sprint_issues]
+            issue_keys = [issue.key for issue in sprint_issues if issue]
             worklogs = await self.task_manager_repo.get_issue_worklogs(issue_keys)
             changelogs = await self.task_manager_repo.get_issue_changelogs(issue_keys)
             
@@ -102,6 +105,7 @@ class SprintClosedTeamEvaluationUseCase:
                 sprint_issues=sprint_issues,
                 worklogs=worklogs,
                 changelogs=changelogs,
+                sprint_name=actual_sprint_name,
                 event=event
             )
             
@@ -121,6 +125,7 @@ class SprintClosedTeamEvaluationUseCase:
         sprint_issues: List[IssueSnapshot],
         worklogs: List[WorklogSlice],
         changelogs: Dict[str, List[ChangeLogEvent]],
+        sprint_name: str,
         event: SprintClosedEvent
     ) -> List[TeamEvaluationRow]:
         """Compute evaluation rows for all developers.
@@ -159,7 +164,7 @@ class SprintClosedTeamEvaluationUseCase:
                         developer=developer,
                         department=department,
                         project_key=project_key,
-                        sprint_name=event.sprint_name,
+                        sprint_name=sprint_name,
                         issues=project_issues,
                         worklogs=[w for w in data["worklogs"] if any(i.key in w.issue_key for i in project_issues)],
                         changelogs={k: v for k, v in data["changelogs"].items() if any(i.key == k for i in project_issues)},
@@ -367,8 +372,16 @@ class SprintClosedTeamEvaluationUseCase:
             )
             
             # Create evaluation row
+            # Translate developer username to Google Sheets display name
+            user_config = self.user_config_service.get_user_config_by_jira_username(developer)
+            google_sheet_name = (
+                user_config.google_sheet_name 
+                if user_config and user_config.google_sheet_name 
+                else developer
+            )
+            
             return TeamEvaluationRow(
-                developer_name=developer,
+                developer_name=google_sheet_name,
                 department=department,
                 project=project_key,
                 sprint=sprint_name,
@@ -408,7 +421,7 @@ class SprintClosedTeamEvaluationUseCase:
             if self.settings.dry_run:
                 LOGGER.info(f"DRY RUN: Would write {len(rows)} rows to sheet")
                 for row in rows:
-                    LOGGER.info(f"DRY RUN: {row.developer_name} - {row.project} - {row.sprint}")
+                    LOGGER.info(f"DRY RUN: {row.developer_name} (translated) - {row.project} - {row.sprint}")
                 return
             
             # Use developer name, project, and sprint as unique keys for upsert

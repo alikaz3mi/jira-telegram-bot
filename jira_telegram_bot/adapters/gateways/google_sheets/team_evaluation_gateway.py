@@ -40,7 +40,8 @@ class TeamEvaluationGoogleSheetGateway(GoogleSheetGatewayInterface):
             SpreadsheetError: If operation fails
         """
         try:
-            LOGGER.info(f"Upserting {len(rows)} rows to sheet {sheet_id}, tab {tab_name}")
+            LOGGER.info(f"Upserting {len(rows)} rows to sheet {sheet_id}, tab '{tab_name}'")
+            LOGGER.debug(f"Upsert keys: {upsert_keys}")
             
             # Ensure headers exist
             await self.ensure_headers(sheet_id, tab_name)
@@ -74,8 +75,13 @@ class TeamEvaluationGoogleSheetGateway(GoogleSheetGatewayInterface):
             
             # Perform inserts
             if inserts:
+                LOGGER.info(f"Appending {len(inserts)} new rows to tab '{tab_name}'")
+                for i, row_data in enumerate(inserts[:3]):  # Log first 3 rows for debugging
+                    LOGGER.debug(f"Row {i+1}: {row_data}")
                 await self._append_rows(sheet_id, tab_name, inserts)
                 LOGGER.info(f"Inserted {len(inserts)} new rows")
+            else:
+                LOGGER.info("No new rows to insert")
                 
         except Exception as e:
             LOGGER.error(f"Error upserting rows to sheet {sheet_id}: {e}")
@@ -98,7 +104,7 @@ class TeamEvaluationGoogleSheetGateway(GoogleSheetGatewayInterface):
             # Check if headers already exist
             try:
                 existing_data = await self.client.get_values(sheet_id, range_name)
-                if existing_data and existing_data[0] == headers:
+                if existing_data and set(existing_data[0]) == set(headers):
                     LOGGER.debug("Headers already exist and are correct")
                     return
             except Exception:
@@ -212,7 +218,7 @@ class TeamEvaluationGoogleSheetGateway(GoogleSheetGatewayInterface):
                 await asyncio.sleep(0.1)
 
     async def _append_rows(self, sheet_id: str, tab_name: str, rows: List[List[str]]) -> None:
-        """Append new rows to the sheet.
+        """Append new rows to the sheet within the table structure.
         
         Args:
             sheet_id: Google Sheet ID
@@ -223,14 +229,50 @@ class TeamEvaluationGoogleSheetGateway(GoogleSheetGatewayInterface):
         batch_size = 500
         for i in range(0, len(rows), batch_size):
             batch = rows[i:i + batch_size]
-            range_name = f"{tab_name}!A:Z"
             
-            await self.client.append_rows(
-                spreadsheet_id=sheet_id,
-                range_name=range_name,
-                values=batch
-            )
+            # Find the next available row within the table structure
+            await self._insert_rows_in_table(sheet_id, tab_name, batch)
             
             # Add small delay between batches
             if i + batch_size < len(rows):
                 await asyncio.sleep(0.1)
+
+    async def _insert_rows_in_table(self, sheet_id: str, tab_name: str, rows: List[List[str]]) -> None:
+        """Insert rows within the existing table structure.
+        
+        Args:
+            sheet_id: Google Sheet ID
+            tab_name: Target tab name
+            rows: List of row data to insert
+        """
+        try:
+            # Get all existing data to find the table range
+            existing_data = await self._get_existing_data(sheet_id, tab_name)
+            
+            # Find the next row to insert (right after existing data)
+            next_row = len(existing_data) + 2  # +1 for header, +1 for next row
+            
+            # Insert each row at the calculated position
+            for i, row_data in enumerate(rows):
+                row_num = next_row + i
+                range_name = f"{tab_name}!A{row_num}:{chr(ord('A') + len(row_data) - 1)}{row_num}"
+                
+                await self.client.update_cells(
+                    spreadsheet_id=sheet_id,
+                    range_name=range_name,
+                    values=[row_data]
+                )
+                
+                LOGGER.debug(f"Inserted row at {range_name}: {row_data}")
+            
+            LOGGER.info(f"Successfully inserted {len(rows)} rows within table structure")
+            
+        except Exception as e:
+            LOGGER.error(f"Error inserting rows in table: {e}")
+            # Fallback to simple append
+            range_name = f"{tab_name}!A:Z"
+            await self.client.append_rows(
+                spreadsheet_id=sheet_id,
+                range_name=range_name,
+                values=rows
+            )

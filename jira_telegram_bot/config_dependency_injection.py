@@ -9,7 +9,7 @@ from typing import Dict, Any
 from lagom import Container, Singleton
 
 # Core dependencies
-from jira_telegram_bot import LOGGER
+from jira_telegram_bot import LOGGER, DEFAULT_PATH
 
 # Settings imports
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
@@ -546,7 +546,7 @@ def configure_team_evaluation_dependencies(container: Container):
     
     # Repositories
     container[CalendarRepositoryInterface] = Singleton(
-        lambda: JsonCalendarRepository()
+        lambda: JsonCalendarRepository(data_path=f"{DEFAULT_PATH}/data/storage")
     )
     
     container[LeaveRepositoryInterface] = Singleton(

@@ -6,14 +6,14 @@ from typing import Set
 DEV_ISSUE_TYPES: Set[str] = {"Task", "Sub-task", "Improvement"}
 BUG_ISSUE_TYPES: Set[str] = {"Bug"}
 SUPPORT_LABELS: Set[str] = {"Support"}
-SUPPORT_EPIC_NAME: str = "پشتیبانی"
+SUPPORT_EPIC_NAME: str = "پشتیبانی مشتریان"
 
 # Priority levels
 HIGH_PRIORITY: str = "Highest"
 
 # Status groups
 REVIEW_STATUSES: Set[str] = {"Review", "In Review", "Code Review"}
-BACKLOG_STATUSES: Set[str] = {"Backlog", "To Do", "In Progress"}
+BACKLOG_STATUSES: Set[str] = {"Backlog", "To Do", "In Progress", "Selected for Development"}
 DONE_STATUSES: Set[str] = {"Done", "Resolved", "Closed"}
 
 # Defect labels
