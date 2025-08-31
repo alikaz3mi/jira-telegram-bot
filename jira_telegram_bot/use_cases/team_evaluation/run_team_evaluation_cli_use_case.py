@@ -84,13 +84,10 @@ class RunTeamEvaluationCliUseCase:
             LOGGER.warning("⚠️  Sprint name resolution not yet implemented, using placeholder ID")
             resolved_sprint_id = 0
 
-        # Create sprint event
-        from datetime import datetime
         sprint_event = SprintClosedEvent(
             sprint_id=resolved_sprint_id,
             sprint_name=sprint_name or f"Sprint {resolved_sprint_id}",
             project_keys=project_keys,
-            ended_at=datetime.now()
         )
 
         # Process via core use case

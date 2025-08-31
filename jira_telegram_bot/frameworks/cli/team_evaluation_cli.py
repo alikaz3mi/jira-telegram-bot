@@ -97,7 +97,7 @@ Examples:
         parser.add_argument(
             "--workdays",
             type=str,
-            default="6,0,1,2,3,4",
+            default="6,0,1,2,3,5",
             help="Working days as comma-separated numbers (0=Monday, 6=Sunday, default: 6,0,1,2,3,4 for Sat-Thu)"
         )
 

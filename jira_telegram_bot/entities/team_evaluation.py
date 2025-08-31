@@ -44,10 +44,10 @@ class PriorityLevel(str, Enum):
 
 class TeamEvaluationScoreWeights(BaseModel):
     """Score weights for team evaluation computation."""
-    deadline: float = Field(default=0.35, ge=0, le=1)
-    worklog: float = Field(default=0.25, ge=0, le=1)
-    high_priority: float = Field(default=0.20, ge=0, le=1)
-    defects: float = Field(default=0.20, ge=0, le=1)
+    deadline: float = Field(default=0.25, ge=0, le=1)    # Reduced from 0.35
+    worklog: float = Field(default=0.20, ge=0, le=1)     # Reduced from 0.25
+    high_priority: float = Field(default=0.40, ge=0, le=1)  # Increased from 0.20 - MAJOR EMPHASIS
+    defects: float = Field(default=0.15, ge=0, le=1)     # Reduced from 0.20
 
     def model_post_init(self, __context: Any) -> None:
         """Validate that weights sum to 1.0."""
@@ -61,7 +61,8 @@ class SprintClosedEvent(BaseModel):
     sprint_id: int
     sprint_name: str
     project_keys: List[str]
-    ended_at: datetime
+    ended_at: Optional[datetime] = Field(default=None)
+    started_at: Optional[datetime] = Field(default=None)
 
 
 class WorklogSlice(BaseModel):
@@ -117,7 +118,7 @@ class TeamEvaluationRow(BaseModel):
     bug_hours: float  # زمان باگ
     development_hours: float  # زمان توسعه
     support_hours: float  # زمان پشتیبانی
-    avg_deadline_delivery_hours: str  # میانگین ددلاین دلیوری به ساعت
+    avg_deadline_delivery_days: str  # میانگین ددلاین دلیوری به روز
     review_back_count: int  # بازگشت از مرور به بک لاگ
     story_test_pass_rate: str  # درصد پاس شدن تست استوری
     acceptance_criteria_pass_rate: str  # درصد پاس شدن معیارهای پذیرش
@@ -145,7 +146,7 @@ class TeamEvaluationRow(BaseModel):
             str(round(self.bug_hours, 1)),
             str(round(self.development_hours, 1)),
             str(round(self.support_hours, 1)),
-            self.avg_deadline_delivery_hours,
+            self.avg_deadline_delivery_days,
             str(self.review_back_count),
             self.story_test_pass_rate,
             self.acceptance_criteria_pass_rate,
@@ -175,7 +176,7 @@ class TeamEvaluationRow(BaseModel):
             "زمان باگ",
             "زمان توسعه",
             "زمان پشتیبانی",
-            "میانگین ددلاین دلیوری به ساعت",
+            "میانگین ددلاین دلیوری",
             "بازگشت از مرور به بک لاگ",
             "درصد پاس شدن تست استوری",
             "درصد پاس شدن معیارهای پذیرش",

@@ -528,7 +528,7 @@ def _configure_synth_pm_board(container: Container) -> None:
 def configure_team_evaluation_dependencies(container: Container):
     """Configure team evaluation specific dependencies."""
     from jira_telegram_bot.settings.team_evaluation_settings import TeamEvaluationSettings
-    from jira_telegram_bot.adapters.repositories.calendar import JsonCalendarRepository
+    from jira_telegram_bot.adapters.repositories.calendar.api_calendar_repository import ApiCalendarRepository
     from jira_telegram_bot.adapters.repositories.leave import JsonLeaveRepository
     from jira_telegram_bot.adapters.gateways.google_sheets.team_evaluation_gateway import TeamEvaluationGoogleSheetGateway
     from jira_telegram_bot.adapters.controllers.jira_webhook_controller import JiraWebhookController
@@ -544,9 +544,9 @@ def configure_team_evaluation_dependencies(container: Container):
         lambda: TeamEvaluationSettings()
     )
     
-    # Repositories
+    # Repositories - Using API-based calendar repository
     container[CalendarRepositoryInterface] = Singleton(
-        lambda: JsonCalendarRepository(data_path=f"{DEFAULT_PATH}/data/storage")
+        lambda: ApiCalendarRepository(base_url="https://holidayapi.ir/jalali")
     )
     
     container[LeaveRepositoryInterface] = Singleton(

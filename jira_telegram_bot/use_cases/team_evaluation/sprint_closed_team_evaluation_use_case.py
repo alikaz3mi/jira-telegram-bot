@@ -80,6 +80,12 @@ class SprintClosedTeamEvaluationUseCase:
                 LOGGER.error(f"Sprint {event.sprint_id} not found")
                 return
             
+            # Set sprint dates from the sprint object, ensuring they are datetime objects
+            if hasattr(sprint, 'startDate') and sprint.startDate:
+                event.started_at = sprint.startDate if isinstance(sprint.startDate, datetime) else datetime.fromisoformat(str(sprint.startDate))
+            if hasattr(sprint, 'endDate') and sprint.endDate:
+                event.ended_at = sprint.endDate if isinstance(sprint.endDate, datetime) else datetime.fromisoformat(str(sprint.endDate))
+
             # Use actual sprint name from the sprint object if available
             actual_sprint_name = getattr(sprint, 'name', event.sprint_name) or event.sprint_name
             
@@ -333,12 +339,16 @@ class SprintClosedTeamEvaluationUseCase:
                 workdays=self.settings.workdays,
                 username=developer
             )
-            
+            expected_hours = round(expected_hours)
+
             # Calculate deadline performance
             delivered_with_deadlines = [i for i in delivered_issues if i.due_date]
-            avg_deadline_delta = self.deadline_service.average_deadline_delta_hours(delivered_with_deadlines)
+            avg_deadline_delta = self.deadline_service.average_deadline_delta_days(
+                delivered_with_deadlines, 
+                changelogs
+            )
             avg_deadline_str = (
-                f"{avg_deadline_delta:.1f}h" if avg_deadline_delta is not None 
+                f"{avg_deadline_delta:.1f}d" if avg_deadline_delta is not None 
                 else "N/A"
             )
             
@@ -361,7 +371,7 @@ class SprintClosedTeamEvaluationUseCase:
             # Calculate quality score
             quality_score = self.score_service.compute_hosn_score(
                 weights=self.settings.score_weights,
-                avg_deadline_delta_hours=avg_deadline_delta or 0.0,
+                avg_deadline_delta_days=avg_deadline_delta or 0.0,
                 registered_hours=total_hours,
                 expected_hours=expected_hours,
                 completed_high_priority=completed_high_priority,
@@ -394,7 +404,7 @@ class SprintClosedTeamEvaluationUseCase:
                 bug_hours=bug_hours,
                 development_hours=dev_hours,
                 support_hours=support_hours,
-                avg_deadline_delivery_hours=avg_deadline_str,
+                avg_deadline_delivery_days=avg_deadline_str,
                 review_back_count=review_back_count,
                 story_test_pass_rate="N/A",  # Not implemented in scope
                 acceptance_criteria_pass_rate="N/A",  # Not implemented in scope
