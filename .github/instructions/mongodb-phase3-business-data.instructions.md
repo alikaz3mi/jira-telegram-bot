@@ -143,13 +143,13 @@ ProjectMetadata:
 class APICalendarService:
     async def get_holidays(self, year: int, country: str = "IR") -> List[Holiday]:
         # Fetch holidays from API Calendar service
-        
+
     async def get_business_days(self, start_date: date, end_date: date) -> List[date]:
         # Calculate business days using API
-        
+
     async def is_holiday(self, date: date) -> bool:
         # Check if specific date is holiday
-        
+
     async def get_working_hours(self, date: date) -> WorkingHours:
         # Get working hours for specific date
 ```
@@ -209,7 +209,7 @@ class APICalendarService:
 class MongoDBProgressReportRepository(ProgressReportRepositoryInterface):
     async def save_reports(self, reports: List[ProgressReport]) -> List[ProgressReport]:
         # Batch save with validation and deduplication
-        
+
     async def get_reports_by_date_range(
         self,
         start_date: datetime,
@@ -218,14 +218,14 @@ class MongoDBProgressReportRepository(ProgressReportRepositoryInterface):
         project_key: Optional[str] = None
     ) -> List[ProgressReport]:
         # Optimized range queries with filtering
-        
+
     async def get_productivity_trends(
         self,
         assignee: str,
         months: int = 6
     ) -> ProductivityTrends:
         # Analytics aggregation for productivity tracking
-        
+
     async def archive_old_reports(self, before_date: datetime) -> int:
         # Archive old reports with metadata preservation
 ```
@@ -238,17 +238,17 @@ class NotificationTrackingService:
         notification: NotificationRecord
     ) -> str:
         # Record notification with deduplication
-        
+
     async def get_delivery_statistics(
         self,
         start_date: datetime,
         end_date: datetime
     ) -> DeliveryStatistics:
         # Analytics for notification delivery
-        
+
     async def cleanup_expired_notifications(self) -> int:
         # Clean up expired notifications
-        
+
     async def get_notification_thread(
         self,
         entity_reference: EntityReference
@@ -262,7 +262,7 @@ class CachedAPICalendarService:
     def __init__(self, api_service: APICalendarService, cache: CacheInterface):
         self.api_service = api_service
         self.cache = cache
-    
+
     async def get_holidays_cached(self, year: int) -> List[Holiday]:
         cache_key = f"holidays:{year}"
         holidays = await self.cache.get(cache_key)
@@ -270,7 +270,7 @@ class CachedAPICalendarService:
             holidays = await self.api_service.get_holidays(year)
             await self.cache.set(cache_key, holidays, ttl=86400 * 7)  # 1 week
         return holidays
-    
+
     async def calculate_business_days_in_range(
         self,
         start_date: date,

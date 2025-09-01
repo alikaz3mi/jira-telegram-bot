@@ -12,7 +12,7 @@ Migrate user-related data and session management from local JSON files to MongoD
 ## 🎯 Goals
 
 1. **User Configuration Migration**: Move `data/storage/user_config.json` to MongoDB
-2. **Session Management**: Migrate Telegram post mappings (`data_store.json`) to MongoDB  
+2. **Session Management**: Migrate Telegram post mappings (`data_store.json`) to MongoDB
 3. **User Preferences**: Enhanced user preference management and versioning
 4. **Session Persistence**: Robust session management across deployments
 5. **User Activity Tracking**: Foundation for user analytics and audit trails
@@ -177,16 +177,16 @@ class MongoDBUserProfileRepository(UserProfileRepositoryInterface):
     def __init__(self, connection: MongoDBConnection):
         super().__init__(connection, "user_profiles")
         self.cache = TTLCache(maxsize=1000, ttl=300)
-    
+
     async def get_by_telegram_username(self, username: str) -> Optional[UserProfile]:
         # Cached lookup with fallback to database
-        
+
     async def get_by_jira_username(self, jira_username: str) -> Optional[UserProfile]:
         # Support for multi-Jira environment lookups
-        
+
     async def update_last_seen(self, user_id: str) -> None:
         # Efficient timestamp update without full document
-        
+
     async def get_users_by_component(self, project: str, component: str) -> List[UserProfile]:
         # Query for team organization
 ```
@@ -196,13 +196,13 @@ class MongoDBUserProfileRepository(UserProfileRepositoryInterface):
 class TelegramSessionService:
     async def create_session(self, session_data: TelegramSessionCreate) -> TelegramSession:
         # Create session with automatic expiration
-        
+
     async def get_session_by_post_id(self, post_id: int) -> Optional[TelegramSession]:
         # Quick session lookup with caching
-        
+
     async def extend_session(self, session_id: str, ttl_days: int = 30) -> bool:
         # Extend session lifetime
-        
+
     async def cleanup_expired_sessions(self) -> int:
         # Automated cleanup of expired sessions
 ```
@@ -212,13 +212,13 @@ class TelegramSessionService:
 class UserDataMigrationService:
     async def migrate_user_configurations(self) -> MigrationResult:
         # Migrate user_config.json to MongoDB
-        
+
     async def migrate_telegram_sessions(self) -> MigrationResult:
         # Migrate data_store.json to MongoDB
-        
+
     async def validate_migration(self) -> ValidationResult:
         # Comprehensive data validation
-        
+
     async def rollback_migration(self, checkpoint: str) -> bool:
         # Rollback to previous state
 ```
