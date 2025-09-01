@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
 
 from jira import Issue
 
+from jira_telegram_bot.entities.release import Release
 from jira_telegram_bot.entities.task import TaskData
 
 
@@ -373,63 +375,299 @@ class TaskManagerRepositoryInterface(ABC):
             """
             pass
 
-        @abstractmethod
-        async def get_sprint(self, sprint_id: int):
-            """Get sprint information by ID.
+    @abstractmethod
+    def get_issue_spent_time_in_seconds(self, issue_key: str) -> int:
+        """Get the total time spent on an issue in seconds.
+        
+        Args:
+            issue_key: The issue key
             
-            Args:
-                sprint_id: The sprint ID
-                
-            Returns:
-                Sprint object with dates, name, and ID
-            """
-            pass
+        Returns:
+            Total time spent in seconds
+        """
+        pass
 
-        @abstractmethod
-        async def get_sprint_issues(self, project_keys: List[str], sprint_id: int) -> List:
-            """Get all issues for a sprint across projects.
-            
-            Args:
-                project_keys: List of project keys to search
-                sprint_id: The sprint ID
-                
-            Returns:
-                List of IssueSnapshot objects
-            """
-            pass
+    @abstractmethod
+    def get_issue_by_summary(self, summary: str, board: str) -> Optional[Issue]:
+        """
+        Get a Jira issue by its summary and board.
 
-        @abstractmethod
-        async def get_issue_worklogs(self, issue_keys: List[str]) -> List:
-            """Get worklogs for multiple issues.
-            
-            Args:
-                issue_keys: List of issue keys
-                
-            Returns:
-                List of WorklogSlice objects
-            """
-            pass
+        Args:
+            summary: The summary of the issue
+            board: The board/project key
 
-        @abstractmethod
-        async def get_issue_changelogs(self, issue_keys: List[str]) -> Dict[str, List]:
-            """Get changelogs for multiple issues.
-            
-            Args:
-                issue_keys: List of issue keys
-                
-            Returns:
-                Dictionary mapping issue keys to list of ChangeLogEvent objects
-            """
-            pass
+        Returns:
+            Jira issue or None
+        """
+        pass
 
-        @abstractmethod
-        async def get_issue_epic(self, issue_key: str) -> Optional[str]:
-            """Get epic name for an issue.
+    @abstractmethod
+    def get_issue_url(self, issue: Issue) -> str:
+        """
+        Get the URL for a Jira issue.
+
+        Args:
+            issue: The Jira issue object
+
+        Returns:
+            URL string for the issue
+        """
+        pass
+
+    @abstractmethod
+    def get_issue_url_by_key(self, issue_key: str) -> str:
+        """
+        Get the URL for a Jira issue by its key.
+
+        Args:
+            issue_key: The key of the Jira issue
+
+        Returns:
+            URL string for the issue
+        """
+        pass
+
+    @abstractmethod
+    def get_transitions(self, issue_key: str) -> List[Dict[str, str]]:
+        """
+        Get available transitions for an issue.
+
+        Args:
+            issue_key: The key of the Jira issue
+
+        Returns:
+            List of available transitions with their IDs and names
+        """
+        pass
+
+    @abstractmethod
+    def transition_issue(self, issue_key: str, transition_id: str) -> None:
+        """
+        Transition an issue to a new status.
+
+        Args:
+            issue_key: The key of the Jira issue
+            transition_id: The ID of the transition to apply
+
+        Raises:
+            Exception if the transition fails
+        """
+        pass
+
+    @abstractmethod
+    def get_sprint_by_id(
+        self,
+        sprint_id: str,
+        board_id: str,
+    ) -> Optional[Dict[str, any]]:
+        """
+        Get sprint details by ID.
+
+        Args:
+            sprint_id: The ID of the sprint
+            board_id: The ID of the board
+
+        Returns:
+            Sprint details as a dictionary or None if not found
+        """
+        pass
+
+    @abstractmethod
+    def get_sprint_by_name(
+        self,
+        sprint_name: str,
+        board_id: str,
+    ) -> Optional[Dict[str, any]]:
+        """
+        Get sprint details by name.
+
+        Args:
+            sprint_name: The name of the sprint
+            board_id: The ID of the board
+
+        Returns:
+            Sprint details as a dictionary or None if not found
+        """
+        pass
+
+    @abstractmethod
+    def create_sprint(
+        self,
+        board_id: int,
+        sprint_name: str,
+        start_date: str,
+        end_date: str,
+        goal: str = None,
+    ) -> Optional[Dict[str, any]]:
+        """
+        Create a new sprint.
+
+        Args:
+            board_id: The ID of the board to create the sprint in
+            sprint_name: The name of the new sprint
+            start_date: The start date of the sprint in ISO format
+            end_date: The end date of the sprint in ISO format
+            goal: The goal of the sprint (optional)
+
+        Returns:
+            Sprint details as a dictionary or None if creation fails
+        """
+        pass
+
+    @abstractmethod
+    def get_releases(self, project_key: str) -> List[Release]:
+        """Get all releases for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+
+        Returns:
+            List of Release entities.
+        """
+        pass
+
+    @abstractmethod
+    def release_exist(self, project_key: str, name: str) -> bool:
+        """Check if a release exists for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            name: Name of the release.
+
+        Returns:
+            True if the release exists, False otherwise.
+        """
+        pass
+
+    @abstractmethod
+    def create_release(
+        self,
+        project_key: str,
+        name: str,
+        description: Optional[str] = None,
+        release_date: Optional[str] = None,
+        released: bool = False,
+    ) -> Release:
+        """Create a new release for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            name: Name of the release.
+            description: Optional description.
+            release_date: Optional release date (YYYY-MM-DD).
+            released: Whether the release is marked as released.
+
+        Returns:
+            The created Release entity.
+        """
+        pass
+
+    @abstractmethod
+    def link_issues(self, dependent_issue_key: str, dependency_issue_key: str, link_type: str = "Dependency") -> bool:
+        """
+        Link two Jira issues with a specified relationship.
+
+        Args:
+            dependent_issue_key: The issue that depends on another (outward issue)
+            dependency_issue_key: The issue that is depended upon (inward issue)
+            link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
+
+        Returns:
+            True if linking was successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_issue_link_types(self) -> List[Dict[str, str]]:
+        """
+        Get available issue link types in Jira.
+
+        Returns:
+            List of link types with their names and descriptions
+        """
+        pass
+
+    @abstractmethod
+    def get_issue_subtasks(self, issue_key: str) -> List[Issue]:
+        """Get all subtasks for a given Jira issue.
+
+        Args:
+            issue_key: The key of the parent issue
+
+        Returns:
+            List of subtask issues
+        """
+        pass
+
+    @abstractmethod
+    def delete_issue(self, issue_key: str) -> bool:
+        """Delete a Jira issue.
+
+        Args:
+            issue_key: The key of the issue to delete
+
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def get_sprint(self, sprint_id: int):
+        """Get sprint information by ID.
+        
+        Args:
+            sprint_id: The sprint ID
             
-            Args:
-                issue_key: The issue key
-                
-            Returns:
-                Epic name if found, None otherwise
-            """
-            pass
+        Returns:
+            Sprint object with dates, name, and ID
+        """
+        pass
+
+    @abstractmethod
+    async def get_sprint_issues(self, project_keys: List[str], sprint_id: int) -> List:
+        """Get all issues for a sprint across projects.
+        
+        Args:
+            project_keys: List of project keys to search
+            sprint_id: The sprint ID
+            
+        Returns:
+            List of IssueSnapshot objects
+        """
+        pass
+
+    @abstractmethod
+    async def get_issue_worklogs(self, issue_keys: List[str]) -> List:
+        """Get worklogs for multiple issues.
+        
+        Args:
+            issue_keys: List of issue keys
+            
+        Returns:
+            List of WorklogSlice objects
+        """
+        pass
+
+    @abstractmethod
+    async def get_issue_changelogs(self, issue_keys: List[str]) -> Dict[str, List]:
+        """Get changelogs for multiple issues.
+        
+        Args:
+            issue_keys: List of issue keys
+            
+        Returns:
+            Dictionary mapping issue keys to list of ChangeLogEvent objects
+        """
+        pass
+
+    @abstractmethod
+    async def get_issue_epic(self, issue_key: str) -> Optional[str]:
+        """Get epic name for an issue.
+        
+        Args:
+            issue_key: The issue key
+            
+        Returns:
+            Epic name if found, None otherwise
+        """
+        pass
