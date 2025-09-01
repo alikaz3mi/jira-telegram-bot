@@ -2,7 +2,6 @@
 
 This module provides a repository implementation for interacting with Jira Cloud.
 """
-
 from __future__ import annotations
 
 import json
@@ -28,27 +27,27 @@ from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface im
 
 class JiraCloudRepository(TaskManagerRepositoryInterface):
     """Repository for interacting with Jira Cloud instances.
-    
+
     This class provides implementation for all operations defined in the
     TaskManagerRepositoryInterface, specifically tailored for Jira Cloud instances.
     """
 
     def __init__(self, settings: JiraBoardSettings):
         """Initialize the Jira Cloud repository.
-        
+
         Args:
             settings: Settings for connecting to Jira Cloud.
         """
         self.settings = settings
-        
+
         # Jira Cloud always uses API token authentication
         self.jira = JIRA(
             server=f"{self.settings.domain.scheme}://{self.settings.domain.host}",
             basic_auth=(self.settings.email, self.settings.token),
         )
-        
+
         self.cache = {}
-        
+
         # Custom field IDs - may differ between Jira Cloud instances
         # These are common defaults for Jira Cloud, but they might need configuration
         self.jira_story_point_id = "customfield_10016"  # Different from server
@@ -61,11 +60,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def _get_from_cache(self, cache_key, max_age_seconds):
         """Get data from cache if not expired.
-        
+
         Args:
             cache_key: The unique key for the cached item.
             max_age_seconds: Maximum cache age in seconds.
-            
+
         Returns:
             Cached value or None if expired or not present.
         """
@@ -78,7 +77,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def _set_cache(self, cache_key, result):
         """Store data in cache.
-        
+
         Args:
             cache_key: The unique key for the cached item.
             result: The value to cache.
@@ -87,7 +86,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_projects(self):
         """Get all projects accessible to the user.
-        
+
         Returns:
             List of Jira projects.
         """
@@ -102,10 +101,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_project_components(self, project_key):
         """Get components for a given project.
-        
+
         Args:
             project_key: Jira project key.
-            
+
         Returns:
             List of components for the project.
         """
@@ -113,10 +112,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_epics(self, project_key: str):
         """Get all epics for a project.
-        
+
         Args:
             project_key: Jira project key.
-            
+
         Returns:
             List of epics for the project.
         """
@@ -134,10 +133,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_board_id(self, project_key: str) -> Optional[int]:
         """Get board ID for a project.
-        
+
         Args:
             project_key: Jira project key.
-            
+
         Returns:
             Board ID or None if not found.
         """
@@ -148,12 +147,12 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
         boards = self.jira.boards(projectKeyOrID=project_key)
         for board in boards:
-            if hasattr(board, 'type'):
+            if hasattr(board, "type"):
                 self.board_type = board.type
                 self._set_cache(cache_key, board.id)
                 return board.id
             # Fallback if board doesn't have type
-            if hasattr(board, 'name') and project_key in board.name:
+            if hasattr(board, "name") and project_key in board.name:
                 self.board_type = "scrum"  # Assume scrum by default
                 self._set_cache(cache_key, board.id)
                 return board.id
@@ -161,11 +160,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_sprints(self, board_id, get_from_cache: bool = True):
         """Get sprints for a board.
-        
+
         Args:
             board_id: Jira board ID.
             get_from_cache: Whether to use cached results.
-            
+
         Returns:
             List of sprints for the board.
         """
@@ -177,10 +176,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         if result is not None:
             return result
 
-        if not hasattr(self, 'board_type') or self.board_type == "scrum":
+        if not hasattr(self, "board_type") or self.board_type == "scrum":
             try:
                 # In cloud, we need to filter out closed sprints
-                result = self.jira.sprints(board_id=board_id, state='active,future')
+                result = self.jira.sprints(board_id=board_id, state="active,future")
             except Exception as e:
                 LOGGER.warning(f"Failed to get sprints: {e}, defaulting to empty list")
                 result = []
@@ -191,10 +190,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_project_versions(self, project_key):
         """Get versions for a project.
-        
+
         Args:
             project_key: Jira project key.
-            
+
         Returns:
             List of project versions.
         """
@@ -209,10 +208,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue_types_for_project(self, project_key):
         """Get issue types available for a project.
-        
+
         Args:
             project_key: Jira project key.
-            
+
         Returns:
             List of issue type names.
         """
@@ -229,18 +228,18 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error getting issue types for project {project_key}: {e}")
             metadata = self.jira.project(project_key)
-            if hasattr(metadata, 'issueTypes'):
+            if hasattr(metadata, "issueTypes"):
                 result = [it.name for it in metadata.issueTypes]
             else:
                 # Fallback to generic issue types
                 result = ["Task", "Bug", "Story", "Epic", "Subtask"]
-        
+
         self._set_cache(cache_key, result)
         return result
 
     def get_priorities(self):
         """Get all available priorities.
-        
+
         Returns:
             List of priorities.
         """
@@ -255,10 +254,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_assignees(self, project_key: str) -> List[str]:
         """Get all assignees for a project.
-        
+
         Args:
             project_key: Jira project key.
-            
+
         Returns:
             List of assignee usernames.
         """
@@ -275,7 +274,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
                 maxResults=100,
             )
             for issue in recent_issues:
-                if hasattr(issue.fields, 'assignee') and issue.fields.assignee:
+                if hasattr(issue.fields, "assignee") and issue.fields.assignee:
                     # In Cloud, we use accountId instead of name
                     assignees.add(issue.fields.assignee.accountId)
 
@@ -288,10 +287,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def search_users(self, username: str) -> List[str]:
         """Search for users by username.
-        
+
         Args:
             username: Partial username to search for.
-            
+
         Returns:
             List of matching usernames.
         """
@@ -308,17 +307,17 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error searching users with {username}: {e}")
             user_list = []
-            
+
         self._set_cache(cache_key, user_list)
         return user_list
 
     def search_for_issues(self, query: str, max_results: int = 1000) -> List[Issue]:
         """Search for issues using JQL.
-        
+
         Args:
             query: JQL query string.
             max_results: Maximum number of results to return.
-            
+
         Returns:
             List of matching issues.
         """
@@ -340,11 +339,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_stories_by_epic(self, epic_key: str, project_key: str) -> List[Issue]:
         """Get stories linked to an epic.
-        
+
         Args:
             epic_key: Epic issue key.
             project_key: Jira project key.
-            
+
         Returns:
             List of stories linked to the epic.
         """
@@ -363,13 +362,13 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         filters: str = None,
     ) -> List[Issue]:
         """Get stories for a project with optional filtering.
-        
+
         Args:
             project_key: Jira project key.
             epic_link: Optional epic key to filter by.
             status: Optional status to filter by.
             filters: Optional additional JQL filters.
-            
+
         Returns:
             List of matching stories.
         """
@@ -384,10 +383,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def build_issue_fields(self, task_data: TaskData) -> dict:
         """Build issue fields dictionary from task data.
-        
+
         Args:
             task_data: Task data model.
-            
+
         Returns:
             Dictionary of issue fields ready for API use.
         """
@@ -448,10 +447,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def build_task_data_from_issue(self, issue: Issue) -> TaskData:
         """Build a TaskData model from a Jira issue.
-        
+
         Args:
             issue: Jira issue object.
-            
+
         Returns:
             TaskData representation of the issue.
         """
@@ -459,7 +458,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         assignee = getattr(issue.fields.assignee, "displayName", None)
         if not assignee and hasattr(issue.fields.assignee, "accountId"):
             assignee = issue.fields.assignee.accountId
-            
+
         return TaskData(
             project_key=issue.fields.project.key,
             summary=issue.fields.summary,
@@ -485,7 +484,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def handle_attachments(self, issue: Issue, attachments: Dict[str, List]):
         """Add attachments to a Jira issue.
-        
+
         Args:
             issue: Jira issue object.
             attachments: Dictionary of attachment files.
@@ -501,10 +500,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def create_issue(self, fields):
         """Create a new Jira issue.
-        
+
         Args:
             fields: Issue fields dictionary.
-            
+
         Returns:
             Created Jira issue object.
         """
@@ -512,7 +511,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def add_attachment(self, issue, attachment, filename):
         """Add an attachment to a Jira issue.
-        
+
         Args:
             issue: Jira issue object.
             attachment: File content to attach.
@@ -522,10 +521,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def create_task(self, task_data: TaskData) -> Issue:
         """Create a new task in Jira.
-        
+
         Args:
             task_data: Task data model.
-            
+
         Returns:
             Created Jira issue object.
         """
@@ -537,7 +536,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def add_comment(self, issue_key: str, comment: str):
         """Add a comment to a Jira issue.
-        
+
         Args:
             issue_key: Jira issue key.
             comment: Comment text to add.
@@ -546,16 +545,16 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def create_task_data_from_jira_issue(self, issue) -> TaskData:
         """Create a TaskData object from a Jira issue.
-        
+
         Args:
             issue: Jira issue object.
-            
+
         Returns:
             TaskData representation of the issue.
         """
         sprint_name = None
         # Handle sprints differently in cloud
-        if hasattr(self, 'board_type'):
+        if hasattr(self, "board_type"):
             if self.board_type == "kanban":
                 sprint_name = "kanban"
             else:
@@ -572,12 +571,12 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
                                 if part.strip().startswith("name="):
                                     sprint_name = part.split("=")[1].strip()
                                     break
-        
+
         # In Cloud, assignee uses accountId
         assignee = getattr(issue.fields.assignee, "displayName", None)
         if not assignee and hasattr(issue.fields.assignee, "accountId"):
             assignee = issue.fields.assignee.accountId
-            
+
         return TaskData(
             project_key=getattr(issue.fields.project, "key", None),
             summary=issue.fields.summary,
@@ -603,10 +602,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_labels(self, project_key: str) -> List[str]:
         """Get all labels used in a project.
-        
+
         Args:
             project_key: Jira project key.
-            
+
         Returns:
             List of label strings.
         """
@@ -638,11 +637,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def set_labels(self, project_key: str, labels: List[str]) -> bool:
         """Save project labels to configuration.
-        
+
         Args:
             project_key: Jira project key.
             labels: List of labels to save.
-            
+
         Returns:
             True if successful, False otherwise.
         """
@@ -667,7 +666,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def transition_task(self, issue_key: str, status: str) -> None:
         """Transition a task to a different status.
-        
+
         Args:
             issue_key: Jira issue key.
             status: Target status name.
@@ -680,7 +679,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def assign_issue(self, issue_key: str, assignee: str) -> None:
         """Assign an issue to a user.
-        
+
         Args:
             issue_key: Jira issue key.
             assignee: User accountId to assign to.
@@ -690,7 +689,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def update_issue(self, issue_key: str, task_data: TaskData) -> None:
         """Update an issue with new task data.
-        
+
         Args:
             issue_key: Jira issue key.
             task_data: New task data.
@@ -702,7 +701,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def update_issue_from_fields(self, issue_key: str, fields: dict) -> None:
         """Update an issue with provided fields.
-        
+
         Args:
             issue_key: Jira issue key.
             fields: Dictionary of fields to update.
@@ -713,10 +712,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue(self, issue_key: str) -> Optional[Issue]:
         """Get a Jira issue by key.
-        
+
         Args:
             issue_key: Jira issue key.
-            
+
         Returns:
             Issue object or None if not found.
         """
@@ -726,14 +725,14 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error fetching issue {issue_key}: {e}")
             return None
-    
+
     def get_issues_by_status(
         self,
         project_key: str,
         statuses: Optional[List[str]] = None,
     ) -> Dict[str, int]:
         """Get issues by status for a project.
-        
+
         Args:
             project_key: Jira project key.
             statuses: Statuses to filter by.
@@ -745,63 +744,63 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
             query = f'project = "{project_key}" AND status IN ({",".join([f"{status}" for status in statuses])})'
         else:
             query = f'project = "{project_key}"'
-            
+
         issues = self.search_for_issues(query)
         return {issue.key: issue.fields.status.name for issue in issues}
 
     def get_issues_with_approaching_deadlines(
-        self, 
+        self,
         lookahead_days: int = 7,
         additional_jql: Optional[str] = None,
     ) -> List[Issue]:
         """
         Get issues with deadlines within the specified lookahead period.
-        
+
         Args:
             lookahead_days: Number of days to look ahead for deadlines
             additional_jql: Additional JQL filter to apply
-            
+
         Returns:
             List of Jira issues with approaching deadlines
         """
         try:
             from datetime import datetime, timedelta
-            
+
             # Calculate date range
             today = datetime.now().date()
             future_date = today + timedelta(days=lookahead_days)
-            
+
             # Build JQL query
             jql_parts = [
                 "statusCategory != Done",
                 f"(duedate <= '{future_date}' OR customfield_10110 <= '{future_date}')",
                 "assignee is not EMPTY",
             ]
-            
+
             if additional_jql:
                 jql_parts.append(f"({additional_jql})")
-            
+
             jql = " AND ".join(jql_parts)
             jql += " ORDER BY duedate ASC, customfield_10110 ASC"
-            
+
             LOGGER.info(f"Searching for deadline issues with JQL: {jql}")
-            
+
             # Search for issues
             issues = self.search_for_issues(jql, max_results=500)
-            
+
             LOGGER.info(f"Found {len(issues)} issues with approaching deadlines")
             return issues
-            
+
         except Exception as e:
             LOGGER.error(f"Error searching for deadline issues: {e}")
             return []
 
     def get_available_transitions(self, issue_key: str) -> List[Dict[str, str]]:
         """Get available transitions for an issue.
-        
+
         Args:
             issue_key: The issue key
-            
+
         Returns:
             List of transitions with id and name
         """
@@ -814,11 +813,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
         """Get a single issue with expanded fields.
-        
+
         Args:
             issue_key: The issue key
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             Jira issue with expanded fields or None
         """
@@ -831,10 +830,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def is_user_jira_admin(self, username: str) -> bool:
         """Check if a user has Jira administrator privileges.
-        
+
         Args:
             username: Jira username to check
-            
+
         Returns:
             True if user is Jira admin, False otherwise
         """
@@ -846,8 +845,13 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
                 # Check if user has admin group membership or permissions
                 # Note: The exact implementation depends on your Jira Cloud configuration
                 # This is a basic implementation that might need adjustment
-                return user.active and hasattr(user, 'groups') and any(
-                    'admin' in group.lower() for group in getattr(user, 'groups', [])
+                return (
+                    user.active
+                    and hasattr(user, "groups")
+                    and any(
+                        "admin" in group.lower()
+                        for group in getattr(user, "groups", [])
+                    )
                 )
             return False
         except Exception as e:
@@ -855,32 +859,32 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
             return False
 
     def search_issues(
-        self, 
+        self,
         jql: str,
         start_at: int = 0,
         max_results: int = 100,
         expand: Optional[str] = None,
     ) -> List[Issue]:
         """Search for issues using JQL.
-        
+
         Args:
             jql: JQL query string
             start_at: Starting index for pagination
             max_results: Maximum number of results to return
             expand: Comma-separated list of fields to expand
-            
+
         Returns:
             List of matching Jira issues
         """
         try:
             search_kwargs = {
-                'jql_str': jql,
-                'startAt': start_at,
-                'maxResults': max_results,
+                "jql_str": jql,
+                "startAt": start_at,
+                "maxResults": max_results,
             }
             if expand:
-                search_kwargs['expand'] = expand
-                
+                search_kwargs["expand"] = expand
+
             issues = self.jira.search_issues(**search_kwargs)
             return issues
         except Exception as e:
@@ -889,7 +893,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def update_time_estimate(self, issue_key: str, remaining_estimate: str) -> None:
         """Update the remaining time estimate for an issue.
-        
+
         Args:
             issue_key: The issue key
             remaining_estimate: New remaining estimate (e.g., "0h", "2d")
@@ -898,21 +902,23 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
             issue = self.jira.issue(issue_key)
             # Update the remaining estimate field
             fields = {
-                'timetracking': {
-                    'remainingEstimate': remaining_estimate
-                }
+                "timetracking": {
+                    "remainingEstimate": remaining_estimate,
+                },
             }
             issue.update(fields=fields)
-            LOGGER.info(f"Updated time estimate for issue {issue_key} to {remaining_estimate}")
+            LOGGER.info(
+                f"Updated time estimate for issue {issue_key} to {remaining_estimate}"
+            )
         except Exception as e:
             LOGGER.error(f"Error updating time estimate for issue {issue_key}: {e}")
 
     def get_issue_spent_time_in_seconds(self, issue_key: str) -> int:
         """Get the total time spent on an issue in seconds.
-        
+
         Args:
             issue_key: The issue key
-            
+
         Returns:
             Total time spent in seconds
         """
@@ -926,11 +932,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue_by_summary(self, summary: str, board: str) -> Issue | None:
         """Get a Jira issue by its summary and board.
-        
+
         Args:
             summary: The summary of the issue
             board: The board/project key
-            
+
         Returns:
             Jira issue or None
         """
@@ -943,10 +949,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue_url(self, issue: Issue) -> str:
         """Get the URL for a Jira issue.
-        
+
         Args:
             issue: The Jira issue object
-            
+
         Returns:
             URL string for the issue
         """
@@ -958,10 +964,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue_url_by_key(self, issue_key: str) -> str:
         """Get the URL for a Jira issue by its key.
-        
+
         Args:
             issue_key: The key of the Jira issue
-            
+
         Returns:
             URL string for the issue
         """
@@ -969,10 +975,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_transitions(self, issue_key: str) -> List[Dict[str, str]]:
         """Get available transitions for an issue.
-        
+
         Args:
             issue_key: The key of the Jira issue
-            
+
         Returns:
             List of available transitions with their IDs and names
         """
@@ -985,11 +991,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def transition_issue(self, issue_key: str, transition_id: str) -> None:
         """Transition an issue to a new status.
-        
+
         Args:
             issue_key: The key of the Jira issue
             transition_id: The ID of the transition to apply
-            
+
         Raises:
             Exception if the transition fails
         """
@@ -1008,11 +1014,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         board_id: str,
     ) -> Optional[Dict[str, any]]:
         """Get sprint details by ID.
-        
+
         Args:
             sprint_id: The ID of the sprint
             board_id: The ID of the board
-            
+
         Returns:
             Sprint details as a dictionary or None if not found
         """
@@ -1024,8 +1030,8 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
                         "id": sprint.id,
                         "name": sprint.name,
                         "state": sprint.state,
-                        "startDate": getattr(sprint, 'startDate', None),
-                        "endDate": getattr(sprint, 'endDate', None),
+                        "startDate": getattr(sprint, "startDate", None),
+                        "endDate": getattr(sprint, "endDate", None),
                     }
             return None
         except Exception as e:
@@ -1038,11 +1044,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         board_id: str,
     ) -> Optional[Dict[str, any]]:
         """Get sprint details by name.
-        
+
         Args:
             sprint_name: The name of the sprint
             board_id: The ID of the board
-            
+
         Returns:
             Sprint details as a dictionary or None if not found
         """
@@ -1054,8 +1060,8 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
                         "id": sprint.id,
                         "name": sprint.name,
                         "state": sprint.state,
-                        "startDate": getattr(sprint, 'startDate', None),
-                        "endDate": getattr(sprint, 'endDate', None),
+                        "startDate": getattr(sprint, "startDate", None),
+                        "endDate": getattr(sprint, "endDate", None),
                     }
             return {
                 "id": None,
@@ -1085,14 +1091,14 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         goal: str = None,
     ) -> Optional[Dict[str, any]]:
         """Create a new sprint.
-        
+
         Args:
             board_id: The ID of the board to create the sprint in
             sprint_name: The name of the new sprint
             start_date: The start date of the sprint in ISO format
             end_date: The end date of the sprint in ISO format
             goal: The goal of the sprint (optional)
-            
+
         Returns:
             Sprint details as a dictionary or None if creation fails
         """
@@ -1108,8 +1114,8 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
                 "id": sprint.id,
                 "name": sprint.name,
                 "state": sprint.state,
-                "start_date": getattr(sprint, 'startDate', None),
-                "end_date": getattr(sprint, 'endDate', None),
+                "start_date": getattr(sprint, "startDate", None),
+                "end_date": getattr(sprint, "endDate", None),
                 "goal": goal,
             }
         except Exception as e:
@@ -1118,10 +1124,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_releases(self, project_key: str) -> List[Release]:
         """Get all releases for a Jira project.
-        
+
         Args:
             project_key: Key of the Jira project.
-            
+
         Returns:
             List of Release entities.
         """
@@ -1130,11 +1136,11 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def release_exist(self, project_key: str, name: str) -> bool:
         """Check if a release exists for a Jira project.
-        
+
         Args:
             project_key: Key of the Jira project.
             name: Name of the release.
-            
+
         Returns:
             True if the release exists, False otherwise.
         """
@@ -1150,14 +1156,14 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         released: bool = False,
     ) -> Release:
         """Create a new release for a Jira project.
-        
+
         Args:
             project_key: Key of the Jira project.
             name: Name of the release.
             description: Optional description.
             release_date: Optional release date (YYYY-MM-DD).
             released: Whether the release is marked as released.
-            
+
         Returns:
             The created Release entity.
         """
@@ -1175,7 +1181,7 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue_link_types(self) -> List[Dict[str, str]]:
         """Get available issue link types in Jira.
-        
+
         Returns:
             List of link types with their names and descriptions
         """
@@ -1200,12 +1206,12 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         link_type: str = "Dependency",
     ) -> bool:
         """Link two Jira issues with a specified relationship.
-        
+
         Args:
             dependent_issue_key: The issue that depends on another (outward issue)
             dependency_issue_key: The issue that is depended upon (inward issue)
             link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
-            
+
         Returns:
             True if linking was successful, False otherwise
         """
@@ -1269,16 +1275,16 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def get_issue_subtasks(self, issue_key: str) -> List[Issue]:
         """Get all subtasks for a given Jira issue.
-        
+
         Args:
             issue_key: The key of the parent issue
-            
+
         Returns:
             List of subtask issues
         """
         try:
             issue = self.get_issue(issue_key)
-            if issue and hasattr(issue.fields, 'subtasks'):
+            if issue and hasattr(issue.fields, "subtasks"):
                 return [subtask for subtask in issue.fields.subtasks]
             return []
         except Exception as e:
@@ -1287,10 +1293,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def delete_issue(self, issue_key: str) -> bool:
         """Delete a Jira issue.
-        
+
         Args:
             issue_key: The key of the issue to delete
-            
+
         Returns:
             True if deletion was successful, False otherwise
         """
@@ -1307,10 +1313,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     async def get_sprint(self, sprint_id: int):
         """Get sprint information by ID.
-        
+
         Args:
             sprint_id: The sprint ID
-            
+
         Returns:
             Sprint object with dates, name, and ID
         """
@@ -1324,166 +1330,184 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     async def get_sprint_issues(self, project_keys: List[str], sprint_id: int) -> List:
         """Get all issues for a sprint across projects.
-        
+
         Args:
             project_keys: List of project keys to search
             sprint_id: The sprint ID
-            
+
         Returns:
             List of IssueSnapshot objects
         """
         from jira_telegram_bot.entities.team_evaluation import IssueSnapshot
-        
+
         try:
             # Build JQL to get issues for the sprint
-            projects_filter = " OR ".join([f'project = "{key}"' for key in project_keys])
+            projects_filter = " OR ".join(
+                [f'project = "{key}"' for key in project_keys]
+            )
             jql = f"({projects_filter}) AND sprint = {sprint_id}"
-            
+
             issues = self.search_for_issues(jql)
-            
+
             # Convert to IssueSnapshot objects
             snapshots = []
             for issue in issues:
                 try:
                     # Get linked issues
                     linked_issues = []
-                    if hasattr(issue.fields, 'issuelinks'):
+                    if hasattr(issue.fields, "issuelinks"):
                         for link in issue.fields.issuelinks:
-                            if hasattr(link, 'outwardIssue'):
+                            if hasattr(link, "outwardIssue"):
                                 linked_issues.append(link.outwardIssue.key)
-                            if hasattr(link, 'inwardIssue'):
+                            if hasattr(link, "inwardIssue"):
                                 linked_issues.append(link.inwardIssue.key)
-                    
+
                     # Get epic information
                     epic_key = getattr(issue.fields, self.jira_epic_link_id, None)
                     epic_name = None
                     if epic_key:
                         epic_name = await self.get_issue_epic(epic_key)
-                    
+
                     snapshot = IssueSnapshot(
                         key=issue.key,
                         issue_type=issue.fields.issuetype.name,
-                        priority=getattr(issue.fields.priority, 'name', None) if issue.fields.priority else None,
-                        labels=getattr(issue.fields, 'labels', []),
-                        components=[c.name for c in getattr(issue.fields, 'components', [])],
+                        priority=getattr(issue.fields.priority, "name", None)
+                        if issue.fields.priority
+                        else None,
+                        labels=getattr(issue.fields, "labels", []),
+                        components=[
+                            c.name for c in getattr(issue.fields, "components", [])
+                        ],
                         epic_key=epic_key,
                         epic_name=epic_name,
-                        due_date=self._parse_jira_date(getattr(issue.fields, 'duedate', None)),
+                        due_date=self._parse_jira_date(
+                            getattr(issue.fields, "duedate", None)
+                        ),
                         status=issue.fields.status.name,
-                        assignee=getattr(issue.fields.assignee, 'accountId', None) if issue.fields.assignee else None,
+                        assignee=getattr(issue.fields.assignee, "accountId", None)
+                        if issue.fields.assignee
+                        else None,
                         project_key=issue.fields.project.key,
                         project_name=issue.fields.project.name,
-                        resolution_date=self._parse_jira_date(getattr(issue.fields, 'resolutiondate', None)),
+                        resolution_date=self._parse_jira_date(
+                            getattr(issue.fields, "resolutiondate", None)
+                        ),
                         created_date=self._parse_jira_date(issue.fields.created),
                         updated_date=self._parse_jira_date(issue.fields.updated),
-                        linked_issues=linked_issues
+                        linked_issues=linked_issues,
                     )
                     snapshots.append(snapshot)
                 except Exception as e:
-                    LOGGER.warning(f"Error converting issue {issue.key} to snapshot: {e}")
+                    LOGGER.warning(
+                        f"Error converting issue {issue.key} to snapshot: {e}"
+                    )
                     continue
-            
+
             return snapshots
-            
+
         except Exception as e:
             LOGGER.error(f"Error fetching sprint issues: {e}")
             return []
 
     async def get_issue_worklogs(self, issue_keys: List[str]) -> List:
         """Get worklogs for multiple issues.
-        
+
         Args:
             issue_keys: List of issue keys
-            
+
         Returns:
             List of WorklogSlice objects
         """
         from jira_telegram_bot.entities.team_evaluation import WorklogSlice
-        
+
         worklogs = []
-        
+
         for issue_key in issue_keys:
             try:
                 issue_worklogs = self.jira.worklogs(issue_key)
-                
+
                 for worklog in issue_worklogs:
                     try:
                         # In Cloud, author uses accountId
-                        author = getattr(worklog.author, 'accountId', None)
+                        author = getattr(worklog.author, "accountId", None)
                         if not author:
-                            author = getattr(worklog.author, 'name', None)
-                            
+                            author = getattr(worklog.author, "name", None)
+
                         worklog_slice = WorklogSlice(
                             issue_key=issue_key,
                             author=author,
                             started_at=self._parse_jira_date(worklog.started),
-                            hours=worklog.timeSpentSeconds / 3600.0
+                            hours=worklog.timeSpentSeconds / 3600.0,
                         )
                         worklogs.append(worklog_slice)
                     except Exception as e:
                         LOGGER.warning(f"Error parsing worklog for {issue_key}: {e}")
                         continue
-                        
+
             except Exception as e:
                 LOGGER.warning(f"Error fetching worklogs for {issue_key}: {e}")
                 continue
-        
+
         return worklogs
 
     async def get_issue_changelogs(self, issue_keys: List[str]) -> Dict[str, List]:
         """Get changelogs for multiple issues.
-        
+
         Args:
             issue_keys: List of issue keys
-            
+
         Returns:
             Dictionary mapping issue keys to list of ChangeLogEvent objects
         """
         from jira_telegram_bot.entities.team_evaluation import ChangeLogEvent
-        
+
         changelogs = {}
-        
+
         for issue_key in issue_keys:
             try:
-                issue = self.jira.issue(issue_key, expand='changelog')
+                issue = self.jira.issue(issue_key, expand="changelog")
                 issue_events = []
-                
-                if hasattr(issue, 'changelog') and hasattr(issue.changelog, 'histories'):
+
+                if hasattr(issue, "changelog") and hasattr(
+                    issue.changelog, "histories"
+                ):
                     for history in issue.changelog.histories:
                         for item in history.items:
                             try:
                                 # In Cloud, author uses accountId
-                                author = getattr(history.author, 'accountId', None)
+                                author = getattr(history.author, "accountId", None)
                                 if not author:
-                                    author = getattr(history.author, 'name', None)
-                                
+                                    author = getattr(history.author, "name", None)
+
                                 event = ChangeLogEvent(
                                     issue_key=issue_key,
                                     field=item.field,
                                     from_status=item.fromString,
                                     to_status=item.toString,
                                     changed_at=self._parse_jira_date(history.created),
-                                    author=author
+                                    author=author,
                                 )
                                 issue_events.append(event)
                             except Exception as e:
-                                LOGGER.warning(f"Error parsing changelog item for {issue_key}: {e}")
+                                LOGGER.warning(
+                                    f"Error parsing changelog item for {issue_key}: {e}"
+                                )
                                 continue
-                
+
                 changelogs[issue_key] = issue_events
-                
+
             except Exception as e:
                 LOGGER.warning(f"Error fetching changelog for {issue_key}: {e}")
                 changelogs[issue_key] = []
-        
+
         return changelogs
 
     async def get_issue_epic(self, issue_key: str) -> Optional[str]:
         """Get epic name for an issue.
-        
+
         Args:
             issue_key: The issue key
-            
+
         Returns:
             Epic name if found, None otherwise
         """
@@ -1498,19 +1522,20 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
     def _parse_jira_date(self, date_str):
         """Parse Jira date string to datetime.
-        
+
         Args:
             date_str: Jira date string
-            
+
         Returns:
             datetime object or None
         """
         if not date_str:
             return None
-        
+
         try:
             # Jira typically returns dates in ISO format
             from datetime import datetime
+
             if isinstance(date_str, str):
                 if "T" in date_str:
                     return datetime.fromisoformat(date_str.replace("Z", "+00:00"))

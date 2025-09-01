@@ -351,7 +351,12 @@ class TaskManagerRepositoryInterface(ABC):
             pass
 
         @abstractmethod
-        def link_issues(self, dependent_issue_key: str, dependency_issue_key: str, link_type: str = "Dependency") -> bool:
+        def link_issues(
+            self,
+            dependent_issue_key: str,
+            dependency_issue_key: str,
+            link_type: str = "Dependency",
+        ) -> bool:
             """
             Link two Jira issues with a specified relationship.
 
@@ -378,10 +383,10 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     def get_issue_spent_time_in_seconds(self, issue_key: str) -> int:
         """Get the total time spent on an issue in seconds.
-        
+
         Args:
             issue_key: The issue key
-            
+
         Returns:
             Total time spent in seconds
         """
@@ -563,7 +568,12 @@ class TaskManagerRepositoryInterface(ABC):
         pass
 
     @abstractmethod
-    def link_issues(self, dependent_issue_key: str, dependency_issue_key: str, link_type: str = "Dependency") -> bool:
+    def link_issues(
+        self,
+        dependent_issue_key: str,
+        dependency_issue_key: str,
+        link_type: str = "Dependency",
+    ) -> bool:
         """
         Link two Jira issues with a specified relationship.
 
@@ -614,10 +624,10 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     async def get_sprint(self, sprint_id: int):
         """Get sprint information by ID.
-        
+
         Args:
             sprint_id: The sprint ID
-            
+
         Returns:
             Sprint object with dates, name, and ID
         """
@@ -626,11 +636,11 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     async def get_sprint_issues(self, project_keys: List[str], sprint_id: int) -> List:
         """Get all issues for a sprint across projects.
-        
+
         Args:
             project_keys: List of project keys to search
             sprint_id: The sprint ID
-            
+
         Returns:
             List of IssueSnapshot objects
         """
@@ -639,10 +649,10 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     async def get_issue_worklogs(self, issue_keys: List[str]) -> List:
         """Get worklogs for multiple issues.
-        
+
         Args:
             issue_keys: List of issue keys
-            
+
         Returns:
             List of WorklogSlice objects
         """
@@ -651,10 +661,10 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     async def get_issue_changelogs(self, issue_keys: List[str]) -> Dict[str, List]:
         """Get changelogs for multiple issues.
-        
+
         Args:
             issue_keys: List of issue keys
-            
+
         Returns:
             Dictionary mapping issue keys to list of ChangeLogEvent objects
         """
@@ -663,10 +673,10 @@ class TaskManagerRepositoryInterface(ABC):
     @abstractmethod
     async def get_issue_epic(self, issue_key: str) -> Optional[str]:
         """Get epic name for an issue.
-        
+
         Args:
             issue_key: The issue key
-            
+
         Returns:
             Epic name if found, None otherwise
         """
