@@ -1,7 +1,7 @@
 """Sprint closed team evaluation use case."""
 
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 
 from jira_telegram_bot import LOGGER
@@ -106,8 +106,8 @@ class SprintClosedTeamEvaluationUseCase:
             worklogs = await self.task_manager_repo.get_issue_worklogs(issue_keys)
             changelogs = await self.task_manager_repo.get_issue_changelogs(issue_keys)
             
-            # Process data per developer
-            evaluation_rows = await self._compute_evaluation_rows(
+            # Process data per developer and department
+            evaluation_rows = await self._compute_evaluation(
                 sprint_issues=sprint_issues,
                 worklogs=worklogs,
                 changelogs=changelogs,
@@ -126,17 +126,18 @@ class SprintClosedTeamEvaluationUseCase:
             LOGGER.error(f"Error processing sprint closed event: {e}")
             raise
 
-    async def _compute_evaluation_rows(
+    async def _compute_evaluation(
         self,
+        sprint_name: str,
         sprint_issues: List[IssueSnapshot],
         worklogs: List[WorklogSlice],
         changelogs: Dict[str, List[ChangeLogEvent]],
-        sprint_name: str,
         event: SprintClosedEvent
     ) -> List[TeamEvaluationRow]:
-        """Compute evaluation rows for all developers.
+        """Compute evaluation for all developers.
         
         Args:
+            sprint_name: Name of the sprint
             sprint_issues: List of issues in the sprint
             worklogs: List of worklog entries
             changelogs: Dictionary of changelog events per issue
@@ -145,17 +146,14 @@ class SprintClosedTeamEvaluationUseCase:
         Returns:
             List of team evaluation rows
         """
-        # Group data by developer
-        developer_data = self._group_by_developer(sprint_issues, worklogs, changelogs)
+        # Group data by developer and department
+        developer_department_data = await self._group_by_developer_and_department(sprint_issues, worklogs, changelogs)
         
         evaluation_rows = []
         
-        for developer, data in developer_data.items():
+        for (developer, department), data in developer_department_data.items():
             try:
-                # Get developer department
-                department = await self._get_developer_department(developer, data["issues"])
-                
-                # Process each project separately for this developer
+                # Process each project separately for this developer/department
                 for project_key in event.project_keys:
                     project_issues = [
                         issue for issue in data["issues"] 
@@ -165,7 +163,7 @@ class SprintClosedTeamEvaluationUseCase:
                     if not project_issues:
                         continue
                     
-                    # Compute evaluation row for this developer/project
+                    # Compute evaluation row for this developer/department/project
                     row = await self._compute_developer_evaluation(
                         developer=developer,
                         department=department,
@@ -181,10 +179,92 @@ class SprintClosedTeamEvaluationUseCase:
                         evaluation_rows.append(row)
                         
             except Exception as e:
-                LOGGER.error(f"Error computing evaluation for developer {developer}: {e}")
+                LOGGER.error(f"Error computing evaluation for developer {developer} in department {department}: {e}")
                 continue
         
         return evaluation_rows
+
+    async def _group_by_developer_and_department(
+        self,
+        issues: List[IssueSnapshot],
+        worklogs: List[WorklogSlice],
+        changelogs: Dict[str, List[ChangeLogEvent]]
+    ) -> Dict[Tuple[str, str], Dict]:
+        """Group data by developer and department combination.
+        
+        Args:
+            issues: List of all issues
+            worklogs: List of all worklogs
+            changelogs: Dictionary of all changelogs
+            
+        Returns:
+            Dictionary with (developer, department) tuples as keys
+        """
+        developer_dept_data = defaultdict(lambda: {
+            "issues": [],
+            "worklogs": [],
+            "changelogs": {}
+        })
+        
+        # Group issues by assignee and their departments
+        for issue in issues:
+            if issue.assignee:
+                # Get departments for this issue
+                departments = self.classification_service.get_issue_departments(
+                    issue, 
+                    strategy=self.settings.dept_inference
+                )
+                
+                # If no departments found, use "Unknown"
+                if not departments:
+                    departments = ["Unknown"]
+                
+                # Create separate entries for each department
+                for department in departments:
+                    key = (issue.assignee, department)
+                    developer_dept_data[key]["issues"].append(issue)
+        
+        # Group worklogs by author and match with issue departments
+        for worklog in worklogs:
+            # Find which issue this worklog belongs to
+            matching_issues = [issue for issue in issues if issue.key == worklog.issue_key]
+            
+            if matching_issues:
+                issue = matching_issues[0]
+                departments = self.classification_service.get_issue_departments(
+                    issue,
+                    strategy=self.settings.dept_inference
+                )
+                
+                if not departments:
+                    departments = ["Unknown"]
+                
+                # Add worklog to each department this issue belongs to
+                for department in departments:
+                    key = (worklog.author, department)
+                    developer_dept_data[key]["worklogs"].append(worklog)
+        
+        # Group changelogs by issue assignee and departments
+        for issue_key, events in changelogs.items():
+            # Find the issue for this changelog
+            matching_issues = [issue for issue in issues if issue.key == issue_key and issue.assignee]
+            
+            if matching_issues:
+                issue = matching_issues[0]
+                departments = self.classification_service.get_issue_departments(
+                    issue,
+                    strategy=self.settings.dept_inference
+                )
+                
+                if not departments:
+                    departments = ["Unknown"]
+                
+                # Add changelog to each department this issue belongs to
+                for department in departments:
+                    key = (issue.assignee, department)
+                    developer_dept_data[key]["changelogs"][issue_key] = events
+        
+        return dict(developer_dept_data)
 
     def _group_by_developer(
         self,
@@ -431,11 +511,11 @@ class SprintClosedTeamEvaluationUseCase:
             if self.settings.dry_run:
                 LOGGER.info(f"DRY RUN: Would write {len(rows)} rows to sheet")
                 for row in rows:
-                    LOGGER.info(f"DRY RUN: {row.developer_name} (translated) - {row.project} - {row.sprint}")
+                    LOGGER.info(f"DRY RUN: {row.developer_name} - {row.department} - {row.project} - {row.sprint}")
                 return
             
-            # Use developer name, project, and sprint as unique keys for upsert
-            upsert_keys = ("توسعه دهنده", "پروژه", "اسپرینت")
+            # Use developer name, department, project, and sprint as unique keys for upsert
+            upsert_keys = ("توسعه دهنده", "دپارتمان", "پروژه", "اسپرینت")
             
             await self.google_sheet_gateway.upsert_rows(
                 sheet_id=self.settings.sheet_id,

@@ -95,16 +95,15 @@ class ScoreService:
             weights.defects * s_defects
         )
         
-        # CRITICAL: If someone has done nothing meaningful, score should be 0
-        # Rule 1: No time registered = 0 score (regardless of other metrics)
+        # CRITICAL: Apply penalties for poor performance
+        # Rule 1: No time registered = -30 penalty
         if registered_hours == 0:
-            return 0
+            composite_score -= 30
         
-        # Rule 2: No high priority tasks completed = 0 score (time is wasted)
-        if completed_high_priority == 0 and total_high_priority > 0:
-            return 0
+        # Rule 2: No high priority tasks completed = severe penalty (already in s_high)
+        # This is already handled in the s_high calculation above
         
-        # Score must be between 0 and 100 (no scores above 100)
-        final_score = max(0, min(100, round(composite_score)))
+        # Score must be between -50 and 100 (allowing negative scores for poor performance)
+        final_score = max(-50, min(100, round(composite_score)))
         
         return final_score
