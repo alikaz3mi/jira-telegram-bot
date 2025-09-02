@@ -12,6 +12,7 @@ from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
+from jira_telegram_bot.entities.synth_pm.constants import StatusDescriptions
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
@@ -208,6 +209,9 @@ class SynthPMUseCase:
                     sprint_info = SprintInfo.parse_sprint_string(feature.last_sprint)
                     if sprint_info and sprint_info.is_valid():
                         assignees = self._extract_assignees_from_feature(feature)
+                        if feature.status in [StatusDescriptions.INITIATION_AND_PRIORITIZATION.value, StatusDescriptions.ANALYSIS_AND_RFP.value,
+                                              StatusDescriptions.USER_STORY_PREPARATION.value, StatusDescriptions.COMPLETED.value]:
+                            return # TODO: update sync_result status
 
                         developer_board_key = await self.repository.create_developer_board_task_from_feature(
                             feature,

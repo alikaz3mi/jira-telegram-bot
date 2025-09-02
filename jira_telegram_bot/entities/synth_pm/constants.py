@@ -69,16 +69,16 @@ class TelegramIcons(Enum):
 class StatusDescriptions(Enum):
     """Human readable status descriptions."""
     
-    STATUS_1 = "۱. ثبت و اولویت بندی"
-    STATUS_2 = "۲. تحلیل مسئله و RFP"
-    STATUS_3 = "۳. برری بوردو اسپوری"
-    STATUS_4 = "۴. در مرحله طراحی"
-    STATUS_5 = "۵. آماده پیاده سازی فنی"
-    STATUS_6 = "۶. در حال پیاده سازی"
-    STATUS_7 = "۷. تست فنی"
-    STATUS_8 = "۸. آماده تحویل"
-    STATUS_9 = "۹. مستندسازی فنی"
-    STATUS_10 = "۱۰. تکمیل شده"
+    INITIATION_AND_PRIORITIZATION = "۱. ثبت و اولویت بندی"
+    ANALYSIS_AND_RFP = "۲. تحلیل مسئله و RFP"
+    USER_STORY_PREPARATION = "۳. آماده سازی یوزر استوری"
+    IN_DESIGN = "۴. در مرحله طراحی"
+    READY_FOR_TECHNICAL_DEVELOPMENT = "۵. آماده پیاده سازی فنی"
+    IN_PROGRESS = "۶. در حال پیاده سازی"
+    TECHNICAL_TESTING = "۷. تست فنی"
+    READY_FOR_DELIVERY = "۸. آماده تحویل"
+    TECHNICAL_DOCUMENTATION = "۹. مستندسازی فنی"
+    COMPLETED = "۱۰. تکمیل شده"
 
 
 # Status mapping dictionaries
@@ -86,7 +86,7 @@ GOOGLE_SHEET_TO_JIRA_STATUS = {
     # Sheet -> Jira mapping (based on actual Jira workflow)
     "۱": "BACKLOG",  # ۱. ثبت و اولویت بندی
     "۲": "SELECTED FOR DEVELOPMENT",  # ۲. تحلیل مسئله و RFP
-    "۳": "TO DO",  # ۳. برری بوردو اسپوری
+    "۳": "TO DO",  # ۳. آماده سازی یوزر استوری
     "۴": "IN REVIEW",  # ۴. در مرحله طراحی
     "۵": "REOPENED",  # ۵. پیاده سازی فنی
     "۶": "IN PROGRESS",  # ۶. در حال پیاده سازی
@@ -100,7 +100,7 @@ JIRA_TO_GOOGLE_SHEET_STATUS = {
     # Jira -> Sheet mapping (based on actual Jira workflow)
     "BACKLOG": "۱. ثبت و اولویت بندی",
     "SELECTED FOR DEVELOPMENT": "۲. تحلیل مسئله و RFP",
-    "TO DO": "۳. برری بوردو اسپوری",
+    "TO DO": "۳. آماده سازی یوزر استوری",
     "IN REVIEW": "۴. در مرحله طراحی",
     "REOPENED": "۵. پیاده سازی فنی",
     "OPEN": "۵. پیاده سازی فنی",
@@ -155,16 +155,16 @@ STATUS_ICONS = {
 }
 
 STATUS_DESCRIPTIONS = {
-    "۱": StatusDescriptions.STATUS_1.value,
-    "۲": StatusDescriptions.STATUS_2.value,
-    "۳": StatusDescriptions.STATUS_3.value,
-    "۴": StatusDescriptions.STATUS_4.value,
-    "۵": StatusDescriptions.STATUS_5.value,
-    "۶": StatusDescriptions.STATUS_6.value,
-    "۷": StatusDescriptions.STATUS_7.value,
-    "۸": StatusDescriptions.STATUS_8.value,
-    "۹": StatusDescriptions.STATUS_9.value,
-    "۱۰": StatusDescriptions.STATUS_10.value,
+    "۱": StatusDescriptions.INITIATION_AND_PRIORITIZATION.value,
+    "۲": StatusDescriptions.ANALYSIS_AND_RFP.value,
+    "۳": StatusDescriptions.USER_STORY_PREPARATION.value,
+    "۴": StatusDescriptions.IN_DESIGN.value,
+    "۵": StatusDescriptions.READY_FOR_TECHNICAL_DEVELOPMENT.value,
+    "۶": StatusDescriptions.IN_PROGRESS.value,
+    "۷": StatusDescriptions.TECHNICAL_TESTING.value,
+    "۸": StatusDescriptions.READY_FOR_DELIVERY.value,
+    "۹": StatusDescriptions.TECHNICAL_DOCUMENTATION.value,
+    "۱۰": StatusDescriptions.COMPLETED.value,
     # Legacy
     SynthPMStatus.TODO.value: "To Do",
     SynthPMStatus.IN_PROGRESS_LEGACY.value: "In Progress",

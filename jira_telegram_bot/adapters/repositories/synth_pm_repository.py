@@ -83,7 +83,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return []
 
             headers = values[0]
-            column_mapping = self._create_column_mapping(headers)
+            column_mapping, people_mapping = self._create_column_mapping(headers)
 
             data_rows = values[1:]
             features = []
@@ -92,12 +92,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if len(row) < 2:
                     continue
 
-                people_mapping = {}
 
-                for user in self.user_config.list_all_users_google_sheet_names():
-                    user_index = headers.index(user) if user in headers else None
-                    if user_index is not None:
-                        people_mapping[user] = user_index
 
                 feature = self._parse_row_to_feature_with_mapping(
                     idx,
@@ -141,7 +136,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return False
 
             headers = headers_values[0]
-            column_mapping = self._create_column_mapping(headers)
+            column_mapping, _ = self._create_column_mapping(headers)
 
             for field, value in updates.items():
                 if field in column_mapping:
@@ -698,12 +693,21 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         
                 if sprint is None:
                     sprint = sorted_sprints[0]
+                    sprint_info = SprintInfo.parse_sprint_string(sprint)
+                    sprint = self.jira_repository.get_sprint_by_id(
+                        sprint_info.sprint_id,
+                        self.developer_board_id,
+                    )
+                    
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
                 sprint = self.jira_repository.get_sprint_by_id(
                     sprint_info.sprint_id,
                     self.developer_board_id,
                 )
+                if sprint is not None and sprint.get('state') == "closed":
+                    return None # TODO test it
+                
             else:
                 return None
 
@@ -866,6 +870,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if feature.task_title:
                 if feature.task_title != issue.fields.summary:
                     update_fields["summary"] = feature.task_title
+                    # Update summaries of sub-tasks if feature.task_title changed
+                    # TODO: refactor it to some place else
+                    if feature.task_title and issue.fields.issuetype.name == "Story":
+                        for subtask in issue.fields.subtasks:
+                            subtask_issue = self.jira_repository.get_issue(subtask.key)
+                            if subtask_issue.fields.summary != feature.task_title:
+                                subtask_issue.update(fields={"summary": feature.task_title})
+                                LOGGER.info(f"Updated summary for subtask {subtask.key} to '{feature.task_title}'")
 
             if feature.release != None or feature.version != None:
                 if set([feature.release, feature.version]) != set(
@@ -1274,8 +1286,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error updating sync status: {e}")
             return False
 
-    @staticmethod
-    def _create_column_mapping(headers: List[str]) -> Dict[str, int]:
+    def _create_column_mapping(self, headers: List[str]) -> Tuple[Dict[str, int], Dict[str, int]]:
         """Create mapping from column names to indices.
 
         Args:
@@ -1318,28 +1329,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 "Initial Delivery",
                 "زمان تحویل اولیه",
             ],
-            "description": ["توضیحات", "Description", "توضیحات"],
-            "kazemi": ["کاظمی", "Kazemi"],
-            "mousavi": ["موسوی", "Mousavi"],
-            "moradi": ["مرادی", "Moradi"],
-            "janloo": ["جانلو", "Janloo"],
-            "hosseini": ["حسینی", "Hosseini"],
-            "ghamari": ["قمری", "Ghamari"],
-            "zangane": ["زنگنه", "Zanganeh"],
-            "samei": ["سامعی", "Samei"],
-            "oruji": ["اروجی", "Oruji"],
-            "lotfian": ["لطفیان", "Lotfian"],
-            "adabi": ["آدابی", "Adabi"],
-            "dadjoo": ["دادجو", "Dadjoo"],
-            "sadraei": ["صدرایی", "Sadraei"],
-            "emam_dadi": ["امام دادی", "Emam Dadi"],
-            "nasim": ["نسیم", "Nasim"],
-            "heravi": ["هروی", "heravi"],
             "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key"],
             "developer_board_issue_key": ["developer_board_issue_key"],
             "version": ["version", "ریلیز اصلی"],
         }
+        people_mapping = {}
 
+        for user in self.user_config.list_all_users_google_sheet_names():
+            user_index = headers.index(user) if user in headers else None
+            if user_index is not None:
+                people_mapping[user] = user_index
+                
         for idx, header in enumerate(headers):
             header_clean = header.strip()
 
@@ -1347,11 +1347,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if header_clean in possible_names:
                     mapping[field_name] = idx
                     break
+        
+        mapping.update(people_mapping)
 
         LOGGER.info(f"Created column mapping with {len(mapping)} fields")
-        LOGGER.debug(f"Column mapping: {mapping}")
 
-        return mapping
+        return mapping, people_mapping
 
     def _parse_row_to_feature_with_mapping(
         self, 
@@ -1429,10 +1430,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     except (ValueError, IndexError):
                         # Fallback to last item if parsing fails
                         last_sprint = items[-1]
-            times = {
-                
-            }
-                
+            times = {key: int(get_mapped_value(key)) for key in people_mapping.keys() if get_mapped_value(key) not in ['0', '']}
 
             return SynthPMFeatureEntity(
                 row_number=get_mapped_value("row_number"),
@@ -1536,6 +1534,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 version=get_mapped_value("version")
                 if get_mapped_value("version")
                 else None,
+                times=times
             )
 
         except Exception as e:
@@ -1748,13 +1747,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             developer_board_issue_key: Developer Board issue key
         """
         try:
-            # Log available link types for debugging
-            self._log_available_link_types()
-
-            # Try to find the best link type for creating dependency
             available_link_types = self.jira_repository.get_issue_link_types()
 
-            # Preferred link types in order of preference
             preferred_types = ["Dependency", "Blocks", "Relates to", "Relates"]
             selected_link_type = "Relates"  # Default fallback
 
@@ -1766,7 +1760,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if selected_link_type == preferred:
                     break
 
-            # Create dependency link: PM Board issue depends on Developer Board issue
             success = self.jira_repository.link_issues(
                 dependent_issue_key=pm_board_issue_key,
                 dependency_issue_key=developer_board_issue_key,
@@ -2023,17 +2016,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             component: Component name (can be None)
 
         Returns:
-            Story points allocation for the assignee
+            Story points allocation for the assignee in hours
         """
         try:
-            if component:
-                story_points = int(
-                    feature.__getattribute__(
-                        component.lower().strip("-").replace("-", "").replace("/","_"),
-                    ),
-                )
+            sheet_username = self.user_config.get_user_config_by_jira_username(assignee).google_sheet_name
+            story_points = feature.times.get(sheet_username)
+            if story_points is not None:
+                return story_points
             else:
-                story_points = None
+                if component:
+                    story_points = int(
+                        feature.__getattribute__(
+                            component.lower().strip("-").replace("-", "").replace("/","_"),
+                        ),
+                    )
+                else:
+                    story_points = None
             return story_points
 
         except Exception as e:
