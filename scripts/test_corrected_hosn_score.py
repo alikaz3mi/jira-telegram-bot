@@ -43,8 +43,8 @@ def test_corrected_hosn_score():
     print(f"امتیاز: {score1}")
     print("انتظار: 0 (هیچ کاری نکرده)")
     
-    # Test Case 2: Some activity but no high priority (like موسوی)
-    print("\n📍 Test 2: فعالیت بدون تسک اولویت بالا (مثل موسوی)")
+    # Test Case 2: Some activity but no high priority (like )
+    print("\n📍 Test 2: فعالیت بدون تسک اولویت بالا (مثل )")
     print("- هیچ ساعتی ثبت نکرده (0 ساعت)")
     print("- 1 تسک اولویت بالا تحویل داده (1/7)")
     print("- تاخیر 28.8 روز")

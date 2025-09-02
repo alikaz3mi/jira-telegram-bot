@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List
 from typing import Optional
+from typing import Dict
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -69,6 +70,7 @@ class SynthPMFeatureEntity(BaseModel):
         description="Associated developer's board Jira issue key",
     )
     version: Optional[str] = Field(default=None, description="Release version number")
+    times: Dict[str, int] = Field(default=None, description="Time estimates for each department")
 
     class Config:
         """Pydantic configuration."""
