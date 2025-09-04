@@ -786,19 +786,49 @@ class SynthPMUseCase:
             if not feature:
                 return {"status": "error", "message": "Feature not found"}
 
-            # If feature has Jira issue, update it
-            if feature.jira_issue_key:
-                success = await self.repository.update_jira_task_from_feature(feature)
-                if not success:
-                    return {"status": "error", "message": "Failed to update Jira task"}
+            # Initialize sync results to track what happens
+            sync_results = {
+                "created_jira_tasks": 0,
+                "updated_jira_tasks": 0,
+                "created_developer_board_tasks": 0,
+                "updated_developer_board_tasks": 0,
+                "deleted_tasks": 0,
+                "errors": [],
+            }
+
+            # Use the comprehensive _process_feature logic
+            await self._process_feature(feature, sync_results)
 
             # Check if status change triggers Telegram post
             if self._should_post_to_telegram(feature):
                 await self._post_to_telegram(feature)
 
+            # Build response message based on what was processed
+            actions_taken = []
+            if sync_results["created_jira_tasks"] > 0:
+                actions_taken.append(f"Created {sync_results['created_jira_tasks']} Jira task(s)")
+            if sync_results["updated_jira_tasks"] > 0:
+                actions_taken.append(f"Updated {sync_results['updated_jira_tasks']} Jira task(s)")
+            if sync_results["created_developer_board_tasks"] > 0:
+                actions_taken.append(f"Created {sync_results['created_developer_board_tasks']} Developer Board task(s)")
+            if sync_results["updated_developer_board_tasks"] > 0:
+                actions_taken.append(f"Updated {sync_results['updated_developer_board_tasks']} Developer Board task(s)")
+
+            if sync_results["errors"]:
+                return {
+                    "status": "partial_success",
+                    "message": f"Sheet update completed with errors: {'; '.join(sync_results['errors'])}",
+                    "actions_taken": actions_taken,
+                }
+
+            message = "Sheet update processed successfully"
+            if actions_taken:
+                message += f". Actions: {'; '.join(actions_taken)}"
+
             return {
                 "status": "success",
-                "message": "Sheet update processed successfully",
+                "message": message,
+                "actions_taken": actions_taken,
             }
 
         except Exception as e:
