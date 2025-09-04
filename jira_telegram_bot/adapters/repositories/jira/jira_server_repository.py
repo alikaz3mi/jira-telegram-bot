@@ -703,8 +703,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                         "id": sprint.id,
                         "name": sprint.name,
                         "state": sprint.state,
-                        "startDate": sprint.startDate,
-                        "endDate": sprint.endDate,
+                        "startDate": getattr(sprint, 'startDate', None),
+                        "endDate": getattr(sprint, 'endDate', None),
                     }
             return None
         except Exception as e:

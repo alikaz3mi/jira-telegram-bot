@@ -852,8 +852,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Similar to update_jira_task_from_feature but for
             issue = self.jira_repository.get_issue(feature.developer_board_issue_key)
-            if issue.key == "PARSCHAT-3449":
-                x = 1
             if not issue:
                 LOGGER.warning(f"issue {feature.developer_board_issue_key} not found")
                 return False
@@ -999,7 +997,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if feature.priority:
                 feature_priority = self._map_priority(feature.priority)
-                if feature_priority != issue.fields.priority.name:
+                if feature_priority.lower() != issue.fields.priority.name.lower():
                     update_fields["priority"] = {
                         "name": self._map_priority(feature.priority),
                     }
@@ -1036,10 +1034,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             )
             
             if check_for_task_assignee_change:
-                if feature_assignees[0] != issue.fields.assignee.name:
-                    update_fields["assignee"] = {
-                        "name": feature_assignees[0],
-                    }
+                assignee_name = issue.fields.assignee.name if issue.fields.assignee else None
+                if assignee_name != feature_assignees[0]:
+                    update_fields["assignee"] = {"name": feature_assignees[0]}
             elif check_for_change_from_story_to_task:
                 # Story to task conversion
                 update_fields["issuetype"] = {"name": "Task"}
@@ -1435,8 +1432,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         # Fallback to last item if parsing fails
                         last_sprint = items[-1]
             times = {key: int(get_mapped_value(key)) for key in people_mapping.keys() if get_mapped_value(key) not in ['0', '']}
-            if get_mapped_value("row_number") == "138":
-                x = 1
             return SynthPMFeatureEntity(
                 row_number=get_mapped_value("row_number"),
                 sheet_row_number=row_number,

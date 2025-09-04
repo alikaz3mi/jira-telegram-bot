@@ -86,7 +86,8 @@ class SynthPMUseCase:
                 LOGGER.info(
                     f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}",
                 )
-                # if feature.row_number not in [138, 140]:
+                # if feature.row_number not in [161]:
+                    #@  PARSCHAT-3818: 32, 123
                     # continue
                 try:
                     await self._process_feature(feature, sync_results)

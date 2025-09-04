@@ -32,7 +32,7 @@ class SynthPMEndpoint(ServiceAPIEndpointBluePrint):
             Configured APIRouter for SynthPM endpoints
         """
         api_route = APIRouter(
-            prefix="/synth-developer_board",
+            prefix="/synth-developer-board",
             tags=["SynthPM"]
         )
         
