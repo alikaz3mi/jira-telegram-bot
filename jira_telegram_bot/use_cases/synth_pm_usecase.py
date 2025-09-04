@@ -86,8 +86,8 @@ class SynthPMUseCase:
                 LOGGER.info(
                     f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}",
                 )
-                # if feature.row_number != 170:
-                #     continue
+                # if feature.row_number not in [138, 140]:
+                    # continue
                 try:
                     await self._process_feature(feature, sync_results)
                 except Exception as e:
@@ -198,9 +198,9 @@ class SynthPMUseCase:
                 feature.jira_issue_key
                 and feature.task_title is not None
                 and feature.developer_board_issue_key is not None
-            ):  #
-                if feature.last_sprint is None:
-                    return
+            ):  
+                # if feature.last_sprint is None:
+                #     return
                 issue_key = await self.repository.create_jira_task_from_feature(feature)
                 if issue_key:
                     sync_results["created_jira_tasks"] += 1

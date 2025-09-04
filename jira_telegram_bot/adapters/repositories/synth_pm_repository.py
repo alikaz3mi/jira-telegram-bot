@@ -73,9 +73,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             List of eature entities
         """
         try:
+            # TODO: get the range of headers dynamically.
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.developer_board_worksheet_name}!A:AP",
+                f"{self.settings.developer_board_worksheet_name}!A:AR",
             )
 
             if not values or len(values) < 2:
@@ -435,7 +436,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if feature.status:
                 jira_status = self._determine_jira_status(feature)
-                self._transition_issue_to_status(issue.key, jira_status)
+                current_jira_status = issue.fields.status.name
+                if current_jira_status.lower() != jira_status.lower():
+                    self._transition_issue_to_status(issue.key, jira_status)
 
             if feature.involved_people and issue.fields.issuetype.name == "Task":
                 developer_issue = self.jira_repository.get_issue(
@@ -690,6 +693,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         continue
                     if sprint is not None and sprint.get('state') == "active":
                         break
+
+                if sprint is not None and sprint.get('state') == "closed":
+                    LOGGER.debug(f"feature {feature.row_number}: {feature.task_title} will not be created since it is not assigned to any active sprint")
+                    return False
                         
                 if sprint is None:
                     sprint = sorted_sprints[0]
@@ -706,7 +713,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     self.developer_board_id,
                 )
                 if sprint is not None and sprint.get('state') == "closed":
-                    return None # TODO test it
+                    return None # TODO test it. In this state, issue must not be created
                 
             else:
                 return None
@@ -1148,7 +1155,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if update_fields:
                 issue.update(fields=update_fields)
-                LOGGER.info(f"Updated task {feature.developer_board_issue_key}")
+                LOGGER.info(f"Updated task {feature.developer_board_issue_key} with {update_fields}")
 
             return True
 
@@ -1349,9 +1356,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     break
         
         mapping.update(people_mapping)
-
-        LOGGER.info(f"Created column mapping with {len(mapping)} fields")
-
         return mapping, people_mapping
 
     def _parse_row_to_feature_with_mapping(
@@ -1431,7 +1435,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         # Fallback to last item if parsing fails
                         last_sprint = items[-1]
             times = {key: int(get_mapped_value(key)) for key in people_mapping.keys() if get_mapped_value(key) not in ['0', '']}
-
+            if get_mapped_value("row_number") == "138":
+                x = 1
             return SynthPMFeatureEntity(
                 row_number=get_mapped_value("row_number"),
                 sheet_row_number=row_number,

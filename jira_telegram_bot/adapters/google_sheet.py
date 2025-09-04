@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import unittest
 from abc import ABC
 from abc import abstractmethod
@@ -8,6 +9,7 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 
 import gspread
 from gspread.exceptions import APIError
@@ -84,6 +86,9 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
                 scope,
             )
             self.client = gspread.authorize(self.credentials)
+            # Initialize cache for get_values method
+            self._values_cache: Dict[str, Tuple[List[List[Any]], float]] = {}
+            self._cache_ttl = 60  # 1 minute cache TTL
             LOGGER.debug("Successfully authenticated with Google Sheets API")
         except Exception as e:
             LOGGER.error(f"Failed to authenticate with Google Sheets API: {e}")
@@ -256,6 +261,77 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             LOGGER.error(f"Error updating cells in {spreadsheet_id}: {e}")
             return False
 
+    def _get_cache_key(self, spreadsheet_id: str, range_name: str) -> str:
+        """Generate cache key for get_values method.
+
+        Args:
+            spreadsheet_id: The Google Sheet ID
+            range_name: Range to read
+
+        Returns:
+            Cache key string
+        """
+        return f"{spreadsheet_id}:{range_name}"
+
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check if cache entry is still valid.
+
+        Args:
+            cache_key: The cache key to check
+
+        Returns:
+            True if cache is valid, False otherwise
+        """
+        if cache_key not in self._values_cache:
+            return False
+        
+        _, timestamp = self._values_cache[cache_key]
+        return time.time() - timestamp < self._cache_ttl
+
+    def _get_from_cache(self, cache_key: str) -> Optional[List[List[Any]]]:
+        """Get values from cache if valid.
+
+        Args:
+            cache_key: The cache key
+
+        Returns:
+            Cached values if valid, None otherwise
+        """
+        if self._is_cache_valid(cache_key):
+            values, _ = self._values_cache[cache_key]
+            LOGGER.debug(f"Cache hit for key: {cache_key}")
+            return values
+        return None
+
+    def _set_cache(self, cache_key: str, values: List[List[Any]]) -> None:
+        """Set values in cache.
+
+        Args:
+            cache_key: The cache key
+            values: Values to cache
+        """
+        self._values_cache[cache_key] = (values, time.time())
+        LOGGER.debug(f"Cached values for key: {cache_key}")
+
+    def _cleanup_expired_cache(self) -> None:
+        """Remove expired entries from cache to prevent memory leaks."""
+        current_time = time.time()
+        expired_keys = [
+            key for key, (_, timestamp) in self._values_cache.items()
+            if current_time - timestamp >= self._cache_ttl
+        ]
+        
+        for key in expired_keys:
+            del self._values_cache[key]
+        
+        if expired_keys:
+            LOGGER.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
+
+    def clear_cache(self) -> None:
+        """Clear all cached values."""
+        self._values_cache.clear()
+        LOGGER.debug("Cleared all cached values")
+
     async def get_values(
         self,
         spreadsheet_id: str,
@@ -270,6 +346,15 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         Returns:
             2D list of cell values
         """
+        # Cleanup expired cache entries periodically
+        self._cleanup_expired_cache()
+        
+        # Check cache first
+        cache_key = self._get_cache_key(spreadsheet_id, range_name)
+        cached_values = self._get_from_cache(cache_key)
+        if cached_values is not None:
+            return cached_values
+
         try:
             spreadsheet = self.client.open_by_key(spreadsheet_id)
 
@@ -284,6 +369,9 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             else:
                 values = worksheet.get_all_values()
 
+            # Cache the results
+            self._set_cache(cache_key, values)
+            
             LOGGER.debug(f"Retrieved {len(values)} rows from {spreadsheet_id}")
             return values
 
