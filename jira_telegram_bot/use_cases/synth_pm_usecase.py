@@ -1000,43 +1000,100 @@ class SynthPMUseCase:
         acceptance_result,
         test_result,
     ) -> str:
-        """Format the generated documentation into a structured text.
+        """Format the generated documentation with proper Jira markup following comprehensive structure.
 
         Args:
             acceptance_result: Generated acceptance criteria result
             test_result: Generated test scenarios result
 
         Returns:
-            Formatted documentation text
+            Formatted documentation text with Jira markup
         """
         documentation_parts = []
 
-        # User Story section
-        documentation_parts.append("## یوزر استوری (User Story)")
-        documentation_parts.append(acceptance_result.user_story)
+        # Short Description section
+        documentation_parts.append("h2. توضیح کوتاه")
         documentation_parts.append("")
+        documentation_parts.append(acceptance_result.user_story)
+        documentation_parts.append("----")
+
+        # Scope and Domain section  
+        documentation_parts.append("h2. دامنه و محدوده")
+        documentation_parts.append("")
+        # Add basic scope points - these could be enhanced based on acceptance criteria
+        documentation_parts.extend([
+            " * *ورودی کاربر:* اطلاعات مطابق نیازمندی‌های سیستم",
+            " * *منبع داده:* منابع تعریف شده در سیستم",
+            " * *خروجی به کاربر:* نتیجه عملیات مطابق انتظارات",
+            "",
+            "----"
+        ])
+
+        # Assumptions and Dependencies
+        documentation_parts.append("h2. مفروضات و وابستگی‌ها")
+        documentation_parts.append("")
+        documentation_parts.extend([
+            " * وجود دسترسی‌های لازم به سیستم‌های مرتبط",
+            " * رعایت معماری و استانداردهای تعریف شده",
+            " * وجود زیرساخت‌های مورد نیاز",
+            "",
+            "----"
+        ])
 
         # Acceptance Criteria section
-        documentation_parts.append("## معیارهای پذیرش (Acceptance Criteria)")
-        for criteria in acceptance_result.acceptance_criteria:
-            documentation_parts.append(f"- {criteria}")
+        documentation_parts.append("h2. معیارهای پذیرش (Acceptance Criteria)")
         documentation_parts.append("")
+        
+        # Group acceptance criteria by scenarios
+        for i, criteria in enumerate(acceptance_result.acceptance_criteria, 1):
+            documentation_parts.append(f"h3. سناریو {i}")
+            documentation_parts.append(f" * {criteria}")
+            documentation_parts.append("")
+        
+        documentation_parts.append("----")
 
         # Delivery Process section
-        documentation_parts.append("## فرایند تحویل (Delivery Process)")
-        for step in acceptance_result.delivery_process:
-            documentation_parts.append(f"- {step}")
-        documentation_parts.append("")
+        documentation_parts.append("h2. فرایند تحویل (Delivery Process)")
+        
+        for i, step in enumerate(acceptance_result.delivery_process, 1):
+            documentation_parts.append(f" # *مرحله {i}*")
+            documentation_parts.append("")
+            documentation_parts.append(f" * {step}")
+            documentation_parts.append("")
+        
+        documentation_parts.append("----")
+
+        # Non-functional Requirements
+        documentation_parts.append("h2. معیارهای غیرعملکردی")
+        documentation_parts.extend([
+            " * *کارایی:* پاسخ سیستم در زمان مناسب",
+            " * *پایداری:* عملکرد مطمئن و قابل اعتماد",
+            " * *امنیت:* رعایت اصول امنیتی و حریم خصوصی",
+            " * *قابلیت ردیابی:* امکان پیگیری و نظارت",
+            "",
+            "----"
+        ])
+
+        # Definition of Done
+        documentation_parts.append("h2. تعریف Done")
+        documentation_parts.extend([
+            " * کد نوشته شده و بررسی شده",
+            " * تست‌های واحد و یکپارچگی انجام شده",
+            " * مستندات به‌روزرسانی شده",
+            " * بررسی کیفیت کد انجام شده",
+            " * تست‌های پذیرش تأیید شده",
+            "",
+            "----"
+        ])
 
         # Test Scenarios section
-        documentation_parts.append("## روش تست (Test Scenarios)")
+        documentation_parts.append("h2. روش تست (Test Scenarios)")
         documentation_parts.append("")
-        documentation_parts.append("| شماره تست | توضیح روش تست | وضعیت | مسئول |")
-        documentation_parts.append("|-----------|---------------|--------|-------|")
+        documentation_parts.append("||شماره تست||توضیح روش تست||وضعیت||مسئول||")
 
         for scenario in test_result.test_scenarios:
             documentation_parts.append(
-                f"| {scenario.test_number} | {scenario.description} | {scenario.status} | {scenario.responsible} |"
+                f"|{scenario.test_number}|{scenario.description}|⬜|{scenario.responsible}|"
             )
 
         return "\n".join(documentation_parts)
