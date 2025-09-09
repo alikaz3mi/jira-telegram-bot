@@ -907,6 +907,11 @@ class SynthPMUseCase:
     ) -> Dict[str, str]:
         """Generate user story, acceptance criteria, and test scenarios for a feature.
 
+        Only generates documentation if the feature has at least one of:
+        - description
+        - acceptance_criteria 
+        - test_cases
+
         Args:
             feature: SynthPM feature entity
             project_info: Project information from projects_info.json
@@ -916,6 +921,18 @@ class SynthPMUseCase:
         """
         try:
             LOGGER.info(f"Generating documentation for feature: {feature.task_title}")
+
+            # Check if feature has any content that warrants documentation generation
+            has_description = bool(feature.description and feature.description.strip())
+            has_acceptance_criteria = bool(feature.acceptance_criteria and feature.acceptance_criteria.strip())
+            has_test_cases = bool(feature.test_cases and feature.test_cases.strip())
+
+            if not (has_description or has_acceptance_criteria or has_test_cases):
+                LOGGER.info(f"Skipping documentation generation for {feature.task_title} - no description, acceptance criteria, or test cases found")
+                return {
+                    "status": "skipped",
+                    "message": "No content available for documentation generation",
+                }
 
             # Prepare project context
             project_context = ""
@@ -1108,11 +1125,14 @@ class SynthPMUseCase:
     async def _generate_and_update_documentation(self, feature: SynthPMFeatureEntity) -> bool:
         """Generate and update documentation for a single feature.
 
+        Only generates documentation if feature has content (description, acceptance_criteria, or test_cases).
+        Updates only Jira task, not Google Sheets.
+
         Args:
             feature: The feature to generate documentation for
 
         Returns:
-            True if successful, False otherwise
+            True if successful or skipped, False if failed
         """
         try:
             LOGGER.info(f"Generating documentation for feature: {feature.task_title}")
@@ -1124,13 +1144,34 @@ class SynthPMUseCase:
 
             # Generate the documentation
             doc_result = await self.generate_feature_documentation(feature, project_info)
+            
+            if doc_result["status"] == "skipped":
+                LOGGER.info(f"Documentation generation skipped for feature: {feature.task_title}")
+                return True  # Skipped is considered successful for change tracking
+            
             if doc_result["status"] != "success":
                 LOGGER.warning(f"Failed to generate documentation for feature: {feature.task_title}")
                 return False
 
-            # Update the feature with the new documentation
-            update_result = await self.update_feature_with_documentation(feature)
-            return update_result["status"] == "success"
+            # Update only Jira task with the new documentation (not Google Sheets)
+            if feature.developer_board_issue_key:
+                try:
+                    documentation = doc_result["documentation"]  # Already formatted by generate_feature_documentation
+                    
+                    await self.repository.update_jira_task_description(
+                        feature.developer_board_issue_key,
+                        documentation,
+                    )
+                    
+                    LOGGER.info(f"Successfully updated Jira task {feature.developer_board_issue_key} with documentation")
+                    
+                except Exception as e:
+                    LOGGER.error(f"Error updating Jira task {feature.developer_board_issue_key}: {e}")
+                    return False
+            else:
+                LOGGER.warning(f"No Jira issue key found for feature: {feature.task_title}")
+
+            return True
 
         except Exception as e:
             LOGGER.error(f"Error generating documentation for feature {feature.task_title}: {e}")

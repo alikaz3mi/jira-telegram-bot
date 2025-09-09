@@ -38,10 +38,13 @@ class FeatureSnapshot(BaseModel):
         Returns:
             FeatureSnapshot instance
         """
-        # Create hash from relevant fields that affect documentation
+        # Create hash from Google Sheet fields that affect documentation
+        # These are the fields that PO/PM will update in Google Sheets
         relevant_fields = {
             "task_title": feature.task_title or "",
             "description": feature.description or "",
+            "acceptance_criteria": feature.acceptance_criteria or "",
+            "test_cases": feature.test_cases or "",
             "epic": feature.epic or "",
             "departments": feature.departments or "",
             "priority": feature.priority or "",
