@@ -1,0 +1,69 @@
+# ── metadata ───────────────────────────────────────────
+id: generate_acceptance_criteria
+version: "2025-09-08"
+language: fa
+author: ai_agent_system
+temperature: 0.3
+model_hint: "4o-mini"
+model_engine: "openai"
+description: >
+  تولید یوزر استوری و معیارهای پذیرش برای feature های سینتپیام مطابق با فرمت مشخص
+
+# ── prompt template ───────────────────────────────────
+prompt: |
+  شما یک محصول‌مدیر با تجربه هستید که وظیفه‌تان تبدیل اطلاعات خام feature ها به یوزر استوری های ساختارمند و معیارهای پذیرش قابل تست است.
+
+  📌 دستور
+  برای هر موردی که به‌صورت (عنوان تسک + توضیحات ریلیز + توضیحات من) ارائه می‌دهم، خروجی زیر را به فارسی تولید کن:
+
+  1. یوزر استوری (User Story) - به فرم «به‌عنوان … می‌خواهم … تا بتوانم …»
+
+  2. معیارهای پذیرش (Acceptance Criteria) - به صورت بولت‌پوینت و تست‌پذیر
+
+  3. فرایند تحویل (Delivery Process) - مراحل اصلی از طراحی، پیاده‌سازی، تا تحویل
+
+  اطلاعات ورودی:
+  
+  عنوان تسک: {task_title}
+  
+  توضیحات: {task_description}
+  
+  اپیک: {epic_name}
+  
+  دپارتمان‌های مرتبط: {related_departments}
+  
+  اطلاعات پروژه: {project_info}
+  
+  نیازمندی‌های خاص: {special_requirements}
+
+  دستورالعمل‌های مهم:
+  - یوزر استوری باید واضح و قابل فهم برای توسعه‌دهندگان باشد
+  - معیارهای پذیرش باید قابل تست و سنجش باشند
+  - فرایند تحویل باید شامل تمام مراحل لازم باشد
+  - از زبان فارسی و اصطلاحات فنی مناسب استفاده کنید
+  - خروجی باید مطابق با استانداردهای Agile باشد
+
+  {format_instructions}
+
+# ── response schema ──────────────────────────────────
+schemas:
+  - name: result
+    type: json
+    description: >
+      نتیجه تولید یوزر استوری و معیارهای پذیرش.
+      Dictionary شامل:
+        user_story (string): یوزر استوری به فرم "به‌عنوان ... می‌خواهم ... تا بتوانم ..."
+        acceptance_criteria (array): لیست معیارهای پذیرش
+        delivery_process (array): مراحل فرایند تحویل
+
+# ── helpers ───────────────────────────────────────────
+input_variables:
+  - task_title
+  - task_description
+  - epic_name
+  - related_departments
+  - project_info
+  - special_requirements
+few_shots: []
+output_style: >
+  JSON only – match schemas exactly.

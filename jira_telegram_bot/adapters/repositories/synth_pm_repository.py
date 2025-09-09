@@ -16,6 +16,7 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.google_sheet import GoogleSheetClient
 from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
+from jira_telegram_bot.entities.synth_pm.change_tracker import SynthPMChangeTracker
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
 from jira_telegram_bot.entities.synth_pm.constants import (
@@ -57,6 +58,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         self.settings = settings
         self.sync_status_file = Path(
             f"{DEFAULT_PATH}/data/synth_developer_board_sync_status.json",
+        )
+        self.change_tracker_file = Path(
+            f"{DEFAULT_PATH}/data/synth_pm_change_tracker.json",
         )
         self.user_config = user_config
         self.developer_board_id = self.jira_repository.get_board_id(
@@ -2329,3 +2333,237 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         except Exception as e:
             LOGGER.error(f"Error updating time estimate for subtask {subtask}: {e}")
+
+    async def get_project_info(self, project_key: str) -> Dict[str, any]:
+        """Get project information from projects_info.json.
+
+        Args:
+            project_key: Project key to get info for
+
+        Returns:
+            Project information dictionary
+        """
+        try:
+            projects_info_path = Path(f"{DEFAULT_PATH}/jira_telegram_bot/settings/projects_info.json")
+            
+            if not projects_info_path.exists():
+                LOGGER.warning(f"projects_info.json not found at {projects_info_path}")
+                return {}
+
+            with open(projects_info_path, "r", encoding="utf-8") as f:
+                projects_data = json.load(f)
+
+            return projects_data.get(project_key, {}).get("project_info", {})
+
+        except Exception as e:
+            LOGGER.error(f"Error loading project info for {project_key}: {e}")
+            return {}
+
+    async def update_jira_task_description(
+        self,
+        issue_key: str,
+        description: str,
+    ) -> bool:
+        """Update Jira task description with generated documentation.
+
+        Args:
+            issue_key: Jira issue key
+            description: New description content
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            issue = self.jira_repository.get_issue(issue_key)
+            if not issue:
+                LOGGER.error(f"Issue {issue_key} not found")
+                return False
+
+            # Update the description field
+            issue.update(fields={"description": description})
+            
+            LOGGER.info(f"Updated description for issue {issue_key}")
+            return True
+
+        except Exception as e:
+            LOGGER.error(f"Error updating description for {issue_key}: {e}")
+            return False
+
+    async def update_jira_task_custom_fields(
+        self,
+        issue_key: str,
+        custom_fields: Dict[str, str],
+    ) -> bool:
+        """Update Jira task with custom fields for documentation.
+
+        Args:
+            issue_key: Jira issue key
+            custom_fields: Dictionary of custom field values
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            issue = self.jira_repository.get_issue(issue_key)
+            if not issue:
+                LOGGER.error(f"Issue {issue_key} not found")
+                return False
+
+            # For now, append to description since custom fields depend on Jira configuration
+            current_description = issue.fields.description or ""
+            
+            # Add sections to description
+            new_description_parts = [current_description]
+            
+            if custom_fields.get("user_story"):
+                new_description_parts.extend([
+                    "",
+                    "## یوزر استوری",
+                    custom_fields["user_story"],
+                ])
+            
+            if custom_fields.get("acceptance_criteria"):
+                new_description_parts.extend([
+                    "",
+                    "## معیارهای پذیرش",
+                    custom_fields["acceptance_criteria"],
+                ])
+            
+            if custom_fields.get("test_scenarios"):
+                new_description_parts.extend([
+                    "",
+                    "## سناریوهای تست",
+                    custom_fields["test_scenarios"],
+                ])
+
+            new_description = "\n".join(new_description_parts)
+            issue.update(fields={"description": new_description})
+            
+            LOGGER.info(f"Updated custom fields for issue {issue_key}")
+            return True
+
+        except Exception as e:
+            LOGGER.error(f"Error updating custom fields for {issue_key}: {e}")
+            return False
+
+    async def get_change_tracker(self) -> SynthPMChangeTracker:
+        """Get the current change tracker state.
+
+        Returns:
+            SynthPMChangeTracker instance
+        """
+        try:
+            if not self.change_tracker_file.exists():
+                LOGGER.info("Change tracker file not found, creating new tracker")
+                return SynthPMChangeTracker()
+
+            with open(self.change_tracker_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            return SynthPMChangeTracker.model_validate(data)
+
+        except Exception as e:
+            LOGGER.error(f"Error loading change tracker: {e}")
+            return SynthPMChangeTracker()
+
+    async def save_change_tracker(self, tracker: SynthPMChangeTracker) -> bool:
+        """Save the change tracker state.
+
+        Args:
+            tracker: SynthPMChangeTracker instance to save
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Ensure directory exists
+            self.change_tracker_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Convert to dict and handle datetime serialization
+            data = tracker.model_dump(mode="json")
+
+            with open(self.change_tracker_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+
+            LOGGER.info(f"Change tracker saved with {len(tracker.snapshots)} snapshots")
+            return True
+
+        except Exception as e:
+            LOGGER.error(f"Error saving change tracker: {e}")
+            return False
+
+    async def detect_feature_changes(
+        self,
+        current_features: List[SynthPMFeatureEntity],
+    ) -> Dict[str, List[SynthPMFeatureEntity]]:
+        """Detect what features have changed since last sync.
+
+        Args:
+            current_features: Current list of features from Google Sheets
+
+        Returns:
+            Dictionary categorizing features by change type
+        """
+        try:
+            tracker = await self.get_change_tracker()
+            changes = tracker.detect_changes(current_features)
+
+            LOGGER.info(
+                f"Change detection: {len(changes['new'])} new, "
+                f"{len(changes['modified'])} modified, "
+                f"{len(changes['unchanged'])} unchanged, "
+                f"{len(changes['needs_docs'])} need docs"
+            )
+
+            return changes
+
+        except Exception as e:
+            LOGGER.error(f"Error detecting changes: {e}")
+            # Fallback: treat all as needing docs
+            return {
+                "new": current_features,
+                "modified": [],
+                "unchanged": [],
+                "needs_docs": current_features,
+            }
+
+    async def update_change_tracker(
+        self,
+        processed_features: List[SynthPMFeatureEntity],
+        generated_docs_for: Optional[List[int]] = None,
+    ) -> bool:
+        """Update change tracker after processing features.
+
+        Args:
+            processed_features: List of processed features
+            generated_docs_for: List of sheet_row_numbers that got documentation generated
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            tracker = await self.get_change_tracker()
+            tracker.update_snapshots(processed_features, generated_docs_for)
+            return await self.save_change_tracker(tracker)
+
+        except Exception as e:
+            LOGGER.error(f"Error updating change tracker: {e}")
+            return False
+
+    async def force_documentation_regeneration(self, sheet_row_numbers: List[int]) -> bool:
+        """Force documentation regeneration for specific features.
+
+        Args:
+            sheet_row_numbers: List of row numbers to force regeneration for
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            tracker = await self.get_change_tracker()
+            tracker.force_documentation_regeneration(sheet_row_numbers)
+            return await self.save_change_tracker(tracker)
+
+        except Exception as e:
+            LOGGER.error(f"Error forcing documentation regeneration: {e}")
+            return False

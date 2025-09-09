@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -11,6 +12,7 @@ from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
+from jira_telegram_bot.entities.synth_pm.change_tracker import SynthPMChangeTracker
 
 
 class SynthPMRepositoryInterface(ABC):
@@ -180,5 +182,116 @@ class SynthPMRepositoryInterface(ABC):
 
         Returns:
             Dictionary mapping Jira statuses to their reverse values
+        """
+        pass
+
+    @abstractmethod
+    async def get_project_info(self, project_key: str) -> Dict[str, any]:
+        """Get project information from projects_info.json.
+
+        Args:
+            project_key: Project key to get info for
+
+        Returns:
+            Project information dictionary
+        """
+        pass
+
+    @abstractmethod
+    async def update_jira_task_description(
+        self,
+        issue_key: str,
+        description: str,
+    ) -> bool:
+        """Update Jira task description with generated documentation.
+
+        Args:
+            issue_key: Jira issue key
+            description: New description content
+
+        Returns:
+            True if successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def update_google_sheet_custom_fields(
+        self,
+        issue_key: str,
+        custom_fields: Dict[str, Any],
+    ) -> bool:
+        """Update custom fields for a Google Sheet row by issue key.
+
+        Args:
+            issue_key: The Jira issue key to match
+            custom_fields: Dictionary of field names to values
+
+        Returns:
+            True if successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def get_change_tracker(self) -> SynthPMChangeTracker:
+        """Get the current change tracker state.
+
+        Returns:
+            SynthPMChangeTracker instance
+        """
+        pass
+
+    @abstractmethod
+    async def save_change_tracker(self, tracker: SynthPMChangeTracker) -> bool:
+        """Save the change tracker state.
+
+        Args:
+            tracker: SynthPMChangeTracker instance to save
+
+        Returns:
+            True if successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def detect_feature_changes(
+        self,
+        current_features: List[SynthPMFeatureEntity],
+    ) -> Dict[str, List[SynthPMFeatureEntity]]:
+        """Detect what features have changed since last sync.
+
+        Args:
+            current_features: Current list of features from Google Sheets
+
+        Returns:
+            Dictionary categorizing features by change type
+        """
+        pass
+
+    @abstractmethod
+    async def update_change_tracker(
+        self,
+        processed_features: List[SynthPMFeatureEntity],
+        generated_docs_for: Optional[List[int]] = None,
+    ) -> bool:
+        """Update change tracker after processing features.
+
+        Args:
+            processed_features: List of processed features
+            generated_docs_for: List of sheet_row_numbers that got documentation generated
+
+        Returns:
+            True if successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def force_documentation_regeneration(self, sheet_row_numbers: List[int]) -> bool:
+        """Force documentation regeneration for specific features.
+
+        Args:
+            sheet_row_numbers: List of row numbers to force regeneration for
+
+        Returns:
+            True if successful, False otherwise
         """
         pass

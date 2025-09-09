@@ -14,3 +14,7 @@ class PromptNames(str, Enum):
     DECOMPOSE_USER_STORY = "decompose_user_story"
     CREATE_SUBTASKS = "create_subtasks"
     GENERATE_USER_STORY = "generate_user_story"
+    
+    # New SynthPM prompts for feature enhancement
+    GENERATE_ACCEPTANCE_CRITERIA = "generate_acceptance_criteria"
+    GENERATE_TEST_SCENARIOS = "generate_test_scenarios"

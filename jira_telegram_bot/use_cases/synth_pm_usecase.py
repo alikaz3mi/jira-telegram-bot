@@ -8,12 +8,24 @@ from typing import List
 from typing import Optional
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.ai_agent_models.generate_acceptance_criteria import (
+    GenerateAcceptanceCriteriaInput,
+)
+from jira_telegram_bot.entities.ai_agent_models.generate_test_scenarios import (
+    GenerateTestScenariosInput,
+)
 from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
 from jira_telegram_bot.entities.synth_pm.constants import StatusDescriptions
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
+from jira_telegram_bot.use_cases.ai_agents.generate_acceptance_criteria import (
+    GenerateAcceptanceCriteriaUseCase,
+)
+from jira_telegram_bot.use_cases.ai_agents.generate_test_scenarios import (
+    GenerateTestScenariosUseCase,
+)
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
 )
@@ -34,6 +46,8 @@ class SynthPMUseCase:
         settings: SynthPMSettings,
         user_config: UserConfigInterface,
         notification_gateway: NotificationGatewayInterface,
+        generate_acceptance_criteria_use_case: GenerateAcceptanceCriteriaUseCase,
+        generate_test_scenarios_use_case: GenerateTestScenariosUseCase,
     ):
         """Initialize the use case.
 
@@ -42,30 +56,41 @@ class SynthPMUseCase:
             settings: SynthPM settings
             user_config: User configuration interface
             notification_gateway: Notification gateway interface
+            generate_acceptance_criteria_use_case: Use case for generating acceptance criteria
+            generate_test_scenarios_use_case: Use case for generating test scenarios
         """
         self.repository = repository
         self.settings = settings
         self.user_config = user_config
         self.notification_gateway = notification_gateway
+        self.generate_acceptance_criteria_use_case = generate_acceptance_criteria_use_case
+        self.generate_test_scenarios_use_case = generate_test_scenarios_use_case
 
     async def sync_developer_board_features(self) -> Dict[str, Any]:
-        """Synchronize features between Google Sheets, Jira, and Telegram.
+        """Synchronize features between Google Sheets, Jira, and Telegram using intelligent change detection.
 
         Returns:
             Sync result summary
         """
         try:
-            LOGGER.info("Starting SynthPM synchronization")
+            LOGGER.info("Starting intelligent SynthPM synchronization")
 
             # Get current features from sheet
-            # FIXME: departments must be list of string.
-            # FIXME: names must not be mapped in here. it should be from a db or something
             features = await self.repository.get_developer_board_features()
             if not features:
                 return {"status": "success", "message": "No features found to sync"}
 
-            # Get previous sync status
-            # previous_sync = await self.repository.get_sync_status()
+            # Detect what has changed
+            changes = await self.repository.detect_feature_changes(features)
+            new_features = changes["new"]
+            modified_features = changes["modified"]
+            features_needing_docs = changes["needs_docs"]
+
+            LOGGER.info(
+                f"Change analysis: {len(new_features)} new, "
+                f"{len(modified_features)} modified, "
+                f"{len(features_needing_docs)} need documentation"
+            )
 
             sync_results = {
                 "created_jira_tasks": 0,
@@ -73,28 +98,55 @@ class SynthPMUseCase:
                 "created_developer_board_tasks": 0,
                 "updated_developer_board_tasks": 0,
                 "deleted_tasks": 0,
+                "generated_documentation": 0,
                 "errors": [],
             }
 
             # Handle task cleanup - check for tasks that no longer exist in sheet
-            await self._cleanup_deleted_tasks(
-                features,
-                sync_results,
-            )  # TODO: check this one later
+            await self._cleanup_deleted_tasks(features, sync_results)
 
-            for idx, feature in enumerate(features):
-                LOGGER.info(
-                    f"Processing feature {idx + 1}/{len(features)}: {feature.task_title}",
-                )
-                # if feature.row_number not in [161]:
-                    #@  PARSCHAT-3818: 32, 123
-                    # continue
+            # Process features efficiently based on change detection
+            processed_features = []
+            doc_generated_rows = []
+
+            # Process new and modified features
+            for feature in new_features + modified_features:
+                # Skip test rows
+                if feature.sheet_row_number not in [9, 10, 66, 67]:
+                    continue
+
                 try:
                     await self._process_feature(feature, sync_results)
+                    processed_features.append(feature)
+
+                    # Generate documentation for new features
+                    if feature in new_features and await self._generate_and_update_documentation(feature):
+                        sync_results["generated_documentation"] += 1
+                        doc_generated_rows.append(feature.sheet_row_number)
+
                 except Exception as e:
                     error_msg = f"Error processing feature {feature.task_title}: {e}"
                     LOGGER.error(error_msg)
                     sync_results["errors"].append(error_msg)
+
+            # Generate documentation for existing features that need it
+            for feature in features_needing_docs:
+                if feature not in new_features and feature.sheet_row_number not in [9, 10, 66, 67]:
+                    try:
+                        if await self._generate_and_update_documentation(feature):
+                            sync_results["generated_documentation"] += 1
+                            doc_generated_rows.append(feature.sheet_row_number)
+                            processed_features.append(feature)
+                    except Exception as e:
+                        error_msg = f"Error generating docs for {feature.task_title}: {e}"
+                        LOGGER.error(error_msg)
+                        sync_results["errors"].append(error_msg)
+
+            # Update change tracker
+            await self.repository.update_change_tracker(
+                processed_features=processed_features,
+                generated_docs_for=doc_generated_rows,
+            )
 
             # Update sync status
             sync_status = SynthPMSheetSyncStatus(
@@ -202,7 +254,10 @@ class SynthPMUseCase:
             ):  
                 # if feature.last_sprint is None:
                 #     return
-                issue_key = await self.repository.create_jira_task_from_feature(feature)
+                if feature.jira_issue_key is None:
+                    issue_key = await self.repository.create_jira_task_from_feature(feature)
+                else:
+                    issue_key = feature.jira_issue_key
                 if issue_key:
                     sync_results["created_jira_tasks"] += 1
                     feature = feature.copy(update={"jira_issue_key": issue_key})
@@ -799,6 +854,13 @@ class SynthPMUseCase:
             # Use the comprehensive _process_feature logic
             await self._process_feature(feature, sync_results)
 
+            # Generate and update documentation for the feature
+            doc_update_result = await self.update_feature_with_documentation(feature)
+            if doc_update_result["status"] == "success":
+                actions_taken.append("Generated and updated documentation")
+            elif doc_update_result["status"] == "error":
+                sync_results["errors"].append(f"Documentation generation failed: {doc_update_result.get('message', 'Unknown error')}")
+
             # Check if status change triggers Telegram post
             if self._should_post_to_telegram(feature):
                 await self._post_to_telegram(feature)
@@ -835,3 +897,282 @@ class SynthPMUseCase:
             error_msg = f"Error handling sheet update: {e}"
             LOGGER.error(error_msg)
             return {"status": "error", "message": error_msg}
+
+    async def generate_feature_documentation(
+        self,
+        feature: SynthPMFeatureEntity,
+        project_info: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """Generate user story, acceptance criteria, and test scenarios for a feature.
+
+        Args:
+            feature: SynthPM feature entity
+            project_info: Project information from projects_info.json
+
+        Returns:
+            Dictionary containing generated documentation
+        """
+        try:
+            LOGGER.info(f"Generating documentation for feature: {feature.task_title}")
+
+            # Prepare project context
+            project_context = ""
+            if project_info:
+                project_context = f"توضیحات پروژه: {project_info.get('description', '')}\n"
+                project_context += f"کلید واژه‌ها: {', '.join(project_info.get('keywords', []))}"
+
+            # Generate acceptance criteria first
+            acceptance_input = GenerateAcceptanceCriteriaInput(
+                task_title=feature.task_title,
+                task_description=feature.description,
+                epic_name=feature.epic,
+                related_departments=feature.departments.split(",") if feature.departments else [],
+                project_info=project_context,
+                special_requirements=None,
+            )
+
+            acceptance_result = await self.generate_acceptance_criteria_use_case.execute(
+                input_data=acceptance_input,
+                robot_id="synth_pm_system",
+            )
+
+            # Generate test scenarios using the acceptance criteria
+            test_input = GenerateTestScenariosInput(
+                task_title=feature.task_title,
+                task_description=feature.description,
+                user_story=acceptance_result.user_story,
+                acceptance_criteria=acceptance_result.acceptance_criteria,
+                epic_name=feature.epic,
+                related_departments=feature.departments.split(",") if feature.departments else [],
+                project_info=project_context,
+            )
+
+            test_result = await self.generate_test_scenarios_use_case.execute(
+                input_data=test_input,
+                robot_id="synth_pm_system",
+            )
+
+            # Format the complete documentation
+            documentation = self._format_feature_documentation(
+                acceptance_result,
+                test_result,
+            )
+
+            LOGGER.info(f"Successfully generated documentation for: {feature.task_title}")
+            return {
+                "status": "success",
+                "documentation": documentation,
+                "user_story": acceptance_result.user_story,
+                "acceptance_criteria": acceptance_result.acceptance_criteria,
+                "delivery_process": acceptance_result.delivery_process,
+                "test_scenarios": [scenario.dict() for scenario in test_result.test_scenarios],
+            }
+
+        except Exception as e:
+            error_msg = f"Error generating documentation for {feature.task_title}: {e}"
+            LOGGER.error(error_msg)
+            return {
+                "status": "error",
+                "message": error_msg,
+            }
+
+    def _format_feature_documentation(
+        self,
+        acceptance_result,
+        test_result,
+    ) -> str:
+        """Format the generated documentation into a structured text.
+
+        Args:
+            acceptance_result: Generated acceptance criteria result
+            test_result: Generated test scenarios result
+
+        Returns:
+            Formatted documentation text
+        """
+        documentation_parts = []
+
+        # User Story section
+        documentation_parts.append("## یوزر استوری (User Story)")
+        documentation_parts.append(acceptance_result.user_story)
+        documentation_parts.append("")
+
+        # Acceptance Criteria section
+        documentation_parts.append("## معیارهای پذیرش (Acceptance Criteria)")
+        for criteria in acceptance_result.acceptance_criteria:
+            documentation_parts.append(f"- {criteria}")
+        documentation_parts.append("")
+
+        # Delivery Process section
+        documentation_parts.append("## فرایند تحویل (Delivery Process)")
+        for step in acceptance_result.delivery_process:
+            documentation_parts.append(f"- {step}")
+        documentation_parts.append("")
+
+        # Test Scenarios section
+        documentation_parts.append("## روش تست (Test Scenarios)")
+        documentation_parts.append("")
+        documentation_parts.append("| شماره تست | توضیح روش تست | وضعیت | مسئول |")
+        documentation_parts.append("|-----------|---------------|--------|-------|")
+
+        for scenario in test_result.test_scenarios:
+            documentation_parts.append(
+                f"| {scenario.test_number} | {scenario.description} | {scenario.status} | {scenario.responsible} |"
+            )
+
+        return "\n".join(documentation_parts)
+
+    async def update_feature_with_documentation(
+        self,
+        feature: SynthPMFeatureEntity,
+        update_description_field: bool = True,
+    ) -> Dict[str, Any]:
+        """Update a feature with generated documentation in Jira and Google Sheets.
+
+        Args:
+            feature: SynthPM feature entity
+            update_description_field: Whether to update description field or add new fields
+
+        Returns:
+            Update result summary
+        """
+        try:
+            LOGGER.info(f"Updating feature documentation for: {feature.task_title}")
+
+            # Get project info for context
+            project_info = await self.repository.get_project_info(
+                self.settings.pm_project_key
+            )
+
+            # Generate documentation
+            doc_result = await self.generate_feature_documentation(feature, project_info)
+            
+            if doc_result["status"] != "success":
+                return doc_result
+
+            documentation = doc_result["documentation"]
+
+            # Update in Jira if task exists
+            if feature.jira_issue_key:
+                if update_description_field:
+                    # Update description field with complete documentation
+                    await self.repository.update_jira_task_description(
+                        feature.jira_issue_key,
+                        documentation,
+                    )
+                else:
+                    # Add as separate custom fields (if supported)
+                    await self.repository.update_jira_task_custom_fields(
+                        feature.jira_issue_key,
+                        {
+                            "user_story": doc_result["user_story"],
+                            "acceptance_criteria": "\n".join(doc_result["acceptance_criteria"]),
+                            "test_scenarios": self._format_test_scenarios_for_jira(
+                                doc_result["test_scenarios"]
+                            ),
+                        },
+                    )
+
+            # Update in Google Sheets (add new columns)
+            sheet_updates = {
+                "توضیحات": documentation,
+                "معیارهای پذیرش": "\n".join(doc_result["acceptance_criteria"]),
+                "تست ها": self._format_test_scenarios_for_sheets(
+                    doc_result["test_scenarios"]
+                ),
+            }
+
+            await self.repository.update_developer_board_feature(
+                feature.row_number,
+                sheet_updates,
+            )
+
+            LOGGER.info(f"Successfully updated documentation for: {feature.task_title}")
+            return {
+                "status": "success",
+                "message": f"Documentation updated for {feature.task_title}",
+                "updated_fields": list(sheet_updates.keys()),
+            }
+
+        except Exception as e:
+            error_msg = f"Error updating documentation for {feature.task_title}: {e}"
+            LOGGER.error(error_msg)
+            return {
+                "status": "error",
+                "message": error_msg,
+            }
+
+    async def _generate_and_update_documentation(self, feature: SynthPMFeatureEntity) -> bool:
+        """Generate and update documentation for a single feature.
+
+        Args:
+            feature: The feature to generate documentation for
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            LOGGER.info(f"Generating documentation for feature: {feature.task_title}")
+
+            # Get project info for context
+            project_info = await self.repository.get_project_info(
+                self.settings.pm_project_key
+            )
+
+            # Generate the documentation
+            doc_result = await self.generate_feature_documentation(feature, project_info)
+            if doc_result["status"] != "success":
+                LOGGER.warning(f"Failed to generate documentation for feature: {feature.task_title}")
+                return False
+
+            # Update the feature with the new documentation
+            update_result = await self.update_feature_with_documentation(feature)
+            return update_result["status"] == "success"
+
+        except Exception as e:
+            LOGGER.error(f"Error generating documentation for feature {feature.task_title}: {e}")
+            return False
+
+    async def force_documentation_regeneration(self, sheet_row_numbers: List[int]) -> bool:
+        """Force documentation regeneration for specific sheet rows.
+
+        Args:
+            sheet_row_numbers: List of sheet row numbers to regenerate docs for
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            LOGGER.info(f"Forcing documentation regeneration for rows: {sheet_row_numbers}")
+
+            # Update change tracker to force regeneration
+            success = await self.repository.force_documentation_regeneration(sheet_row_numbers)
+            if success:
+                LOGGER.info("Documentation regeneration flags set successfully")
+            else:
+                LOGGER.error("Failed to set documentation regeneration flags")
+
+            return success
+
+        except Exception as e:
+            LOGGER.error(f"Error forcing documentation regeneration: {e}")
+            return False
+
+    def _format_test_scenarios_for_jira(self, test_scenarios: List[Dict]) -> str:
+        """Format test scenarios for Jira custom field."""
+        lines = []
+        for scenario in test_scenarios:
+            lines.append(
+                f"{scenario['test_number']}: {scenario['description']} "
+                f"[{scenario['responsible']}]"
+            )
+        return "\n".join(lines)
+
+    def _format_test_scenarios_for_sheets(self, test_scenarios: List[Dict]) -> str:
+        """Format test scenarios for Google Sheets cell."""
+        lines = []
+        for scenario in test_scenarios:
+            lines.append(
+                f"• {scenario['test_number']}: {scenario['description']} ({scenario['responsible']})"
+            )
+        return "\n".join(lines)

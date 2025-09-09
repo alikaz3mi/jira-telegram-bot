@@ -73,6 +73,8 @@ from jira_telegram_bot.use_cases.ai_agents.generate_progress_report_usecase impo
 from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecompositionUseCase
 from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
 from jira_telegram_bot.use_cases.ai_agents.agent_generate_use_story import AgentGenerateUserStory
+from jira_telegram_bot.use_cases.ai_agents.generate_acceptance_criteria import GenerateAcceptanceCriteriaUseCase
+from jira_telegram_bot.use_cases.ai_agents.generate_test_scenarios import GenerateTestScenariosUseCase
 
 # Webhook use case imports
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWebhookUseCase
@@ -343,6 +345,20 @@ def _configure_ai_agents_and_models(container: Container) -> None:
         )
     )
     
+    container[GenerateAcceptanceCriteriaUseCase] = Singleton(
+        lambda c: GenerateAcceptanceCriteriaUseCase(
+            ai_service=c[AIServiceProtocol],
+            prompt_catalog=c[PromptCatalogProtocol],
+        )
+    )
+    
+    container[GenerateTestScenariosUseCase] = Singleton(
+        lambda c: GenerateTestScenariosUseCase(
+            ai_service=c[AIServiceProtocol],
+            prompt_catalog=c[PromptCatalogProtocol],
+        )
+    )
+    
 
 
 def _configure_use_cases(container: Container) -> None:
@@ -515,7 +531,9 @@ def _configure_synth_pm_board(container: Container) -> None:
             repository=c[SynthPMRepositoryInterface],
             settings=c[SynthPMSettings],
             user_config=c[UserConfigInterface],
-            notification_gateway=NotificationGateway(token=c[SynthPMSettings].telegram_bot_token)
+            notification_gateway=NotificationGateway(token=c[SynthPMSettings].telegram_bot_token),
+            generate_acceptance_criteria_use_case=c[GenerateAcceptanceCriteriaUseCase],
+            generate_test_scenarios_use_case=c[GenerateTestScenariosUseCase],
         )
     )
     

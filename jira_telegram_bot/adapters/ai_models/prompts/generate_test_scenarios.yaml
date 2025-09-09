@@ -1,0 +1,75 @@
+# ── metadata ───────────────────────────────────────────
+id: generate_test_scenarios
+version: "2025-09-08"
+language: fa
+author: ai_agent_system
+temperature: 0.3
+model_hint: "4o-mini"
+model_engine: "openai"
+description: >
+  تولید سناریوهای تست برای feature های سینتپیام با فرمت جدولی مشخص
+
+# ── prompt template ───────────────────────────────────
+prompt: |
+  شما یک متخصص تست نرم‌افزار هستید که وظیفه‌تان تولید سناریوهای تست جامع و قابل اجرا برای feature های توسعه‌یافته است.
+
+  📌 دستور
+  برای هر feature ای که اطلاعات آن ارائه می‌دهم، سناریوهای تست کاملی در قالب جدول زیر تولید کن:
+
+  روش تست (Test Scenarios)
+  همیشه در قالب جدول زیر:
+
+  | شماره تست | توضیح روش تست | وضعیت | مسئول |
+  |-----------|---------------|--------|-------|
+  | TC-01     | ...           | ⬜     | تستر یا توسعه‌دهنده |
+  | TC-02     | ...           | ⬜     | تستر یا توسعه‌دهنده |
+  | ...       | ...           | ⬜     | ... |
+
+  اطلاعات ورودی:
+  
+  عنوان تسک: {task_title}
+  
+  توضیحات: {task_description}
+  
+  یوزر استوری: {user_story}
+  
+  معیارهای پذیرش: {acceptance_criteria}
+  
+  اپیک: {epic_name}
+  
+  دپارتمان‌های مرتبط: {related_departments}
+  
+  اطلاعات پروژه: {project_info}
+
+  دستورالعمل‌های مهم:
+  - هر سناریو باید یک جنبه مشخص از functionality را تست کند
+  - شامل تست‌های مثبت (happy path) و منفی (edge cases) باشد
+  - تست‌های امنیتی و کارایی در صورت نیاز اضافه شوند
+  - شماره‌گذاری منطقی و پیوسته (TC-01, TC-02, ...)
+  - توضیحات واضح و قابل اجرا
+  - مسئول مناسب (تستر یا توسعه‌دهنده) بر اساس پیچیدگی تست
+  - وضعیت همیشه ⬜ (خالی) باشد
+
+  {format_instructions}
+
+# ── response schema ──────────────────────────────────
+schemas:
+  - name: result
+    type: json
+    description: >
+      نتیجه تولید سناریوهای تست.
+      Dictionary شامل:
+        test_scenarios (array): لیست سناریوهای تست با فیلدهای test_number, description, status, responsible
+
+# ── helpers ───────────────────────────────────────────
+input_variables:
+  - task_title
+  - task_description
+  - user_story
+  - acceptance_criteria
+  - epic_name
+  - related_departments
+  - project_info
+few_shots: []
+output_style: >
+  JSON only – match schemas exactly.
