@@ -851,6 +851,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         if release_date:
             payload["releaseDate"] = release_date
         version = self.jira.create_version(**payload)
+        LOGGER.debug(f"Created release for {project_key}: {name}")
         return Release(project=project_key, **version.raw)
 
     def get_issue_link_types(self) -> List[Dict[str, str]]:

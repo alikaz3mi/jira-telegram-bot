@@ -112,7 +112,9 @@ class SynthPMUseCase:
             # Process new and modified features
             for feature in new_features + modified_features:
                 # Skip test rows
-                if feature.sheet_row_number not in [9, 10, 66, 67]:
+                # if feature.sheet_row_number not in [9, 10, 66, 67]:
+                #     continue
+                if feature.version != "04.06.28":
                     continue
 
                 try:
@@ -924,7 +926,7 @@ class SynthPMUseCase:
             # Generate acceptance criteria first
             acceptance_input = GenerateAcceptanceCriteriaInput(
                 task_title=feature.task_title,
-                task_description=feature.description,
+                task_description=f"توضیحات اولیه:\n{feature.description}\nمعیار پذیرش:\n{feature.acceptance_criteria}\nسناریوهای تست:\n{feature.test_cases}",
                 epic_name=feature.epic,
                 related_departments=feature.departments.split(",") if feature.departments else [],
                 project_info=project_context,
@@ -939,7 +941,7 @@ class SynthPMUseCase:
             # Generate test scenarios using the acceptance criteria
             test_input = GenerateTestScenariosInput(
                 task_title=feature.task_title,
-                task_description=feature.description,
+                task_description=f"توضیحات اولیه:\n{feature.description}\nمعیار پذیرش:\n{feature.acceptance_criteria}\nسناریوهای تست:\n{feature.test_cases}",
                 user_story=acceptance_result.user_story,
                 acceptance_criteria=acceptance_result.acceptance_criteria,
                 epic_name=feature.epic,
@@ -958,7 +960,7 @@ class SynthPMUseCase:
                 test_result,
             )
 
-            LOGGER.info(f"Successfully generated documentation for: {feature.task_title}")
+            LOGGER.info(f"Successfully generated documentation for: {feature.developer_board_issue_key}:{feature.task_title}")
             return {
                 "status": "success",
                 "documentation": documentation,
@@ -1053,17 +1055,17 @@ class SynthPMUseCase:
             documentation = doc_result["documentation"]
 
             # Update in Jira if task exists
-            if feature.jira_issue_key:
+            if feature.developer_board_issue_key:
                 if update_description_field:
                     # Update description field with complete documentation
                     await self.repository.update_jira_task_description(
-                        feature.jira_issue_key,
+                        feature.developer_board_issue_key,
                         documentation,
                     )
                 else:
                     # Add as separate custom fields (if supported)
                     await self.repository.update_jira_task_custom_fields(
-                        feature.jira_issue_key,
+                        feature.developer_board_issue_key,
                         {
                             "user_story": doc_result["user_story"],
                             "acceptance_criteria": "\n".join(doc_result["acceptance_criteria"]),
@@ -1072,26 +1074,27 @@ class SynthPMUseCase:
                             ),
                         },
                     )
-
+            # TODO: no need to update description field in google sheet. 
+            # TODO: later on, update a google doc for these info. 
             # Update in Google Sheets (add new columns)
-            sheet_updates = {
-                "توضیحات": documentation,
-                "معیارهای پذیرش": "\n".join(doc_result["acceptance_criteria"]),
-                "تست ها": self._format_test_scenarios_for_sheets(
-                    doc_result["test_scenarios"]
-                ),
-            }
+            # sheet_updates = {
+            #     "توضیحات": documentation,
+            #     "معیارهای پذیرش": "\n".join(doc_result["acceptance_criteria"]),
+            #     "تست ها": self._format_test_scenarios_for_sheets(
+            #         doc_result["test_scenarios"]
+            #     ),
+            # }
 
-            await self.repository.update_developer_board_feature(
-                feature.row_number,
-                sheet_updates,
-            )
+            # await self.repository.update_developer_board_feature(
+            #     feature.row_number,
+            #     sheet_updates,
+            # )
 
             LOGGER.info(f"Successfully updated documentation for: {feature.task_title}")
             return {
                 "status": "success",
                 "message": f"Documentation updated for {feature.task_title}",
-                "updated_fields": list(sheet_updates.keys()),
+                "updated_fields": list("description"),
             }
 
         except Exception as e:
@@ -1116,7 +1119,7 @@ class SynthPMUseCase:
 
             # Get project info for context
             project_info = await self.repository.get_project_info(
-                self.settings.pm_project_key
+                self.settings.developer_board_project_key
             )
 
             # Generate the documentation

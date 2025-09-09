@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
@@ -526,7 +526,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.release_notes_worksheet_name}!A:H",
+                f"{self.settings.release_notes_worksheet_name}!A:AG",
             )
 
             if not values or len(values) < 2:
@@ -890,7 +890,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if feature.release != None or feature.version != None:
                 if set([feature.release, feature.version]) != set(
-                    issue.fields.fixVersions,
+                    [field.name for field in issue.fields.fixVersions]
                 ):  # Replace with actual custom field ID
                     self._create_release_not_exist_during_update(
                         feature,
@@ -994,10 +994,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     -1,
                     f"👥 **Assignees**: {', '.join(feature_assignees)}",
                 )
-
-                update_fields["description"] = (
-                    "\n".join(preserved_lines) + f"\n{feature.description}"
-                )
+                # TODO: description update will be occured from some place else.
+                # update_fields["description"] = (
+                #     "\n".join(preserved_lines) + f"\n{feature.description}"
+                # )
 
             if feature.priority:
                 feature_priority = self._map_priority(feature.priority)
@@ -1325,21 +1325,26 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "ui_ux": ["UI / UX", "UI/UX", "UI / UX"],
             "creation_date": ["تاریخ ایجاد", "Creation Date", "تاریخ ایجاد"],
             "implementation_start_date": [
-                "تاریخ شروع پیاده سازی",
-                "Implementation Start",
-                "تاریخ شروع پیاده سازی",
+            "تاریخ شروع پیاده سازی",
+            "Implementation Start",
+            "تاریخ شروع پیاده سازی",
             ],
             "deadline": ["ددلاین", "Deadline", "ددلاین"],
             "sprint": ["اسپرینت", "Sprint", "اسپرینت"],
             "dependencies": ["وابستگی ها", "Dependencies", "وابستگی ها"],
             "initial_delivery_time": [
-                "زمان تحویل اولیه",
-                "Initial Delivery",
-                "زمان تحویل اولیه",
+            "زمان تحویل اولیه",
+            "Initial Delivery",
+            "زمان تحویل اولیه",
             ],
+            "description": ["توضیحات", "Description", "توضیحات"],
+            "acceptance_criteria": ["معیارهای پذیرش", "Acceptance Criteria", "معیارهای پذیرش"],
+            "test_cases": ["تست ها", "Test Cases", "تست ها"],
+            "po_notes": ["علل تغییر یا توقف", "PO Notes", "علل تغییر یا توقف"],
             "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key"],
             "developer_board_issue_key": ["developer_board_issue_key"],
             "version": ["version", "ریلیز اصلی"],
+            
         }
         people_mapping = {}
 
@@ -1524,7 +1529,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 ),
                 description=(
                     get_mapped_value("description")
-                    if get_mapped_value("description")
+                    if get_mapped_value("description") != ""
+                    else None
+                ),
+                acceptance_criteria=(
+                    get_mapped_value("acceptance_criteria")
+                    if get_mapped_value("acceptance_criteria") != ""
+                    else None
+                ),
+                test_cases=(
+                    get_mapped_value("test_cases")
+                    if get_mapped_value("test_cases") != ""
+                    else None
+                ),
+                po_notes=(
+                    get_mapped_value("po_notes")
+                    if get_mapped_value("po_notes") != ""
                     else None
                 ),
                 jira_issue_key=(
@@ -1900,10 +1920,36 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "row_number": ["ردیف", "Row"],
             "release_version": ["ریلیز اصلی", "Release Version", "Version"],
             "release_components": ["اجزای ریلیز", "Release Components", "Components"],
+            "person_hours": ["نفر ساعت", "Person Hours"],
+            "involved_people": ["افراد درگیر", "Involved People"],
+            "epic": ["Epic", "Epic"],
+            "percent_complete": ["% Complete", "Percent Complete"],
+            "status": ["وضعیت", "Status"],
+            "rag": ["RAG", "RAG"],
             "description": ["شرح", "Description"],
             "goals": ["اهداف", "Goals"],
             "delivery_process": ["فرایند تحویل", "Delivery Process"],
             "test_process": ["فرایند تست", "Test Process"],
+            "start_date": ["تاریخ شروع", "Start Date"],
+            "alpha_plan": ["Alpha Plan", "Alpha Plan"],
+            "alpha_delivery": ["Alpha Delivery", "Alpha Delivery"],
+            "beta_plan": ["Beta Plan", "Beta Plan"],
+            "beta_delivery": ["Beta Delivery", "Beta Delivery"],
+            "freeze": ["Freeze", "Freeze"],
+            "env_dev": ["Env Dev ✅", "Env Dev"],
+            "env_staging": ["Env Staging ✅", "Env Staging"],
+            "env_prod": ["Env Prod ✅", "Env Prod"],
+            "total_issues": ["Total Issues", "Total Issues"],
+            "done_issues": ["Done Issues", "Done Issues"],
+            "blockers": ["Blockers", "Blockers"],
+            "delay_days": ["Delay Days", "Delay Days"],
+            "test_pass_rate": ["Test Pass Rate (0-1)", "Test Pass Rate"],
+            "sev1_open": ["Sev1 Open", "Sev1 Open"],
+            "sev2_open": ["Sev2 Open", "Sev2 Open"],
+            "pipeline_green_rate": ["Pipeline Green Rate (0-1)", "Pipeline Green Rate"],
+            "checklist_completion": ["Checklist Completion (0-1)", "Checklist Completion"],
+            "readiness_score": ["Readiness Score (0-100)", "Readiness Score"],
+            "notes_risks": ["Notes / Risks", "Notes", "Risks"],
             "telegram_message_id": ["Telegram Message ID", "Message ID"],
             "last_updated": ["Last Updated", "Updated"],
         }
@@ -1966,23 +2012,37 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 row_number=row_number,
                 release_version=release_version,
                 release_components=release_components,
+                person_hours=get_mapped_value("person_hours") if get_mapped_value("person_hours") else None,
+                involved_people=get_mapped_value("involved_people") if get_mapped_value("involved_people") else None,
+                epic=get_mapped_value("epic") if get_mapped_value("epic") else None,
+                percent_complete=get_mapped_value("percent_complete") if get_mapped_value("percent_complete") else None,
+                status=get_mapped_value("status") if get_mapped_value("status") else None,
+                rag=get_mapped_value("rag") if get_mapped_value("rag") else None,
                 description=description,
                 goals=get_mapped_value("goals") if get_mapped_value("goals") else None,
-                delivery_process=(
-                    get_mapped_value("delivery_process")
-                    if get_mapped_value("delivery_process")
-                    else None
-                ),
-                test_process=(
-                    get_mapped_value("test_process")
-                    if get_mapped_value("test_process")
-                    else None
-                ),
-                telegram_message_id=(
-                    get_mapped_value("telegram_message_id")
-                    if get_mapped_value("telegram_message_id")
-                    else None
-                ),
+                delivery_process=get_mapped_value("delivery_process") if get_mapped_value("delivery_process") else None,
+                test_process=get_mapped_value("test_process") if get_mapped_value("test_process") else None,
+                start_date=get_mapped_value("start_date") if get_mapped_value("start_date") else None,
+                alpha_plan=get_mapped_value("alpha_plan") if get_mapped_value("alpha_plan") else None,
+                alpha_delivery=get_mapped_value("alpha_delivery") if get_mapped_value("alpha_delivery") else None,
+                beta_plan=get_mapped_value("beta_plan") if get_mapped_value("beta_plan") else None,
+                beta_delivery=get_mapped_value("beta_delivery") if get_mapped_value("beta_delivery") else None,
+                freeze=get_mapped_value("freeze") if get_mapped_value("freeze") else None,
+                env_dev=get_mapped_value("env_dev") if get_mapped_value("env_dev") else None,
+                env_staging=get_mapped_value("env_staging") if get_mapped_value("env_staging") else None,
+                env_prod=get_mapped_value("env_prod") if get_mapped_value("env_prod") else None,
+                total_issues=get_mapped_value("total_issues") if get_mapped_value("total_issues") else None,
+                done_issues=get_mapped_value("done_issues") if get_mapped_value("done_issues") else None,
+                blockers=get_mapped_value("blockers") if get_mapped_value("blockers") else None,
+                delay_days=get_mapped_value("delay_days") if get_mapped_value("delay_days") else None,
+                test_pass_rate=get_mapped_value("test_pass_rate") if get_mapped_value("test_pass_rate") else None,
+                sev1_open=get_mapped_value("sev1_open") if get_mapped_value("sev1_open") else None,
+                sev2_open=get_mapped_value("sev2_open") if get_mapped_value("sev2_open") else None,
+                pipeline_green_rate=get_mapped_value("pipeline_green_rate") if get_mapped_value("pipeline_green_rate") else None,
+                checklist_completion=get_mapped_value("checklist_completion") if get_mapped_value("checklist_completion") else None,
+                readiness_score=get_mapped_value("readiness_score") if get_mapped_value("readiness_score") else None,
+                notes_risks=get_mapped_value("notes_risks") if get_mapped_value("notes_risks") else None,
+                telegram_message_id=get_mapped_value("telegram_message_id") if get_mapped_value("telegram_message_id") else None,
                 last_updated=parse_date(get_mapped_value("last_updated")),
             )
 
@@ -2567,3 +2627,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error forcing documentation regeneration: {e}")
             return False
+
+    async def update_google_sheet_custom_fields(self,
+        issue_key: str,
+        custom_fields: Dict[str, Any]
+        ):
+        pass

@@ -4,7 +4,7 @@ version: "2025-09-08"
 language: fa
 author: ai_agent_system
 temperature: 0.3
-model_hint: "4o-mini"
+model_hint: "gpt-4o-mini"
 model_engine: "openai"
 description: >
   تولید سناریوهای تست برای feature های سینتپیام با فرمت جدولی مشخص

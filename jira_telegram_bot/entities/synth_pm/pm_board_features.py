@@ -61,6 +61,9 @@ class SynthPMFeatureEntity(BaseModel):
         description="Initial delivery time/زمان تحویل اولیه",
     )
     description: Optional[str] = Field(default=None, description="Description/توضیحات")
+    acceptance_criteria: Optional[str] = Field(default=None, description="Acceptance criteria/معیارهای پذیرش")
+    test_cases: Optional[str] = Field(default=None, description="Test cases/سناریوهای تست")
+    po_notes: Optional[str] = Field(default=None, description="PO explanation/توضیحات PO")
     jira_issue_key: Optional[str] = Field(
         default=None,
         description="Associated PM Board Jira issue key",

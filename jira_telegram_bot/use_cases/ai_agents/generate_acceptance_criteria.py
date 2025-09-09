@@ -60,9 +60,9 @@ class GenerateAcceptanceCriteriaUseCase(BaseAIAgentUseCase):
             prompt_inputs = {
                 "task_title": input_data.task_title,
                 "task_description": input_data.task_description or "",
-                "epic_name": input_data.epic_name or "مشخص نشده",
+                "epic_name": input_data.epic_name or "",
                 "related_departments": ", ".join(input_data.related_departments) 
-                    if input_data.related_departments else "مشخص نشده",
+                    if input_data.related_departments else "",
                 "project_info": input_data.project_info or "",
                 "special_requirements": input_data.special_requirements or "",
             }
@@ -85,7 +85,7 @@ class GenerateAcceptanceCriteriaUseCase(BaseAIAgentUseCase):
                     "task_title": input_data.task_title,
                     "epic_name": input_data.epic_name,
                     "departments": input_data.related_departments,
-                    "ai_model": "4o-mini",
+                    "ai_model": "gpt-4o-mini",
                     "prompt_version": prompt_version,
                 }
             )
