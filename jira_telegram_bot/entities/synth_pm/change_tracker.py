@@ -58,7 +58,7 @@ class FeatureSnapshot(BaseModel):
             sheet_row_number=feature.sheet_row_number,
             content_hash=content_hash,
             last_updated=datetime.now(),
-            jira_issue_key=feature.jira_issue_key,
+            jira_issue_key=feature.developer_board_issue_key,
         )
     
     def needs_documentation_update(self, current_feature: SynthPMFeatureEntity) -> bool:

@@ -114,7 +114,7 @@ class SynthPMUseCase:
                 # Skip test rows
                 # if feature.sheet_row_number not in [9, 10, 66, 67]:
                 #     continue
-                if feature.version != "04.06.28":
+                if feature.version != "04.06.14":
                     continue
 
                 try:
@@ -341,11 +341,23 @@ class SynthPMUseCase:
             sync_results = {
                 "posted_releases": 0,
                 "updated_releases": 0,
+                "enhanced_with_test_scenarios": 0,
                 "errors": [],
             }
 
             for release in release_notes:
                 try:
+                    # First, enhance release note with test scenarios from related tasks
+                    enhanced_description = await self._enhance_release_with_test_scenarios(release)
+                    if enhanced_description != release.description:
+                        await self.repository.update_release_note(
+                            release.row_number,
+                            {"description": enhanced_description}
+                        )
+                        sync_results["enhanced_with_test_scenarios"] += 1
+                        # Update the release object for further processing
+                        release = release.copy(update={"description": enhanced_description})
+
                     if not release.telegram_message_id:
                         message_id = await self._post_release_to_telegram(release)
                         if message_id:
@@ -453,6 +465,94 @@ class SynthPMUseCase:
         except Exception as e:
             LOGGER.error(f"Error updating release in Telegram: {e}")
             return False
+
+    async def _enhance_release_with_test_scenarios(self, release: ReleaseNoteEntity) -> str:
+        """Enhance release note description with test scenarios from related developer board tasks.
+
+        Args:
+            release: Release note entity
+
+        Returns:
+            Enhanced description with test scenarios appended
+        """
+        try:
+            LOGGER.info(f"Enhancing release {release.release_version} with test scenarios")
+
+            # Get all features from developer board
+            features = await self.repository.get_developer_board_features()
+            if not features:
+                LOGGER.warning("No developer board features found")
+                return release.description
+
+            # Filter features that belong to this release and have test scenarios
+            related_features = []
+            for feature in features:
+                if (feature.release and 
+                    feature.release.strip() == release.release_version.strip() and
+                    feature.test_cases and 
+                    feature.test_cases.strip()):
+                    related_features.append(feature)
+
+            if not related_features:
+                LOGGER.info(f"No features with test scenarios found for release {release.release_version}")
+                return release.description
+
+            LOGGER.info(f"Found {len(related_features)} features with test scenarios for release {release.release_version}")
+
+            # Collect and format test scenarios
+            test_scenarios_section = self._format_release_test_scenarios(related_features)
+            
+            # If test scenarios already exist in description, don't add again
+            if "سناریوهای تست" in release.description or "Test Scenarios" in release.description:
+                LOGGER.info(f"Test scenarios already exist in release {release.release_version} description")
+                return release.description
+
+            # Append test scenarios to the original description
+            enhanced_description = f"{release.description}\n\n{test_scenarios_section}"
+            
+            LOGGER.info(f"Enhanced release {release.release_version} with {len(related_features)} task test scenarios")
+            return enhanced_description
+
+        except Exception as e:
+            LOGGER.error(f"Error enhancing release {release.release_version} with test scenarios: {e}")
+            return release.description
+
+    def _format_release_test_scenarios(self, features: List[SynthPMFeatureEntity]) -> str:
+        """Format test scenarios from features for release note.
+
+        Args:
+            features: List of features with test scenarios
+
+        Returns:
+            Formatted test scenarios section
+        """
+        test_scenarios_parts = [
+            "## سناریوهای تست (Test Scenarios)",
+            "",
+            "سناریوهای تست مربوط به وظایف این ریلیز:",
+            ""
+        ]
+
+        for feature in features:
+            if feature.test_cases and feature.test_cases.strip():
+                test_scenarios_parts.extend([
+                    f"### {feature.task_title}",
+                    ""
+                ])
+                
+                # Split test cases by lines and format them
+                test_lines = feature.test_cases.strip().split('\n')
+                for line in test_lines:
+                    line = line.strip()
+                    if line:
+                        # Add bullet point if not already present
+                        if not line.startswith('•') and not line.startswith('-') and not line.startswith('*'):
+                            line = f"• {line}"
+                        test_scenarios_parts.append(line)
+                
+                test_scenarios_parts.append("")  # Add space between features
+
+        return "\n".join(test_scenarios_parts)
 
     def _format_release_message(self, release: ReleaseNoteEntity) -> str:
         """Format release note for Telegram message.
