@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
-from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
 
 
 class SynthPMSyncTask:
@@ -44,10 +45,8 @@ class SynthPMSyncTask:
         self.running = False
         if self.task:
             self.task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.task
-            except asyncio.CancelledError:
-                pass
 
         LOGGER.info("Stopped SynthPM sync background task")
 

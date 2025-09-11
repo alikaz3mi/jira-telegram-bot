@@ -8,7 +8,7 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.services.synth_pm_sync_task import SynthPMSyncTask
 from jira_telegram_bot.app_container import get_container
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
-from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
 
 
 async def setup_components():
@@ -34,7 +34,7 @@ async def run_sync_once(use_case: SynthPMUseCase):
 
         if result["status"] == "success":
             LOGGER.info("✅  Features synchronization completed successfully!")
-            print(f" Features Results: {result.get('results', {})}")
+            LOGGER.info(f" Features Results: {result.get('results', {})}")
         else:
             LOGGER.error(f"❌  Features synchronization failed: {result.get('message')}")
             sys.exit(1)
@@ -44,7 +44,7 @@ async def run_sync_once(use_case: SynthPMUseCase):
 
         if release_result["status"] == "success":
             LOGGER.info("✅ Release Notes synchronization completed successfully!")
-            print(f"Release Notes Results: {release_result.get('results', {})}")
+            LOGGER.info(f"Release Notes Results: {release_result.get('results', {})}")
         else:
             LOGGER.error(
                 f"❌ Release Notes synchronization failed: {release_result.get('message')}",
@@ -89,30 +89,32 @@ async def test_connection(use_case: SynthPMUseCase):
     try:
         LOGGER.info("Testing connections...")
 
-        print("📊 Testing Google Sheets connection...")
+        LOGGER.info("📊 Testing Google Sheets connection...")
         features = await use_case.repository.get_developer_board_features()
-        print(f"✅ Found {len(features)} features in Google Sheets")
+        LOGGER.info(f"✅ Found {len(features)} features in Google Sheets")
 
-        print("🎫 Testing Jira connection...")
-        print("✅ Jira connection OK")
+        LOGGER.info("🎫 Testing Jira connection...")
+        LOGGER.info("✅ Jira connection OK")
 
-        print("🤖 Testing dedicated SynthPM Telegram bot...")
+        LOGGER.info("🤖 Testing dedicated SynthPM Telegram bot...")
         try:
-            notification_gateway = use_case.notification_gateway
             # Test basic functionality (we can't easily test telegram directly without exposing bot)
-            print("✅ SynthPM notification gateway is configured")
-            print(f"✅ Settings loaded: PM project = {use_case.settings.pm_project_key}")
+            _ = use_case.notification_gateway
+            LOGGER.info("✅ SynthPM notification gateway is configured")
+            LOGGER.info(
+                f"✅ Settings loaded: PM project = {use_case.settings.pm_project_key}",
+            )
 
         except Exception as telegram_error:
-            print(f"❌ Telegram bot test failed: {telegram_error}")
-            print("💡 Make sure SYNTH_PM_TELEGRAM_BOT_TOKEN is set correctly")
+            LOGGER.error(f"❌ Telegram bot test failed: {telegram_error}")
+            LOGGER.error("💡 Make sure SYNTH_PM_TELEGRAM_BOT_TOKEN is set correctly")
             raise
 
-        print("\n🎉 All connections tested successfully!")
-        print(f"📊 Google Sheets: {len(features)} features ready for sync")
-        print("🎫 Jira: Connection verified")
-        print("🤖 Notification: Gateway configured for SynthPM updates")
-        print("🧠 AI: New documentation generation use cases loaded")
+        LOGGER.info("\n🎉 All connections tested successfully!")
+        LOGGER.info(f"📊 Google Sheets: {len(features)} features ready for sync")
+        LOGGER.info("🎫 Jira: Connection verified")
+        LOGGER.info("🤖 Notification: Gateway configured for SynthPM updates")
+        LOGGER.info("🧠 AI: New documentation generation use cases loaded")
 
     except Exception as e:
         LOGGER.error(f"❌ Connection test failed: {e}")

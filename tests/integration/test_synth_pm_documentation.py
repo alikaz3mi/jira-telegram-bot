@@ -1,5 +1,4 @@
 """Integration tests for SynthPM documentation generation."""
-
 from __future__ import annotations
 
 import unittest
@@ -7,7 +6,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import Mock
 
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
-from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
 
 
 class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
@@ -21,7 +20,7 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         self.mock_notification_gateway = AsyncMock()
         self.mock_acceptance_criteria_use_case = AsyncMock()
         self.mock_test_scenarios_use_case = AsyncMock()
-        
+
         self.synth_pm_use_case = SynthPMUseCase(
             repository=self.mock_repository,
             settings=self.mock_settings,
@@ -83,7 +82,8 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
 
         # Act
         result = await self.synth_pm_use_case.generate_feature_documentation(
-            feature, project_info
+            feature,
+            project_info,
         )
 
         # Assert
@@ -92,13 +92,15 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("یوزر استوری (User Story)", result["documentation"])
         self.assertIn("معیارهای پذیرش (Acceptance Criteria)", result["documentation"])
         self.assertIn("روش تست (Test Scenarios)", result["documentation"])
-        
+
         # Verify use case calls
         self.mock_acceptance_criteria_use_case.execute.assert_called_once()
         self.mock_test_scenarios_use_case.execute.assert_called_once()
 
         # Check that project context was passed correctly
-        acceptance_call_args = self.mock_acceptance_criteria_use_case.execute.call_args[1]
+        acceptance_call_args = self.mock_acceptance_criteria_use_case.execute.call_args[
+            1
+        ]
         input_data = acceptance_call_args["input_data"]
         self.assertEqual(input_data.task_title, feature.task_title)
         self.assertEqual(input_data.epic_name, feature.epic)
@@ -116,9 +118,11 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_settings.pm_project_key = "PARSCHAT"
-        
+
         # Mock repository methods
-        self.mock_repository.get_project_info.return_value = {"description": "test project"}
+        self.mock_repository.get_project_info.return_value = {
+            "description": "test project",
+        }
         self.mock_repository.update_jira_task_description.return_value = True
         self.mock_repository.update_developer_board_feature.return_value = True
 
@@ -134,13 +138,13 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
                     "description": "تست اول",
                     "status": "⬜",
                     "responsible": "تستر",
-                }
+                },
             ],
         }
 
         # Mock the generate_feature_documentation method
         self.synth_pm_use_case.generate_feature_documentation = AsyncMock(
-            return_value=doc_result
+            return_value=doc_result,
         )
 
         # Act
@@ -149,7 +153,7 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         # Assert
         self.assertEqual(result["status"], "success")
         self.assertIn("Documentation updated", result["message"])
-        
+
         # Verify repository calls
         self.mock_repository.get_project_info.assert_called_once_with("PARSCHAT")
         self.mock_repository.update_jira_task_description.assert_called_once()
@@ -167,11 +171,14 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         project_info = {}
 
         # Mock acceptance criteria use case to raise error
-        self.mock_acceptance_criteria_use_case.execute.side_effect = Exception("AI service error")
+        self.mock_acceptance_criteria_use_case.execute.side_effect = Exception(
+            "AI service error",
+        )
 
         # Act
         result = await self.synth_pm_use_case.generate_feature_documentation(
-            feature, project_info
+            feature,
+            project_info,
         )
 
         # Assert
