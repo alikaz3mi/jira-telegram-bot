@@ -568,6 +568,29 @@ class TaskManagerRepositoryInterface(ABC):
         pass
 
     @abstractmethod
+    def update_release(
+        self,
+        project_key: str,
+        release_name: str,
+        description: Optional[str] = None,
+        released: Optional[bool] = None,
+        release_date: Optional[str] = None,
+    ) -> bool:
+        """Update an existing release for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            release_name: Name of the release to update.
+            description: Optional new description.
+            released: Optional released status.
+            release_date: Optional release date (YYYY-MM-DD).
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        pass
+
+    @abstractmethod
     def link_issues(
         self,
         dependent_issue_key: str,

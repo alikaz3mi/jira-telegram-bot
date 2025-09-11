@@ -1179,6 +1179,61 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         version = self.jira.create_version(**payload)
         return Release(project=project_key, **version.raw)
 
+    def update_release(
+        self,
+        project_key: str,
+        release_name: str,
+        description: Optional[str] = None,
+        released: Optional[bool] = None,
+        release_date: Optional[str] = None,
+    ) -> bool:
+        """Update an existing release for a Jira project.
+
+        Args:
+            project_key: Key of the Jira project.
+            release_name: Name of the release to update.
+            description: Optional new description.
+            released: Optional released status.
+            release_date: Optional release date (YYYY-MM-DD).
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        try:
+            # Find the version by name
+            versions = self.jira.project_versions(project_key)
+            target_version = None
+            for version in versions:
+                if version.name == release_name:
+                    target_version = version
+                    break
+            
+            if not target_version:
+                LOGGER.error(f"Release '{release_name}' not found in project {project_key}")
+                return False
+
+            # Prepare update payload
+            update_payload = {}
+            if description is not None:
+                update_payload["description"] = description
+            if released is not None:
+                update_payload["released"] = released
+            if release_date is not None:
+                update_payload["releaseDate"] = release_date
+
+            if not update_payload:
+                LOGGER.warning("No fields to update for release")
+                return True
+
+            # Update the version
+            target_version.update(**update_payload)
+            LOGGER.info(f"Successfully updated release '{release_name}' in project {project_key}")
+            return True
+
+        except Exception as e:
+            LOGGER.error(f"Error updating release '{release_name}' in project {project_key}: {e}")
+            return False
+
     def get_issue_link_types(self) -> List[Dict[str, str]]:
         """Get available issue link types in Jira.
 

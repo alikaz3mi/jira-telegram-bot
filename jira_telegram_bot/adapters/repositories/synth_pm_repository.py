@@ -2506,6 +2506,40 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error updating custom fields for {issue_key}: {e}")
             return False
 
+    async def update_jira_release(
+        self,
+        project_key: str,
+        release_name: str,
+        description: str,
+    ) -> bool:
+        """Update Jira release description with enhanced content.
+
+        Args:
+            project_key: Jira project key
+            release_name: Name of the release to update
+            description: New description content
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            success = self.jira_repository.update_release(
+                project_key=project_key,
+                release_name=release_name,
+                description=description,
+            )
+            
+            if success:
+                LOGGER.info(f"Successfully updated Jira release '{release_name}' in project {project_key}")
+            else:
+                LOGGER.error(f"Failed to update Jira release '{release_name}' in project {project_key}")
+            
+            return success
+
+        except Exception as e:
+            LOGGER.error(f"Error updating Jira release '{release_name}' in project {project_key}: {e}")
+            return False
+
     async def get_change_tracker(self) -> SynthPMChangeTracker:
         """Get the current change tracker state.
 

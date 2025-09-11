@@ -114,7 +114,7 @@ class SynthPMUseCase:
                 # Skip test rows
                 # if feature.sheet_row_number not in [9, 10, 66, 67]:
                 #     continue
-                if feature.version != "04.06.14":
+                if feature.version not in ["04.06.14", "04.06.28"]:
                     continue
 
                 try:
@@ -335,6 +335,7 @@ class SynthPMUseCase:
             LOGGER.info("Starting Release Notes synchronization")
 
             release_notes = await self.repository.get_release_notes()
+            features = await self.repository.get_developer_board_features()
             if not release_notes:
                 return {"status": "success", "message": "No release notes found"}
 
@@ -348,12 +349,21 @@ class SynthPMUseCase:
             for release in release_notes:
                 try:
                     # First, enhance release note with test scenarios from related tasks
-                    enhanced_description = await self._enhance_release_with_test_scenarios(release)
+                    enhanced_description = await self._enhance_release_with_test_scenarios(release, features)
                     if enhanced_description != release.description:
+                        # Update Google Sheets release note
                         await self.repository.update_release_note(
                             release.row_number,
                             {"description": enhanced_description}
                         )
+                        
+                        # Update Jira release in developer board project
+                        await self.repository.update_jira_release(
+                            project_key=self.settings.developer_board_project_key,
+                            release_name=release.release_version,
+                            description=enhanced_description,
+                        )
+                        
                         sync_results["enhanced_with_test_scenarios"] += 1
                         # Update the release object for further processing
                         release = release.copy(update={"description": enhanced_description})
@@ -466,7 +476,7 @@ class SynthPMUseCase:
             LOGGER.error(f"Error updating release in Telegram: {e}")
             return False
 
-    async def _enhance_release_with_test_scenarios(self, release: ReleaseNoteEntity) -> str:
+    async def _enhance_release_with_test_scenarios(self, release: ReleaseNoteEntity, features: List[SynthPMFeatureEntity]) -> str:
         """Enhance release note description with test scenarios from related developer board tasks.
 
         Args:
@@ -479,7 +489,6 @@ class SynthPMUseCase:
             LOGGER.info(f"Enhancing release {release.release_version} with test scenarios")
 
             # Get all features from developer board
-            features = await self.repository.get_developer_board_features()
             if not features:
                 LOGGER.warning("No developer board features found")
                 return release.description

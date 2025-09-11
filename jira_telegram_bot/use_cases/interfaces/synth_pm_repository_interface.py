@@ -215,6 +215,25 @@ class SynthPMRepositoryInterface(ABC):
         pass
 
     @abstractmethod
+    async def update_jira_release(
+        self,
+        project_key: str,
+        release_name: str,
+        description: str,
+    ) -> bool:
+        """Update Jira release description with enhanced content.
+
+        Args:
+            project_key: Jira project key
+            release_name: Name of the release to update
+            description: New description content
+
+        Returns:
+            True if successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
     async def update_google_sheet_custom_fields(
         self,
         issue_key: str,
