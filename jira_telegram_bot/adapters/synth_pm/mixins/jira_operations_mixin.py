@@ -137,7 +137,7 @@ class JiraOperationsMixin:
                 return True
 
             # Get available transitions
-            transitions = self.jira_repository.get_issue_transitions(issue_key)
+            transitions = self.jira_repository.get_transitions(issue_key)
             target_transition = None
 
             for transition in transitions:
