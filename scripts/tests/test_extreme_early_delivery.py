@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test extreme early delivery to see maximum possible score."""
 from __future__ import annotations
 

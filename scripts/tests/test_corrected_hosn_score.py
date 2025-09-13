@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test script for the corrected hosn score calculation."""
 from __future__ import annotations
 

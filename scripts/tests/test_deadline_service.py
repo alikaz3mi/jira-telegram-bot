@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test script for deadline service with changelog data."""
 from __future__ import annotations
 
