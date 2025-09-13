@@ -142,6 +142,9 @@ from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
     PromptCatalogProtocol,
 )
+from jira_telegram_bot.use_cases.interfaces.calendar_repository_interface import (
+    CalendarRepositoryInterface,
+)
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import (
     CurrentStoriesServiceInterface,
 )
@@ -541,6 +544,7 @@ def _configure_use_cases(container: Container) -> None:
             user_config_repository=c[UserConfigInterface],
             telegram_notifier=c[TelegramNotifierInterface],
             notification_log_repository=c[NotificationLogRepositoryInterface],
+            calendar_repository=c[CalendarRepositoryInterface],
         ),
     )
 
