@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Test script for the API-based calendar repository."""
 from __future__ import annotations
 

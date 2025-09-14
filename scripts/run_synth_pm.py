@@ -7,6 +7,9 @@ import sys
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.services.synth_pm_sync_task import SynthPMSyncTask
 from jira_telegram_bot.app_container import get_container
+from jira_telegram_bot.entities.synth_pm.sync_filter_criteria import (
+    SynthPMSyncFilterCriteria,
+)
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
 
@@ -25,12 +28,23 @@ async def setup_components():
         raise
 
 
-async def run_sync_once(use_case: SynthPMUseCase):
-    """Run synchronization once and exit."""
+async def run_sync_once(use_case: SynthPMUseCase, filter_criteria=None):
+    """Run synchronization once and exit.
+
+    Args:
+        use_case: SynthPM use case instance
+        filter_criteria: Optional filter criteria for sync
+    """
     try:
         LOGGER.info("Starting one-time SynthPM synchronization...")
 
-        result = await use_case.sync_developer_board_features()
+        if filter_criteria:
+            LOGGER.info(
+                f"Applying filter: sprints={filter_criteria.sprints}, "
+                f"releases={filter_criteria.releases}, versions={filter_criteria.release_versions}",
+            )
+
+        result = await use_case.sync_developer_board_features(filter_criteria)
 
         if result["status"] == "success":
             LOGGER.info("✅  Features synchronization completed successfully!")
@@ -124,7 +138,7 @@ async def test_connection(use_case: SynthPMUseCase):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="SynthPM synchronization tool",
+        description="SynthPM synchronization tool with filtering support",
     )
     parser.add_argument(
         "command",
@@ -133,11 +147,49 @@ def main():
         help="Command to run: sync (one-time), service (background), or test (connections)",
     )
 
+    # Filtering options
+    parser.add_argument(
+        "--sprints",
+        nargs="+",
+        help="Filter by specific sprint names (e.g., --sprints Sprint-1 Sprint-2)",
+    )
+    parser.add_argument(
+        "--releases",
+        nargs="+",
+        help="Filter by release names (e.g., --releases v1.0 v1.1)",
+    )
+    parser.add_argument(
+        "--versions",
+        nargs="+",
+        help="Filter by version numbers (e.g., --versions 1.0.0 1.1.0)",
+    )
+    parser.add_argument(
+        "--include-empty-sprint",
+        action="store_true",
+        help="Include features with empty sprint field",
+    )
+    parser.add_argument(
+        "--include-empty-release",
+        action="store_true",
+        help="Include features with empty release fields",
+    )
+
     args = parser.parse_args()
+
+    # Create filter criteria from arguments
+    filter_criteria = None
+    if args.sprints or args.releases or args.versions:
+        filter_criteria = SynthPMSyncFilterCriteria.create_combined_filter(
+            sprints=args.sprints,
+            releases=args.releases,
+            versions=args.versions,
+            include_empty_sprint=args.include_empty_sprint,
+            include_empty_release=args.include_empty_release,
+        )
 
     try:
         if args.command == "sync":
-            asyncio.run(async_main_sync())
+            asyncio.run(async_main_sync(filter_criteria))
         elif args.command == "service":
             asyncio.run(async_main_service())
         elif args.command == "test":
@@ -150,10 +202,14 @@ def main():
         sys.exit(1)
 
 
-async def async_main_sync():
-    """Async main for sync command."""
+async def async_main_sync(filter_criteria=None):
+    """Async main for sync command.
+
+    Args:
+        filter_criteria: Optional filter criteria for sync
+    """
     use_case = await setup_components()
-    await run_sync_once(use_case)
+    await run_sync_once(use_case, filter_criteria)
 
 
 async def async_main_service():

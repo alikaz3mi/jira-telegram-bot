@@ -159,7 +159,7 @@ class SynthPMComponentService:
         if feature.backend and feature.backend.strip() and feature.backend != "0":
             components.append("Backend")
         if feature.frontend and feature.frontend.strip() and feature.frontend != "0":
-            components.append("Frontend")
+            components.append("Front-end")
         if feature.devops and feature.devops.strip() and feature.devops != "0":
             components.append("DevOps")
         if feature.ui_ux and feature.ui_ux.strip() and feature.ui_ux != "0":

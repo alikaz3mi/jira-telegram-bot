@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """مثال برای تست تولید مستندات feature در SynthPM."""
 from __future__ import annotations
 

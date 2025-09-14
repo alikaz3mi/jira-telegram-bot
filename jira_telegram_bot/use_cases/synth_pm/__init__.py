@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Optional
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.synth_pm.google_sheets_adapter import (
@@ -11,6 +12,9 @@ from jira_telegram_bot.adapters.synth_pm.google_sheets_adapter import (
 )
 from jira_telegram_bot.adapters.synth_pm.jira_adapter import SynthPMJiraAdapter
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
+from jira_telegram_bot.entities.synth_pm.sync_filter_criteria import (
+    SynthPMSyncFilterCriteria,
+)
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
@@ -68,8 +72,14 @@ class SynthPMUseCase:
             notification_gateway,
         )
 
-    async def sync_developer_board_features(self) -> Dict[str, Any]:
-        """Synchronize features between Google Sheets, Jira, and Telegram using intelligent change detection.
+    async def sync_developer_board_features(
+        self,
+        filter_criteria: Optional[SynthPMSyncFilterCriteria] = None,
+    ) -> Dict[str, Any]:
+        """Synchronize features between Google Sheets, Jira, and Telegram with optional filtering.
+
+        Args:
+            filter_criteria: Optional filter criteria for sprints/releases
 
         Returns:
             Sync result summary
@@ -77,17 +87,31 @@ class SynthPMUseCase:
         try:
             LOGGER.info("Starting developer board synchronization")
 
+            # Apply default filtering if no explicit filter provided
+            effective_filter = (
+                filter_criteria or self.settings.get_default_filter_criteria()
+            )
+            if effective_filter:
+                LOGGER.info(
+                    f"Applying sync filter criteria: sprints={effective_filter.sprints}, "
+                    f"releases={effective_filter.releases}, versions={effective_filter.release_versions}",
+                )
+
             # Use the focused use case for developer board sync
             sync_results = await self.sync_developer_board_use_case.sync_features()
 
             # Handle cleanup of deleted tasks
             if sync_results.get("total_features", 0) > 0:
-                current_features = await self.repository.get_developer_board_features()
+                current_features = await self.repository.get_developer_board_features(
+                    effective_filter,
+                )
                 await self._cleanup_deleted_tasks(current_features, sync_results)
 
             # Update change tracker
             if sync_results.get("total_features", 0) > 0:
-                current_features = await self.repository.get_developer_board_features()
+                current_features = await self.repository.get_developer_board_features(
+                    effective_filter,
+                )
                 await self.repository.update_change_tracker(current_features)
 
             LOGGER.info(f"Developer board synchronization completed: {sync_results}")
@@ -353,6 +377,64 @@ class SynthPMUseCase:
         except Exception as e:
             LOGGER.error(f"Error forcing documentation regeneration: {e}")
             return False
+
+    # Convenience methods for common filtering scenarios
+
+    async def sync_features_by_sprint(
+        self,
+        sprints: List[str],
+        include_empty: bool = False,
+    ) -> Dict[str, Any]:
+        """Synchronize features for specific sprints only.
+
+        Args:
+            sprints: List of sprint names to sync
+            include_empty: Whether to include features with no sprint assigned
+
+        Returns:
+            Sync result summary
+        """
+        filter_criteria = SynthPMSyncFilterCriteria.create_sprint_filter(
+            sprints=sprints,
+            include_empty=include_empty,
+        )
+        return await self.sync_developer_board_features(filter_criteria)
+
+    async def sync_features_by_release(
+        self,
+        releases: Optional[List[str]] = None,
+        versions: Optional[List[str]] = None,
+        include_empty: bool = False,
+    ) -> Dict[str, Any]:
+        """Synchronize features for specific releases or versions only.
+
+        Args:
+            releases: List of release names to sync
+            versions: List of version numbers to sync
+            include_empty: Whether to include features with no release assigned
+
+        Returns:
+            Sync result summary
+        """
+        filter_criteria = SynthPMSyncFilterCriteria.create_release_filter(
+            releases=releases,
+            versions=versions,
+            include_empty=include_empty,
+        )
+        return await self.sync_developer_board_features(filter_criteria)
+
+    async def sync_current_sprint_features(self) -> Dict[str, Any]:
+        """Synchronize features for the current active sprint only.
+
+        Returns:
+            Sync result summary
+        """
+        # For now, this method would need to be enhanced to detect the current sprint
+        # This could be done by integrating with Jira's sprint information
+        LOGGER.warning(
+            "Current sprint detection not implemented - syncing all features",
+        )
+        return await self.sync_developer_board_features()
 
     # Legacy methods for backward compatibility - these delegate to the appropriate focused use cases
 

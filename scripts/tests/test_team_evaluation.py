@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
 """Script to test team evaluation functionality."""
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from pathlib import Path
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.app_container import get_container

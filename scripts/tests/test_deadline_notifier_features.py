@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
 """Test script for the deadline notifier new features."""
 from __future__ import annotations
 
 import asyncio
 from datetime import date
-from datetime import datetime
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.app_container import get_container

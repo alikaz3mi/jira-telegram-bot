@@ -166,12 +166,19 @@ class SyncDeveloperBoardUseCase:
             return False
 
         # Only create developer tasks for features ready for implementation
+        # Extract the status number from full status text (e.g., "۵. آماده پیاده سازی فنی" -> "۵")
+        status_number = (
+            feature.status.split(".")[0].strip()
+            if "." in feature.status
+            else feature.status.strip()
+        )
+
         implementation_statuses = [
-            "۵",
-            "۶",
-            "۷",
-        ]  # Ready for tech, In progress, Testing
-        return feature.status in implementation_statuses
+            "۵",  # Ready for tech implementation
+            "۶",  # In progress
+            "۷",  # Testing
+        ]
+        return status_number in implementation_statuses
 
     async def _create_developer_board_task(
         self,
@@ -196,7 +203,7 @@ class SyncDeveloperBoardUseCase:
                 from jira_telegram_bot.entities.release_notes import SprintInfo
 
                 sprint_info = SprintInfo(
-                    sprint_id=1,
+                    sprint_id="1",  # Changed from int to string
                     start_date="01-01",
                     end_date="01-15",
                 )

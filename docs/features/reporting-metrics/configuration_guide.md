@@ -471,7 +471,7 @@ Configure sprint tracking patterns:
 Create a validation script to verify configuration:
 
 ```python
-#!/usr/bin/env python3
+
 """Configuration validation script."""
 
 import json

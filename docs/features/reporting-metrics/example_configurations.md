@@ -518,7 +518,7 @@ Enable debug mode for troubleshooting:
 Create custom validation scripts for your specific setup:
 
 ```python
-#!/usr/bin/env python3
+
 """Custom configuration validation."""
 
 import json

@@ -120,7 +120,7 @@ class DataParsingMixin:
                 jira_issue_key=get_mapped_value("jira_issue_key") or None,
                 developer_board_issue_key=get_mapped_value("developer_board_issue_key")
                 or None,
-                times=times if times else None,
+                times=times if times else {},
             )
 
         except Exception as e:

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Integration test for team evaluation with mock data."""
 from __future__ import annotations
 
@@ -6,14 +5,6 @@ import asyncio
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
-
-# Add the project root to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# Set required environment variables for testing
-os.environ["TEAM_EVALUATION_SHEET_ID"] = "test_sheet_id_12345"
-os.environ["TEAM_EVALUATION_DRY_RUN"] = "true"
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.config_dependency_injection import configure_container
@@ -21,6 +12,9 @@ from jira_telegram_bot.entities.team_evaluation import SprintClosedEvent
 from jira_telegram_bot.use_cases.team_evaluation import (
     SprintClosedTeamEvaluationUseCase,
 )
+
+os.environ["TEAM_EVALUATION_SHEET_ID"] = "test_sheet_id_12345"
+os.environ["TEAM_EVALUATION_DRY_RUN"] = "true"
 
 
 async def test_team_evaluation_integration():

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Standalone script to run the deadline notifier cron job.
 
@@ -23,7 +22,6 @@ import asyncio
 import os
 import random
 import sys
-from pathlib import Path
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.app_container import get_container
