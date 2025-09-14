@@ -11,6 +11,7 @@ from jira_telegram_bot.adapters.synth_pm.mixins.jira_operations_mixin import (
 )
 from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
+from jira_telegram_bot.entities.synth_pm.services import SynthPMComponentService
 from jira_telegram_bot.entities.synth_pm.services import SynthPMStatusService
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
@@ -64,9 +65,10 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 task_data.sprint_id = self.get_sprint_id("Active", self.pm_board_id)
 
             pm_board_issue = self.jira_repository.create_task(task_data)
+            issue_url = self.jira_repository.get_issue_url(pm_board_issue)
             LOGGER.info(
                 f"Created PM Board task {pm_board_issue.key} for feature: "
-                f"{feature.task_title}: {self.jira_repository.get_issue_url(pm_board_issue)}",
+                f"{feature.task_title}: {issue_url}",
             )
 
             # Transition to appropriate status
@@ -115,7 +117,7 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             )
 
             # Handle sprint assignment
-            sprint = await self._get_or_create_sprint(feature, sprint_info)
+            sprint = await self._get_or_create_sprint_from_info(feature, sprint_info)
             if sprint and sprint.get("state") != "closed":
                 task_data.sprint_id = sprint.get("id")
                 task_data.sprint_name = sprint.get("name")
@@ -137,8 +139,11 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 )
 
             developer_board_issue = self.jira_repository.create_task(task_data)
+            issue_url = self.jira_repository.get_issue_url_by_key(
+                developer_board_issue.key,
+            )
             LOGGER.info(
-                f"Created Developer Board task {self.jira_repository.get_issue_url_by_key(developer_board_issue.key)} "
+                f"Created Developer Board task {issue_url} "
                 f"for feature: {feature.task_title}",
             )
 
@@ -157,7 +162,8 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
 
         except Exception as e:
             LOGGER.error(
-                f"Error creating Developer Board task for feature {feature.task_title}: {e}",
+                f"Error creating Developer Board task for feature "
+                f"{feature.task_title}: {e}",
             )
             return None
 
@@ -224,7 +230,8 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             issue = self.jira_repository.get_issue(feature.developer_board_issue_key)
             if not issue:
                 LOGGER.warning(
-                    f"Developer board issue {feature.developer_board_issue_key} not found",
+                    f"Developer board issue {feature.developer_board_issue_key} "
+                    "not found",
                 )
                 return False
 
@@ -247,7 +254,8 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
 
         except Exception as e:
             LOGGER.error(
-                f"Error updating Developer Board task {feature.developer_board_issue_key}: {e}",
+                f"Error updating Developer Board task "
+                f"{feature.developer_board_issue_key}: {e}",
             )
             return False
 
@@ -266,7 +274,8 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             Formatted description
         """
         return (
-            f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
+            f"🔗 *Linked to PM Board*: "
+            f"{self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
             f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
             f"📝 *Original Time*: {feature.total_hours}h\n\n"
             f"✍️ *Description*: {feature.description}"
@@ -333,7 +342,62 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             if feature_priority.lower() != issue.fields.priority.name.lower():
                 update_fields["priority"] = {"name": feature_priority}
 
-        # Add more field updates as needed...
+        # Handle description updates
+        if feature.description and feature.description != issue.fields.description:
+            update_fields["description"] = feature.description
+
+        # Handle fix versions (release/version updates)
+        if feature.release is not None or feature.version is not None:
+            current_versions = {field.name for field in issue.fields.fixVersions}
+            new_versions = {feature.release, feature.version} - {None}
+            if new_versions != current_versions:
+                update_fields["fixVersions"] = [
+                    {"name": version} for version in new_versions if version
+                ]
+
+        # Handle sprint updates
+        if feature.sprint and hasattr(
+            issue.fields,
+            self.jira_repository.jira_sprint_id,
+        ):
+            current_sprint = getattr(
+                issue.fields,
+                self.jira_repository.jira_sprint_id,
+                None,
+            )
+            if current_sprint != feature.sprint:
+                # Get or create the sprint and update the field
+                sprint_id = self._get_or_create_sprint(feature.sprint)
+                if sprint_id:
+                    update_fields[self.jira_repository.jira_sprint_id] = sprint_id
+
+        # Handle component updates based on departments
+        components = SynthPMComponentService.map_components(feature)
+        current_components = [comp.name for comp in issue.fields.components]
+        if set(current_components) != set(components):
+            update_fields["components"] = [{"name": comp} for comp in components]
+
+        # Handle time estimates for tasks
+        if feature.total_hours and issue.fields.issuetype.name == "Task":
+            # Safely get the original estimate using getattr, handle None timetracking
+            timetracking = getattr(issue.fields, "timetracking", None)
+            original_estimate_seconds = (
+                getattr(
+                    timetracking,
+                    "originalEstimateSeconds",
+                    0,
+                )
+                if timetracking
+                else 0
+            )
+            original_estimate_hours = (
+                original_estimate_seconds / 3600 if original_estimate_seconds else 0
+            )
+            if feature.total_hours != original_estimate_hours:
+                update_fields["timetracking"] = {
+                    "originalEstimate": f"{feature.total_hours}h",
+                    "remainingEstimate": f"{feature.total_hours}h",
+                }
 
         return update_fields
 
@@ -373,23 +437,96 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             # Handle story with subtasks
             await self._update_assignees_and_subtasks(issue.key, assignees, feature)
 
-    async def _get_or_create_sprint(
+    async def _get_or_create_sprint_from_info(
         self,
         feature: SynthPMFeatureEntity,
         sprint_info: SprintInfo,
-    ):
-        """Get existing sprint or create new one.
+    ) -> Optional[Dict]:
+        """Get or create a sprint from sprint info.
 
         Args:
             feature: Feature entity
             sprint_info: Sprint information
 
         Returns:
-            Sprint dictionary or None
+            Sprint dictionary with state, id, name if successful
         """
-        # Implementation for getting or creating sprints
-        # This would involve checking feature.sprint_list and creating sprints as needed
-        pass
+        try:
+            sprint_name = sprint_info.name if sprint_info else feature.sprint
+            if not sprint_name:
+                return None
+
+            # First try to find existing sprint
+            board_id = getattr(
+                self.jira_repository.settings,
+                "JIRA_BOARD_ID",
+                None,
+            )
+            if board_id:
+                sprints = self.jira_repository.jira.sprints(board_id, extended=True)
+                for sprint in sprints:
+                    if sprint.name == sprint_name:
+                        return {
+                            "id": sprint.id,
+                            "name": sprint.name,
+                            "state": getattr(sprint, "state", "active"),
+                        }
+
+            # If not found, create new sprint
+            if board_id:
+                new_sprint = self.jira_repository.jira.create_sprint(
+                    name=sprint_name,
+                    board_id=board_id,
+                    startDate=None,
+                    endDate=None,
+                )
+                return {
+                    "id": new_sprint.id,
+                    "name": new_sprint.name,
+                    "state": "active",
+                }
+
+        except Exception as e:
+            LOGGER.warning(f"Failed to get or create sprint {sprint_name}: {e}")
+
+        return None
+
+    def _get_or_create_sprint(self, sprint_name: str) -> str:
+        """Get or create a sprint by name.
+
+        Args:
+            sprint_name: Name of the sprint
+
+        Returns:
+            Sprint ID string
+        """
+        try:
+            # First try to find existing sprint
+            board_id = getattr(
+                self.jira_repository.settings,
+                "JIRA_BOARD_ID",
+                None,
+            )
+            if board_id:
+                sprints = self.jira_repository.jira.sprints(board_id, extended=True)
+                for sprint in sprints:
+                    if sprint.name == sprint_name:
+                        return str(sprint.id)
+
+            # If not found, create new sprint
+            if board_id:
+                new_sprint = self.jira_repository.jira.create_sprint(
+                    name=sprint_name,
+                    board_id=board_id,
+                    startDate=None,
+                    endDate=None,
+                )
+                return str(new_sprint.id)
+
+        except Exception as e:
+            LOGGER.warning(f"Failed to get or create sprint {sprint_name}: {e}")
+
+        return ""
 
     async def _create_subtasks_for_assignees(
         self,
@@ -407,8 +544,50 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
         Returns:
             List of created subtask keys
         """
-        # Implementation for creating subtasks
-        pass
+        created_subtask_keys = []
+
+        try:
+            parent_issue = self.jira_repository.jira.issue(parent_issue_key)
+            estimated_hours = (
+                feature.total_hours / len(assignees) if feature.total_hours else 0
+            )
+
+            for assignee in assignees:
+                try:
+                    task_title = feature.task_title or parent_issue.fields.summary
+                    subtask_fields = {
+                        "project": {"key": parent_issue.fields.project.key},
+                        "summary": f"{task_title} - {assignee}",
+                        "issuetype": {"name": "Sub-task"},
+                        "parent": {"key": parent_issue_key},
+                        "assignee": {"name": assignee},
+                    }
+
+                    # Add description from feature
+                    if feature.description:
+                        subtask_fields["description"] = feature.description
+
+                    # Add time tracking if provided
+                    if estimated_hours > 0:
+                        subtask_fields["timetracking"] = {
+                            "originalEstimate": f"{estimated_hours}h",
+                            "remainingEstimate": f"{estimated_hours}h",
+                        }
+
+                    # Create the subtask
+                    subtask = self.jira_repository.jira.create_issue(
+                        fields=subtask_fields,
+                    )
+                    created_subtask_keys.append(subtask.key)
+                    LOGGER.info(f"Created subtask {subtask.key} for {assignee}")
+
+                except Exception as e:
+                    LOGGER.error(f"Failed to create subtask for {assignee}: {e}")
+
+        except Exception as e:
+            LOGGER.error(f"Failed to create subtasks for {parent_issue_key}: {e}")
+
+        return created_subtask_keys
 
     async def _update_assignees_and_subtasks(
         self,
@@ -423,5 +602,60 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             assignees: List of assignee usernames
             feature: Feature entity
         """
-        # Implementation for updating assignees and subtasks
-        pass
+        try:
+            issue = self.jira_repository.jira.issue(issue_key, expand="subtasks")
+
+            # Get current subtasks
+            current_subtasks = getattr(issue.fields, "subtasks", [])
+            current_assignees = set()
+
+            for subtask in current_subtasks:
+                subtask_obj = self.jira_repository.jira.issue(subtask.key)
+                if subtask_obj.fields.assignee:
+                    current_assignees.add(subtask_obj.fields.assignee.name)
+
+            new_assignees = set(assignees)
+
+            # Remove subtasks for assignees no longer needed
+            assignees_to_remove = current_assignees - new_assignees
+            for subtask in current_subtasks:
+                subtask_obj = self.jira_repository.jira.issue(subtask.key)
+                assignee_in_remove = (
+                    subtask_obj.fields.assignee
+                    and subtask_obj.fields.assignee.name in assignees_to_remove
+                )
+                if assignee_in_remove:
+                    try:
+                        subtask_obj.delete()
+                        LOGGER.info(f"Deleted subtask {subtask.key}")
+                    except Exception as e:
+                        LOGGER.error(f"Failed to delete subtask {subtask.key}: {e}")
+
+            # Create subtasks for new assignees
+            assignees_to_add = new_assignees - current_assignees
+            if assignees_to_add:
+                await self._create_subtasks_for_assignees(
+                    issue_key,
+                    list(assignees_to_add),
+                    feature,
+                )
+
+            # Update main issue assignee if single assignee
+            if len(assignees) == 1:
+                main_assignee = assignees[0]
+                current_assignee = (
+                    issue.fields.assignee.name if issue.fields.assignee else None
+                )
+                if current_assignee != main_assignee:
+                    issue.update(fields={"assignee": {"name": main_assignee}})
+                    LOGGER.info(f"Updated main assignee to {main_assignee}")
+            else:
+                # For multiple assignees, clear main assignee
+                if issue.fields.assignee:
+                    issue.update(fields={"assignee": None})
+                    LOGGER.info("Cleared main assignee for multi-assignee story")
+
+        except Exception as e:
+            LOGGER.error(
+                f"Failed to update assignees and subtasks for {issue_key}: {e}",
+            )
