@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Dict
 from typing import List
 from typing import Optional
-from typing import Dict
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -15,7 +15,9 @@ class SynthPMFeatureEntity(BaseModel):
     # FIXME: departments should be a list, not a string
 
     row_number: int = Field(description="Row number in the table")
-    sheet_row_number: int = Field(description="Row number in the sheet (the google sheet itself)")
+    sheet_row_number: int = Field(
+        description="Row number in the sheet (the google sheet itself)",
+    )
     task_title: str = Field(description="Task title/وظیفه")
     epic: Optional[str] = Field(default=None, description="Epic")
     release: Optional[str] = Field(default=None, description="Release/ریلیز")
@@ -61,9 +63,18 @@ class SynthPMFeatureEntity(BaseModel):
         description="Initial delivery time/زمان تحویل اولیه",
     )
     description: Optional[str] = Field(default=None, description="Description/توضیحات")
-    acceptance_criteria: Optional[str] = Field(default=None, description="Acceptance criteria/معیارهای پذیرش")
-    test_cases: Optional[str] = Field(default=None, description="Test cases/سناریوهای تست")
-    po_notes: Optional[str] = Field(default=None, description="PO explanation/توضیحات PO")
+    acceptance_criteria: Optional[str] = Field(
+        default=None,
+        description="Acceptance criteria/معیارهای پذیرش",
+    )
+    test_cases: Optional[str] = Field(
+        default=None,
+        description="Test cases/سناریوهای تست",
+    )
+    po_notes: Optional[str] = Field(
+        default=None,
+        description="PO explanation/توضیحات PO",
+    )
     jira_issue_key: Optional[str] = Field(
         default=None,
         description="Associated PM Board Jira issue key",
@@ -73,7 +84,10 @@ class SynthPMFeatureEntity(BaseModel):
         description="Associated developer's board Jira issue key",
     )
     version: Optional[str] = Field(default=None, description="Release version number")
-    times: Dict[str, int] = Field(default=None, description="Time estimates for each department")
+    times: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Time estimates for each department",
+    )
 
     class Config:
         """Pydantic configuration."""

@@ -10,20 +10,29 @@ from typing import Optional
 
 from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
+from jira_telegram_bot.entities.synth_pm.change_tracker import SynthPMChangeTracker
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
-from jira_telegram_bot.entities.synth_pm.change_tracker import SynthPMChangeTracker
+from jira_telegram_bot.entities.synth_pm.sync_filter_criteria import (
+    SynthPMSyncFilterCriteria,
+)
 
 
 class SynthPMRepositoryInterface(ABC):
     """Interface for Synth repository operations."""
 
     @abstractmethod
-    async def get_developer_board_features(self) -> List[SynthPMFeatureEntity]:
-        """Get all  features from Google Sheets.
+    async def get_developer_board_features(
+        self,
+        filter_criteria: Optional[SynthPMSyncFilterCriteria] = None,
+    ) -> List[SynthPMFeatureEntity]:
+        """Get features from Google Sheets with optional filtering.
+
+        Args:
+            filter_criteria: Optional filter criteria for sprints/releases
 
         Returns:
-            List of  feature entities
+            List of feature entities matching the filter criteria
         """
         pass
 
@@ -304,7 +313,10 @@ class SynthPMRepositoryInterface(ABC):
         pass
 
     @abstractmethod
-    async def force_documentation_regeneration(self, sheet_row_numbers: List[int]) -> bool:
+    async def force_documentation_regeneration(
+        self,
+        sheet_row_numbers: List[int],
+    ) -> bool:
         """Force documentation regeneration for specific features.
 
         Args:

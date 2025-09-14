@@ -1,10 +1,13 @@
 """Tests for SynthPM documentation generation conditions."""
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import AsyncMock, Mock
-from datetime import datetime
 
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
-from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
 
 
 class TestSynthPMDocumentationConditions:
@@ -64,11 +67,17 @@ class TestSynthPMDocumentationConditions:
         project_info = {"description": "Test project", "keywords": ["test"]}
 
         # Call the method
-        result = await self.use_case.generate_feature_documentation(feature, project_info)
+        result = await self.use_case.generate_feature_documentation(
+            feature,
+            project_info,
+        )
 
         # Assert that generation was skipped
         assert result["status"] == "skipped"
-        assert "no content available for documentation generation" in result["message"].lower()
+        assert (
+            "no content available for documentation generation"
+            in result["message"].lower()
+        )
 
         # Verify that AI use cases were not called
         self.mock_generate_acceptance_criteria_use_case.execute.assert_not_called()
@@ -111,17 +120,31 @@ class TestSynthPMDocumentationConditions:
 
         mock_test_result = Mock()
         mock_test_result.test_scenarios = [
-            Mock(**{"dict.return_value": {"test_number": 1, "description": "Test scenario 1"}})
+            Mock(
+                **{
+                    "dict.return_value": {
+                        "test_number": 1,
+                        "description": "Test scenario 1",
+                    },
+                },
+            ),
         ]
 
-        self.mock_generate_acceptance_criteria_use_case.execute.return_value = mock_acceptance_result
-        self.mock_generate_test_scenarios_use_case.execute.return_value = mock_test_result
+        self.mock_generate_acceptance_criteria_use_case.execute.return_value = (
+            mock_acceptance_result
+        )
+        self.mock_generate_test_scenarios_use_case.execute.return_value = (
+            mock_test_result
+        )
 
         # Mock project info
         project_info = {"description": "Test project", "keywords": ["test"]}
 
         # Call the method
-        result = await self.use_case.generate_feature_documentation(feature, project_info)
+        result = await self.use_case.generate_feature_documentation(
+            feature,
+            project_info,
+        )
 
         # Assert that generation was successful
         assert result["status"] == "success"
@@ -170,14 +193,21 @@ class TestSynthPMDocumentationConditions:
         mock_test_result = Mock()
         mock_test_result.test_scenarios = []
 
-        self.mock_generate_acceptance_criteria_use_case.execute.return_value = mock_acceptance_result
-        self.mock_generate_test_scenarios_use_case.execute.return_value = mock_test_result
+        self.mock_generate_acceptance_criteria_use_case.execute.return_value = (
+            mock_acceptance_result
+        )
+        self.mock_generate_test_scenarios_use_case.execute.return_value = (
+            mock_test_result
+        )
 
         # Mock project info
         project_info = {"description": "Test project", "keywords": ["test"]}
 
         # Call the method
-        result = await self.use_case.generate_feature_documentation(feature, project_info)
+        result = await self.use_case.generate_feature_documentation(
+            feature,
+            project_info,
+        )
 
         # Assert that generation was successful
         assert result["status"] == "success"
@@ -225,14 +255,21 @@ class TestSynthPMDocumentationConditions:
         mock_test_result = Mock()
         mock_test_result.test_scenarios = []
 
-        self.mock_generate_acceptance_criteria_use_case.execute.return_value = mock_acceptance_result
-        self.mock_generate_test_scenarios_use_case.execute.return_value = mock_test_result
+        self.mock_generate_acceptance_criteria_use_case.execute.return_value = (
+            mock_acceptance_result
+        )
+        self.mock_generate_test_scenarios_use_case.execute.return_value = (
+            mock_test_result
+        )
 
         # Mock project info
         project_info = {"description": "Test project", "keywords": ["test"]}
 
         # Call the method
-        result = await self.use_case.generate_feature_documentation(feature, project_info)
+        result = await self.use_case.generate_feature_documentation(
+            feature,
+            project_info,
+        )
 
         # Assert that generation was successful
         assert result["status"] == "success"
