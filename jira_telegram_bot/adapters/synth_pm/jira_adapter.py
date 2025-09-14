@@ -395,13 +395,12 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             )
             if feature.deadline:  # Using deadline as target_end for now
                 feature_target_end = feature.deadline.strftime("%Y-%m-%d")
-                if (
-                    hasattr(self.jira_repository, "jira_target_end_id")
-                    and feature_target_end != getattr(
-                        issue.fields,
-                        self.jira_repository.jira_target_end_id,
-                        None,
-                    )
+                if hasattr(
+                    self.jira_repository, "jira_target_end_id"
+                ) and feature_target_end != getattr(
+                    issue.fields,
+                    self.jira_repository.jira_target_end_id,
+                    None,
                 ):
                     update_fields[
                         self.jira_repository.jira_target_end_id
@@ -431,8 +430,10 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                     else 0
                 )
                 logged_time_hours = logged_time_seconds / 3600
-                remaining_estimate_hours = max(0, feature.total_hours - logged_time_hours)
-                
+                remaining_estimate_hours = max(
+                    0, feature.total_hours - logged_time_hours
+                )
+
                 update_fields["timetracking"] = {
                     "originalEstimate": f"{feature.total_hours}h",
                     "remainingEstimate": f"{remaining_estimate_hours}h",
@@ -442,22 +443,22 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
         if feature.involved_people:
             current_labels = [label for label in issue.fields.labels]
             involved_label = feature.involved_people.replace(" ", "-")
-            
+
             # Check if involved_people label needs updating
             needs_label_update = False
             new_labels = current_labels[:]
-            
+
             # Remove any existing involved_people labels and add the new one
             for i, label in enumerate(current_labels):
                 if any(name in label for name in feature.involved_people.split(" ")):
                     new_labels.pop(i)
                     needs_label_update = True
                     break
-            
+
             if involved_label not in new_labels:
                 new_labels.append(involved_label)
                 needs_label_update = True
-            
+
             if needs_label_update:
                 update_fields["labels"] = new_labels
 
@@ -801,19 +802,30 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
 
                         # For now, divide total hours equally among assignees
                         # This could be enhanced with proper story point calculation
-                        parent_issue = self.jira_repository.jira.issue(issue_key, expand="subtasks")
-                        total_assignees = len(getattr(parent_issue.fields, "subtasks", []))
+                        parent_issue = self.jira_repository.jira.issue(
+                            issue_key, expand="subtasks"
+                        )
+                        total_assignees = len(
+                            getattr(parent_issue.fields, "subtasks", [])
+                        )
                         if total_assignees > 0:
                             assignee_hours = feature.total_hours / total_assignees
                             if abs(current_estimate_hours - assignee_hours) > 0.01:
                                 # Get logged time
                                 logged_time_seconds = (
-                                    self.jira_repository.get_issue_spent_time_in_seconds(subtask.key)
-                                    if hasattr(self.jira_repository, "get_issue_spent_time_in_seconds")
+                                    self.jira_repository.get_issue_spent_time_in_seconds(
+                                        subtask.key
+                                    )
+                                    if hasattr(
+                                        self.jira_repository,
+                                        "get_issue_spent_time_in_seconds",
+                                    )
                                     else 0
                                 )
                                 logged_time_hours = logged_time_seconds / 3600
-                                remaining_hours = max(0, assignee_hours - logged_time_hours)
+                                remaining_hours = max(
+                                    0, assignee_hours - logged_time_hours
+                                )
 
                                 update_fields["timetracking"] = {
                                     "originalEstimate": f"{assignee_hours}h",
@@ -824,7 +836,7 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                     if update_fields:
                         subtask_obj.update(fields=update_fields)
                         LOGGER.info(
-                            f"Updated subtask {subtask.key} with fields: {list(update_fields.keys())}"
+                            f"Updated subtask {subtask.key} with fields: {list(update_fields.keys())}",
                         )
 
                 except Exception as e:
