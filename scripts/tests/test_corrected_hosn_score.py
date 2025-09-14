@@ -1,18 +1,14 @@
 """Test script for the corrected hosn score calculation."""
 from __future__ import annotations
 
-import os
-import sys
-
-# Add the project root to Python path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-
-from jira_telegram_bot.entities.team_evaluation import TeamEvaluationScoreWeights
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.constants import DEFAULT_DEFECT_THRESHOLDS
+from jira_telegram_bot.entities.team_evaluation import (
+    TeamEvaluationScoreWeights,
+)
 from jira_telegram_bot.use_cases.team_evaluation.services.score_service import (
     ScoreService,
 )
-from jira_telegram_bot.entities.constants import DEFAULT_DEFECT_THRESHOLDS
 
 
 def test_corrected_hosn_score():
@@ -20,17 +16,17 @@ def test_corrected_hosn_score():
 
     weights = TeamEvaluationScoreWeights()
 
-    print("=== تست محاسبه حسن انجام کار اصلاح شده ===\n")
-    print("محدودیت‌ها:")
-    print("✅ امتیاز بین 0 تا 100")
-    print("✅ بدون فعالیت = امتیاز 0")
-    print("✅ ورودی بر اساس روز")
-    print("=" * 60)
+    LOGGER.info("=== تست محاسبه حسن انجام کار اصلاح شده ===\n")
+    LOGGER.info("محدودیت‌ها:")
+    LOGGER.info("✅ امتیاز بین 0 تا 100")
+    LOGGER.info("✅ بدون فعالیت = امتیاز 0")
+    LOGGER.info("✅ ورودی بر اساس روز")
+    LOGGER.info("=" * 60)
 
     # Test Case 1: No activity (like هروی)
-    print("\n📍 Test 1: بدون فعالیت (مثل هروی)")
-    print("- هیچ ساعتی ثبت نکرده (0 ساعت)")
-    print("- هیچ تسک اولویت بالایی تحویل نداده (0/1)")
+    LOGGER.info("\n📍 Test 1: بدون فعالیت (مثل هروی)")
+    LOGGER.info("- هیچ ساعتی ثبت نکرده (0 ساعت)")
+    LOGGER.info("- هیچ تسک اولویت بالایی تحویل نداده (0/1)")
 
     score1 = ScoreService.compute_hosn_score(
         weights=weights,
@@ -43,14 +39,14 @@ def test_corrected_hosn_score():
         tester_bugs_per_story=0.0,
         defect_thresholds=DEFAULT_DEFECT_THRESHOLDS,
     )
-    print(f"امتیاز: {score1}")
-    print("انتظار: 0 (هیچ کاری نکرده)")
+    LOGGER.info(f"امتیاز: {score1}")
+    LOGGER.info("انتظار: 0 (هیچ کاری نکرده)")
 
     # Test Case 2: Some activity but no high priority (like )
-    print("\n📍 Test 2: فعالیت بدون تسک اولویت بالا (مثل )")
-    print("- هیچ ساعتی ثبت نکرده (0 ساعت)")
-    print("- 1 تسک اولویت بالا تحویل داده (1/7)")
-    print("- تاخیر 28.8 روز")
+    LOGGER.info("\n📍 Test 2: فعالیت بدون تسک اولویت بالا (مثل )")
+    LOGGER.info("- هیچ ساعتی ثبت نکرده (0 ساعت)")
+    LOGGER.info("- 1 تسک اولویت بالا تحویل داده (1/7)")
+    LOGGER.info("- تاخیر 28.8 روز")
 
     score2 = ScoreService.compute_hosn_score(
         weights=weights,
@@ -63,14 +59,14 @@ def test_corrected_hosn_score():
         tester_bugs_per_story=0.0,
         defect_thresholds=DEFAULT_DEFECT_THRESHOLDS,
     )
-    print(f"امتیاز: {score2}")
-    print("انتظار: 0 (هیچ ساعتی ثبت نکرده)")
+    LOGGER.info(f"امتیاز: {score2}")
+    LOGGER.info("انتظار: 0 (هیچ ساعتی ثبت نکرده)")
 
     # Test Case 3: Good developer
-    print("\n📍 Test 3: توسعه‌دهنده خوب")
-    print("- 40 ساعت ثبت کرده")
-    print("- 3 تسک اولویت بالا تحویل داده (3/3)")
-    print("- 1 روز تاخیر")
+    LOGGER.info("\n📍 Test 3: توسعه‌دهنده خوب")
+    LOGGER.info("- 40 ساعت ثبت کرده")
+    LOGGER.info("- 3 تسک اولویت بالا تحویل داده (3/3)")
+    LOGGER.info("- 1 روز تاخیر")
 
     score3 = ScoreService.compute_hosn_score(
         weights=weights,
@@ -83,14 +79,14 @@ def test_corrected_hosn_score():
         tester_bugs_per_story=0.1,
         defect_thresholds=DEFAULT_DEFECT_THRESHOLDS,
     )
-    print(f"امتیاز: {score3}")
-    print("انتظار: حدود 85-95")
+    LOGGER.info(f"امتیاز: {score3}")
+    LOGGER.info("انتظار: حدود 85-95")
 
     # Test Case 4: Perfect developer with early delivery
-    print("\n📍 Test 4: توسعه‌دهنده عالی با تحویل زودتر")
-    print("- 46 ساعت ثبت کرده")
-    print("- همه تسک‌های اولویت بالا تحویل داده")
-    print("- 2 روز زودتر تحویل داده")
+    LOGGER.info("\n📍 Test 4: توسعه‌دهنده عالی با تحویل زودتر")
+    LOGGER.info("- 46 ساعت ثبت کرده")
+    LOGGER.info("- همه تسک‌های اولویت بالا تحویل داده")
+    LOGGER.info("- 2 روز زودتر تحویل داده")
 
     score4 = ScoreService.compute_hosn_score(
         weights=weights,
@@ -103,13 +99,13 @@ def test_corrected_hosn_score():
         tester_bugs_per_story=0.0,
         defect_thresholds=DEFAULT_DEFECT_THRESHOLDS,
     )
-    print(f"امتیاز: {score4}")
-    print("انتظار: 100 (حداکثر)")
+    LOGGER.info(f"امتیاز: {score4}")
+    LOGGER.info("انتظار: 100 (حداکثر)")
 
     # Test Case 5: Edge case - some hours but no high priority
-    print("\n📍 Test 5: ساعت ثبت کرده اما تسک اولویت بالا ندارده")
-    print("- 20 ساعت ثبت کرده")
-    print("- هیچ تسک اولویت بالایی تحویل نداده (0/2)")
+    LOGGER.info("\n📍 Test 5: ساعت ثبت کرده اما تسک اولویت بالا ندارده")
+    LOGGER.info("- 20 ساعت ثبت کرده")
+    LOGGER.info("- هیچ تسک اولویت بالایی تحویل نداده (0/2)")
 
     score5 = ScoreService.compute_hosn_score(
         weights=weights,
@@ -122,8 +118,8 @@ def test_corrected_hosn_score():
         tester_bugs_per_story=0.0,
         defect_thresholds=DEFAULT_DEFECT_THRESHOLDS,
     )
-    print(f"امتیاز: {score5}")
-    print("انتظار: 0 (قانون: بدون تسک اولویت بالا = 0)")
+    LOGGER.info(f"امتیاز: {score5}")
+    LOGGER.info("انتظار: 0 (قانون: بدون تسک اولویت بالا = 0)")
 
 
 if __name__ == "__main__":

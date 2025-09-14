@@ -89,6 +89,9 @@ from jira_telegram_bot.frameworks.api.registry import SubServiceEndpoints
 from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import (
     APSchedulerService,
 )
+from jira_telegram_bot.settings.deadline_notifier_settings import (
+    DeadlineNotifierSettings,
+)
 from jira_telegram_bot.settings.fast_api_settings import FastAPISettings
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
@@ -322,6 +325,7 @@ def _configure_settings(container: Container) -> None:
         lambda: GoogleSheetsConnectionSettings(),
     )
     container[FastAPISettings] = Singleton(lambda: FastAPISettings())
+    container[DeadlineNotifierSettings] = Singleton(lambda: DeadlineNotifierSettings())
 
 
 def _configure_database(container: Container) -> None:
@@ -545,6 +549,7 @@ def _configure_use_cases(container: Container) -> None:
             telegram_notifier=c[TelegramNotifierInterface],
             notification_log_repository=c[NotificationLogRepositoryInterface],
             calendar_repository=c[CalendarRepositoryInterface],
+            deadline_notifier_settings=c[DeadlineNotifierSettings],
         ),
     )
 

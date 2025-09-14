@@ -66,7 +66,7 @@ The service also exposes REST API endpoints via the main application:
 ### Configuration
 Configure via environment variables or settings files:
 - **Google Sheets credentials**: Service account JSON file
-- **Jira connection settings**: Domain, username, password/token  
+- **Jira connection settings**: Domain, username, password/token
 - **Telegram bot configuration**:
   - `SYNTH_pm_TELEGRAM_BOT_TOKEN`: Dedicated bot token for SynthPM
   - `SYNTH_pm_TELEGRAM_CHANNEL_ID`: Target channel for notifications

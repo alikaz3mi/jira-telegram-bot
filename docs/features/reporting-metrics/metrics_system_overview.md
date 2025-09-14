@@ -14,26 +14,26 @@ graph TD
     FW --> UC[Use Cases]
     UC --> AD[Adapters]
     AD --> GS[Google Sheets]
-    
+
     subgraph "Entities Layer"
         ME[MetricEvent]
         DMR[DailyMetricRow]
         SMR[SprintMetricRow]
         CONST[Constants]
     end
-    
+
     subgraph "Use Cases Layer"
         PJE[ProcessJiraEventUseCase]
         PGE[ProcessGitlabEventUseCase]
         USU[UpdateSheetUseCase]
     end
-    
+
     subgraph "Adapters Layer"
         GSG[GoogleSheetsGateway]
         MPS[MetricsProcessorService]
         UCR[UserConfigRepository]
     end
-    
+
     subgraph "Frameworks Layer"
         MWE[MetricsWebhookEndpoint]
     end
@@ -104,7 +104,7 @@ class DailyMetricRow:
 Represents a row in the sprint metrics matrix:
 
 ```python
-@dataclass 
+@dataclass
 class SprintMetricRow:
     developer_name: str           # Display name
     all_tasks: int               # Total tasks assigned
@@ -202,7 +202,7 @@ File-based repository for configuration management.
       "range_template": "Daily!A:G"
     },
     "developer_metrics_matrix": {
-      "sheet_id": "your_sheet_id", 
+      "sheet_id": "your_sheet_id",
       "range_template": "Sprint!A:P"
     }
   },
@@ -224,7 +224,7 @@ FastAPI endpoint for receiving webhooks from Jira and GitLab.
 
 **Endpoints:**
 - `POST /metrics/jira` - Jira webhook processing
-- `POST /metrics/gitlab` - GitLab webhook processing  
+- `POST /metrics/gitlab` - GitLab webhook processing
 - `GET /metrics/health` - Health check
 
 **Features:**
@@ -296,7 +296,7 @@ WEBHOOK_SECRET_TOKEN=your_secret_token
 Located in `tests/unit_tests/use_cases/metrics/`:
 
 - `test_process_jira_event_use_case.py` - Jira event processing tests
-- `test_process_gitlab_event_use_case.py` - GitLab event processing tests  
+- `test_process_gitlab_event_use_case.py` - GitLab event processing tests
 - `test_update_sheet_use_case.py` - Sheet update logic tests
 
 ### Integration Tests
@@ -311,7 +311,7 @@ Located in `tests/integration/metrics/`:
 # Run unit tests
 python -m pytest tests/unit_tests/use_cases/metrics/ -v
 
-# Run integration tests  
+# Run integration tests
 python -m pytest tests/integration/metrics/ -v
 
 # Run with coverage

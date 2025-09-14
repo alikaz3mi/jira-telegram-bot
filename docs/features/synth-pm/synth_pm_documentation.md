@@ -77,7 +77,7 @@ Developer_TO_JIRA_STATUS = {
 # Priority Mapping
 PRIORITY_MAPPING = {
     "Highest": "Highest",
-    "High": "High", 
+    "High": "High",
     "Medium": "Medium",
     "Low": "Low",
     # Persian mappings
@@ -96,7 +96,7 @@ The system dynamically maps Google Sheet columns using headers:
 COLUMN_MAPPING = {
     # Persian Headers
     "عنوان تسک": "task_title",
-    "اپیک": "epic", 
+    "اپیک": "epic",
     "ریلیز": "release",
     "ضرورت": "necessity",
     "اولویت": "priority",
@@ -106,11 +106,11 @@ COLUMN_MAPPING = {
     "اسپرینت": "sprint",
     "ددلاین": "deadline",
     "تاریخ شروع پیاده سازی": "implementation_start_date",
-    
+
     # English Headers
     "Task Title": "task_title",
     "Epic": "epic",
-    "Release": "release", 
+    "Release": "release",
     "Priority": "priority",
     "Status": "status",
     "ETA Hours": "eta_hours",
@@ -128,14 +128,14 @@ Enhanced Telegram notifications include:
 ```python
 def _format_telegram_message(self, feature: DeveloperFeatureEntity, action: str) -> str:
     """Format enhanced Telegram message with icons and hashtags."""
-    
+
     # Epic hashtag
     epic_hashtag = f"#{feature.epic.replace(' ', '_')}" if feature.epic else "#General"
-    
+
     # Status and priority icons
     status_icon = STATUS_ICONS.get(feature.status, "📝")
     priority_icon = PRIORITY_ICONS.get(feature.priority, "⚪")
-    
+
     # Enhanced message format
     message = f"""
 {status_icon} **Task Update** {action}
@@ -164,7 +164,7 @@ GOOGLE_SHEETS_SPREADSHEET_ID=your_spreadsheet_id
 GOOGLE_SHEETS_SHEET_NAME=your_sheet_name
 GOOGLE_APPLICATION_CREDENTIALS=path_to_service_account.json
 
-# Jira Configuration  
+# Jira Configuration
 JIRA_URL=https://your-domain.atlassian.net
 JIRA_USERNAME=your_username
 JIRA_API_TOKEN=your_api_token
@@ -187,7 +187,7 @@ def _configure_synth_pm(container: Container) -> None:
     container[SynthPMSettings] = Singleton(
         lambda: SynthPMSettings()
     )
-    
+
     # Repository
     container[SynthPMRepositoryInterface] = Singleton(
         lambda c: SynthPMRepository(
@@ -196,7 +196,7 @@ def _configure_synth_pm(container: Container) -> None:
             settings=c[SynthPMSettings]
         )
     )
-    
+
     # Use case
     container[SynthPMUseCase] = Singleton(
         lambda c: SynthPMUseCase(
@@ -325,7 +325,7 @@ LOGGER.error(f"Failed to create Jira task: {error}")
    - Check project permissions for both PM Board and Developer
    - Validate issue type and field configurations
 
-3. **Status Mapping Errors** 
+3. **Status Mapping Errors**
    - Ensure status values match constants
    - Check for typos in Persian status text
    - Verify Jira workflow transitions
@@ -340,7 +340,7 @@ LOGGER.error(f"Failed to create Jira task: {error}")
 ### Optimization Strategies
 
 1. **Batch Processing**: Process multiple rows in single API calls
-2. **Caching**: Cache Jira project metadata and user information  
+2. **Caching**: Cache Jira project metadata and user information
 3. **Rate Limiting**: Respect API rate limits for Google Sheets and Jira
 4. **Incremental Sync**: Only sync changed rows when possible
 
@@ -401,7 +401,7 @@ logging.getLogger('jira_telegram_bot.adapters.repositories.synth_pm_repository')
 # Test Google Sheets connection
 python -m jira_telegram_bot.scripts.test_google_sheets
 
-# Test Jira connectivity  
+# Test Jira connectivity
 python -m jira_telegram_bot.scripts.test_jira_connection
 
 # Validate status mappings
@@ -511,7 +511,7 @@ The system can run continuous background synchronization:
 
 #### Priority Mapping
 - بحرانی → Highest
-- بالا → High  
+- بالا → High
 - متوسط → Medium
 - پایین → Low
 - خیلی پایین → Lowest

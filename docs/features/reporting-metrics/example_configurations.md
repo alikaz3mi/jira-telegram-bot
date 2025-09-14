@@ -41,7 +41,7 @@ config/
       "sheet_name_pattern": "Daily_{month_name}_{year}"
     },
     "developer_metrics_matrix": {
-      "sheet_id": "REPLACE_WITH_YOUR_SPRINT_SHEET_ID", 
+      "sheet_id": "REPLACE_WITH_YOUR_SPRINT_SHEET_ID",
       "range_template": "Sprint_{sprint_id}!A:P",
       "headers": [
         "Developer Name",

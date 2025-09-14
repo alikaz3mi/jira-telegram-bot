@@ -20,7 +20,7 @@
 
 مستندات تنها در صورتی تولید می‌شود که فیچر حداقل یکی از این فیلدها را داشته باشد:
 - `description` (توضیحات)
-- `acceptance_criteria` (معیارهای پذیرش)  
+- `acceptance_criteria` (معیارهای پذیرش)
 - `test_cases` (تست‌ها)
 
 ```python
@@ -60,7 +60,7 @@ def from_feature(cls, feature: SynthPMFeatureEntity) -> "FeatureSnapshot":
         "priority": feature.priority or "",
         "necessity": feature.necessity or "",
     }
-    
+
     # ایجاد hash منحصر به فرد از تغییرات Google Sheet
     content_str = "|".join(f"{k}:{v}" for k, v in sorted(relevant_fields.items()))
     content_hash = hashlib.sha256(content_str.encode()).hexdigest()
@@ -85,17 +85,17 @@ def detect_changes(self, current_features: List[SynthPMFeatureEntity]) -> Dict[s
 async def sync_developer_board_features(self) -> Dict[str, Any]:
     # دریافت فیچرهای فعلی از Google Sheets
     features = await self.repository.get_developer_board_features()
-    
+
     # تشخیص تغییرات Google Sheet
     changes = await self.repository.detect_feature_changes(features)
-    
+
     # پردازش هوشمند
     for feature in changes["new"]:
         # ایجاد Jira ticket + تولید مستندات (اگر محتوا داشته باشد)
-    
+
     for feature in changes["modified"]:
         # آپدیت Jira ticket فقط
-    
+
     for feature in changes["needs_docs"]:
         # تولید مستندات فقط (اگر محتوا داشته باشد)
 ```
@@ -172,7 +172,7 @@ print(f"نیاز به مستندات: {len(changes['needs_docs'])}")
 ## فایل‌های مرتبط
 
 - `entities/synth_pm/change_tracker.py` - مدل‌های اصلی
-- `adapters/repositories/synth_pm_repository.py` - متدهای repository 
+- `adapters/repositories/synth_pm_repository.py` - متدهای repository
 - `use_cases/synth_pm_usecase.py` - منطق business
 - `data/storage/synth_pm_change_tracker.json` - ذخیره snapshots
 - `tests/unit_tests/use_cases/test_synth_pm_documentation_conditions.py` - تست‌های شرایط
@@ -189,7 +189,7 @@ self.change_tracker_file = Path(data_folder) / "synth_pm_change_tracker.json"
 این سیستم به سؤال شما **"به چه شکل مقایسه میکنی و متوجه این تغییر میشی؟"** پاسخ کامل می‌دهد:
 
 1. **مقایسه**: از طریق Hash محتوای فیلدهای Google Sheet
-2. **تشخیص تغییر**: مقایسه hash فعلی با snapshot قبلی  
+2. **تشخیص تغییر**: مقایسه hash فعلی با snapshot قبلی
 3. **شرط تولید**: فقط اگر فیچر محتوا داشته باشد (description/acceptance_criteria/test_cases)
 4. **تصمیم‌گیری هوشمند**: تولید مستندات فقط در صورت نیاز
 5. **ذخیره وضعیت**: نگهداری history برای sync های آینده

@@ -438,23 +438,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -e .
-    
+
     - name: Run tests
       run: |
         python -m pytest tests/unit_tests/use_cases/metrics/ -v --cov=jira_telegram_bot.use_cases.metrics
         python -m pytest tests/integration/metrics/ -v
-    
+
     - name: Run linting
       run: |
         ruff check jira_telegram_bot/entities/metrics/
@@ -470,20 +470,20 @@ jobs:
     outputs:
       image: ${{ steps.meta.outputs.tags }}
       digest: ${{ steps.build.outputs.digest }}
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
+
     - name: Log in to Container Registry
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@v5
@@ -494,7 +494,7 @@ jobs:
           type=ref,event=pr
           type=sha,prefix=commit-
           type=raw,value=latest,enable={{is_default_branch}}
-    
+
     - name: Build and push
       id: build
       uses: docker/build-push-action@v5
@@ -511,15 +511,15 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: staging
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Configure kubectl
       run: |
         echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > /tmp/kubeconfig
         echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-    
+
     - name: Deploy to staging
       run: |
         sed -i "s|IMAGE_TAG|${{ needs.build.outputs.image }}|g" k8s/staging/deployment.yaml
@@ -531,15 +531,15 @@ jobs:
     needs: [build, deploy-staging]
     runs-on: ubuntu-latest
     environment: production
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Configure kubectl
       run: |
         echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > /tmp/kubeconfig
         echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-    
+
     - name: Deploy to production
       run: |
         sed -i "s|IMAGE_TAG|${{ needs.build.outputs.image }}|g" k8s/production/deployment.yaml
@@ -751,7 +751,7 @@ Example dashboard configuration:
       },
       {
         "title": "Processing Duration",
-        "type": "graph", 
+        "type": "graph",
         "targets": [
           {
             "expr": "histogram_quantile(0.95, webhook_processing_duration_seconds_bucket)",

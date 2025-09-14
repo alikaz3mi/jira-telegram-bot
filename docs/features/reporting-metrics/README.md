@@ -105,7 +105,7 @@ The system follows Clean Architecture principles with clear separation of layers
 
 - **MetricEvent**: Core entity representing trackable development activities
 - **ProcessJiraEventUseCase**: Maps Jira webhooks to metric events
-- **ProcessGitlabEventUseCase**: Maps GitLab webhooks to metric events  
+- **ProcessGitlabEventUseCase**: Maps GitLab webhooks to metric events
 - **UpdateSheetUseCase**: Updates Google Sheets with metric data
 - **GoogleSheetsGateway**: Handles Google Sheets API operations
 - **MetricsWebhookEndpoint**: FastAPI endpoints for webhook ingestion
@@ -138,7 +138,7 @@ The system follows Clean Architecture principles with clear separation of layers
 - `POST /metrics/jira` - Process Jira webhook events
 - `POST /metrics/gitlab` - Process GitLab webhook events
 
-### Monitoring Endpoints  
+### Monitoring Endpoints
 - `GET /metrics/health` - System health check
 - `GET /metrics/stats` - Detailed metrics and statistics
 - `GET /metrics/errors` - Recent processing errors
@@ -190,7 +190,7 @@ LOG_LEVEL=INFO
 4. Add secret header: `X-Webhook-Secret: your_secret`
 
 #### GitLab Webhook Setup
-1. Go to Project → Settings → Webhooks  
+1. Go to Project → Settings → Webhooks
 2. Add URL: `https://your-domain.com/metrics/gitlab`
 3. Select triggers: Push events, Merge request events
 4. Add secret token: `your_secret`
@@ -380,7 +380,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) file for 
 ### v1.0.0 (Latest)
 - Initial release with complete metrics tracking system
 - Daily scoreboard and sprint metrics matrix
-- Jira and GitLab webhook integration  
+- Jira and GitLab webhook integration
 - Persian calendar support
 - Comprehensive test coverage
 - Clean Architecture implementation

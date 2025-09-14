@@ -20,7 +20,7 @@ Main configuration file located in the project root:
         "Developer Name",
         "Date",
         "Today Deadlines",
-        "Resolved Tasks", 
+        "Resolved Tasks",
         "Logged Time",
         "Commits",
         "Comments"
@@ -63,7 +63,7 @@ Main configuration file located in the project root:
       "jira_username": "jane.smith",
       "gitlab_username": "jsmith",
       "email": "jane.smith@company.com",
-      "team": "Frontend", 
+      "team": "Frontend",
       "active": true
     },
     "bob.wilson@company.com": {
@@ -83,7 +83,7 @@ Main configuration file located in the project root:
       "track_metrics": true
     },
     "SUPPORT": {
-      "name": "Support Project", 
+      "name": "Support Project",
       "key": "SUPPORT",
       "gitlab_project_id": 456,
       "track_metrics": false
@@ -167,7 +167,7 @@ PROMETHEUS_ENABLED=true
 3. Set up headers in row 1:
    ```
    A: Developer Name
-   B: Date  
+   B: Date
    C: Today Deadlines
    D: Resolved Tasks
    E: Logged Time
@@ -181,7 +181,7 @@ PROMETHEUS_ENABLED=true
 
 1. Create new Google Sheet named "Sprint Metrics Matrix"
 2. Create sheet tabs for each sprint:
-   - `Sprint_1` 
+   - `Sprint_1`
    - `Sprint_2`
    - etc.
 3. Set up headers in row 1:
@@ -231,7 +231,7 @@ For precise control, configure each developer explicitly:
   "developers": {
     "primary_email@company.com": {
       "display_name": "Developer Display Name",
-      "jira_username": "jira.username", 
+      "jira_username": "jira.username",
       "gitlab_username": "gitlab_username",
       "email": "primary_email@company.com",
       "team": "Team Name",
@@ -266,15 +266,15 @@ For precise control, configure each developer explicitly:
    Name: Metrics Tracker
    Status: Enabled
    URL: https://your-domain.com/metrics/jira
-   
+
    Events:
    ✓ Issue → created
-   ✓ Issue → updated  
+   ✓ Issue → updated
    ✓ Issue → deleted
    ✓ Worklog → created
    ✓ Worklog → updated
    ✓ Worklog → deleted
-   
+
    Filters:
    - Project = YOUR_PROJECT_KEY
    ```
@@ -290,12 +290,12 @@ For precise control, configure each developer explicitly:
    ```
    URL: https://your-domain.com/metrics/gitlab
    Secret Token: your_gitlab_webhook_secret
-   
+
    Trigger Events:
    ✓ Push events
    ✓ Merge request events
    ✓ Pipeline events (optional)
-   
+
    SSL verification: ✓ Enable
    ```
 
@@ -311,7 +311,7 @@ import hashlib
 def verify_jira_webhook(payload: str, signature: str, secret: str) -> bool:
     expected = hmac.new(
         secret.encode(),
-        payload.encode(), 
+        payload.encode(),
         hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(signature, expected)
@@ -336,7 +336,7 @@ Configure which projects to track:
     },
     "SUPPORT": {
       "name": "Customer Support",
-      "key": "SUPPORT", 
+      "key": "SUPPORT",
       "gitlab_project_id": 456,
       "track_metrics": false,
       "team_lead": "jane.smith@company.com"
@@ -377,7 +377,7 @@ Configure sprint tracking patterns:
     "calendar_settings": {
       "month_names": [
         "Farvardin", "Ordibehesht", "Khordad",
-        "Tir", "Mordad", "Shahrivar", 
+        "Tir", "Mordad", "Shahrivar",
         "Mehr", "Aban", "Azar",
         "Dey", "Bahman", "Esfand"
       ],
@@ -385,7 +385,7 @@ Configure sprint tracking patterns:
       "weekend_days": ["Friday"],
       "holidays": [
         "1403-01-01",
-        "1403-01-02", 
+        "1403-01-02",
         "1403-01-03",
         "1403-01-13"
       ]
@@ -485,20 +485,20 @@ def validate_config(config_path: str) -> bool:
     try:
         with open(config_path) as f:
             config = json.load(f)
-        
+
         # Validate required sections
         required_sections = ['sheets', 'developers', 'settings']
         for section in required_sections:
             if section not in config:
                 print(f"❌ Missing required section: {section}")
                 return False
-        
+
         # Validate sheet configuration
         for sheet_name, sheet_config in config['sheets'].items():
             if 'sheet_id' not in sheet_config:
                 print(f"❌ Missing sheet_id for {sheet_name}")
                 return False
-        
+
         # Validate developer configuration
         for email, dev_config in config['developers'].items():
             required_fields = ['display_name', 'jira_username', 'gitlab_username']
@@ -506,10 +506,10 @@ def validate_config(config_path: str) -> bool:
                 if field not in dev_config:
                     print(f"❌ Missing {field} for developer {email}")
                     return False
-        
+
         print("✅ Configuration file is valid")
         return True
-        
+
     except Exception as e:
         print(f"❌ Configuration validation failed: {e}")
         return False
@@ -521,26 +521,26 @@ def validate_google_sheets_access(service_account_file: str, sheet_ids: list) ->
             service_account_file,
             scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
-        
+
         service = build('sheets', 'v4', credentials=credentials)
-        
+
         for sheet_id in sheet_ids:
             # Try to read sheet metadata
             sheet = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
             print(f"✅ Successfully accessed sheet: {sheet['properties']['title']}")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ Google Sheets access validation failed: {e}")
         return False
 
 if __name__ == "__main__":
     config_path = sys.argv[1] if len(sys.argv) > 1 else "metrics_config.json"
-    
+
     if not validate_config(config_path):
         sys.exit(1)
-    
+
     # Additional validations can be added here
     print("🎉 All validations passed!")
 ```
@@ -589,7 +589,7 @@ Enable detailed logging for troubleshooting:
   "settings": {
     "debug": {
       "enabled": true,
-      "log_level": "DEBUG", 
+      "log_level": "DEBUG",
       "log_webhook_payloads": true,
       "log_sheet_operations": true,
       "log_developer_mapping": true

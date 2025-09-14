@@ -71,13 +71,13 @@ The original architecture had significant code duplication across webhook handli
 ```python
 async def process_webhook(webhook_data: Dict[str, Any]) -> WebhookResponse:
     """Main processing method with common error handling"""
-    
+
 def _validate_webhook_data(webhook_data: Dict[str, Any]) -> WebhookResponse | None:
     """Abstract method for webhook-specific validation"""
-    
+
 async def _route_to_use_case(webhook_data: Dict[str, Any]) -> WebhookResponse:
     """Abstract method for routing to appropriate use cases"""
-    
+
 def _create_success_response(message: str) -> WebhookResponse:
     """Standardized success response creation"""
 ```
@@ -138,7 +138,7 @@ def _create_success_response(message: str) -> WebhookResponse:
 class JiraWebhookEndpoint(ServiceAPIEndpointBluePrint):
     def __init__(self, jira_webhook_use_case: JiraWebhookUseCase):
         # ... initialization
-    
+
     def create_rest_api_route(self) -> APIRouter:
         # ... 40+ lines of duplicate code
         @api_route.post("/")

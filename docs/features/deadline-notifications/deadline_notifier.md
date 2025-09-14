@@ -8,7 +8,7 @@ The Deadline Notifier is an automated system that monitors Jira issues with appr
 
 ### Domain Layer (Entities)
 
-#### `DeadlineAlert` 
+#### `DeadlineAlert`
 - Core entity representing a deadline alert
 - Contains issue metadata, deadline information, and urgency calculations
 - Provides computed properties for urgency level and deadline status
@@ -26,7 +26,7 @@ The Deadline Notifier is an automated system that monitors Jira issues with appr
 - Extended with `get_issues_with_approaching_deadlines()` method
 - Handles JQL queries for deadline-based issue retrieval
 
-#### `UserConfigInterface` 
+#### `UserConfigInterface`
 - Extended with `get_all_user_configs()` and `get_group_chat_ids()` methods
 - Manages mapping between Jira users and Telegram chat IDs
 

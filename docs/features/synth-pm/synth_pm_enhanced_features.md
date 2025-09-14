@@ -68,7 +68,7 @@ python scripts/run_synth_parschat.py test
 - Total (h)
 - اسپرینت (Sprint)
 - ددلاین (Deadline)
-- ستون‌های افراد 
+- ستون‌های افراد
 
 ### فرمت اسپرینت:
 ```

@@ -62,7 +62,7 @@ Standard Jira webhook payload. The system processes various event types:
 ```json
 {
   "timestamp": 1638360000000,
-  "webhookEvent": "jira:issue_updated", 
+  "webhookEvent": "jira:issue_updated",
   "issue": {
     "id": "10001",
     "key": "PROJ-123",
@@ -81,7 +81,7 @@ Standard Jira webhook payload. The system processes various event types:
     "items": [
       {
         "field": "status",
-        "fromString": "In Progress", 
+        "fromString": "In Progress",
         "toString": "Done"
       }
     ]
@@ -132,7 +132,7 @@ Standard Jira webhook payload. The system processes various event types:
 **Error (400 Bad Request):**
 ```json
 {
-  "status": "error", 
+  "status": "error",
   "message": "Invalid webhook payload",
   "error_code": "INVALID_PAYLOAD",
   "details": {
@@ -155,7 +155,7 @@ Standard Jira webhook payload. The system processes various event types:
 ```json
 {
   "status": "error",
-  "message": "Internal processing error", 
+  "message": "Internal processing error",
   "error_code": "PROCESSING_ERROR",
   "request_id": "req_123abc456def"
 }
@@ -268,7 +268,7 @@ Accept: application/json
       "response_time_ms": 250
     },
     "configuration": {
-      "status": "healthy", 
+      "status": "healthy",
       "developers_count": 5,
       "projects_count": 2,
       "sheets_configured": 2
@@ -293,7 +293,7 @@ Accept: application/json
 {
   "status": "degraded",
   "timestamp": "2023-12-01T10:00:00Z",
-  "version": "1.0.0", 
+  "version": "1.0.0",
   "services": {
     "google_sheets": {
       "status": "slow",
@@ -313,7 +313,7 @@ Accept: application/json
   "services": {
     "google_sheets": {
       "status": "error",
-      "last_check": "2023-12-01T09:55:00Z", 
+      "last_check": "2023-12-01T09:55:00Z",
       "error": "Authentication failed"
     }
   }
@@ -417,7 +417,7 @@ Authorization: Bearer your_api_token (optional)
       "event_type": "jira_webhook",
       "error_type": "ValidationError",
       "message": "Missing required field: issue.assignee",
-      "payload_id": "webhook_456def", 
+      "payload_id": "webhook_456def",
       "developer": "unknown",
       "project": "PROJ",
       "retry_count": 0,
@@ -466,7 +466,7 @@ Authorization: Bearer your_admin_token
       "last_updated": "2023-12-01T09:00:00Z"
     },
     "developer_metrics_matrix": {
-      "sheet_id": "1Bxi***masked***upms", 
+      "sheet_id": "1Bxi***masked***upms",
       "configured": true,
       "accessible": true,
       "last_updated": "2023-12-01T08:30:00Z"
@@ -602,8 +602,8 @@ import hashlib
 from typing import Optional
 
 def verify_webhook_signature(
-    payload: str, 
-    signature: str, 
+    payload: str,
+    signature: str,
     secret: str,
     algorithm: str = 'sha256'
 ) -> bool:
@@ -613,7 +613,7 @@ def verify_webhook_signature(
         payload.encode(),
         getattr(hashlib, algorithm)
     ).hexdigest()
-    
+
     return hmac.compare_digest(signature, expected)
 
 def extract_signature(header_value: str) -> Optional[str]:
@@ -640,18 +640,18 @@ class MetricsAPIClient:
         self.base_url = base_url.rstrip('/')
         self.api_token = api_token
         self.session = requests.Session()
-        
+
         if api_token:
             self.session.headers.update({
                 'Authorization': f'Bearer {api_token}'
             })
-    
-    def send_webhook(self, endpoint: str, payload: Dict[str, Any], 
+
+    def send_webhook(self, endpoint: str, payload: Dict[str, Any],
                     secret: str = None) -> Dict[str, Any]:
         """Send webhook payload to metrics API."""
         url = f"{self.base_url}/metrics/{endpoint}"
         headers = {'Content-Type': 'application/json'}
-        
+
         if secret:
             # Calculate signature
             payload_str = json.dumps(payload, separators=(',', ':'))
@@ -660,23 +660,23 @@ class MetricsAPIClient:
                 payload_str.encode(),
                 hashlib.sha256
             ).hexdigest()
-            
+
             if endpoint == 'jira':
                 headers['X-Webhook-Secret'] = signature
             elif endpoint == 'gitlab':
                 headers['X-Gitlab-Token'] = secret
-        
+
         response = self.session.post(url, json=payload, headers=headers)
         response.raise_for_status()
         return response.json()
-    
+
     def get_health(self) -> Dict[str, Any]:
         """Get system health status."""
         response = self.session.get(f"{self.base_url}/metrics/health")
         response.raise_for_status()
         return response.json()
-    
-    def get_stats(self, period: str = 'today', 
+
+    def get_stats(self, period: str = 'today',
                   developer: str = None, project: str = None) -> Dict[str, Any]:
         """Get metrics statistics."""
         params = {'period': period}
@@ -684,9 +684,9 @@ class MetricsAPIClient:
             params['developer'] = developer
         if project:
             params['project'] = project
-            
+
         response = self.session.get(
-            f"{self.base_url}/metrics/stats", 
+            f"{self.base_url}/metrics/stats",
             params=params
         )
         response.raise_for_status()
@@ -724,7 +724,7 @@ class MetricsAPIClient {
     constructor(baseUrl, apiToken = null) {
         this.baseUrl = baseUrl.replace(/\/+$/, '');
         this.apiToken = apiToken;
-        
+
         this.client = axios.create({
             baseURL: this.baseUrl,
             headers: apiToken ? {
@@ -732,34 +732,34 @@ class MetricsAPIClient {
             } : {}
         });
     }
-    
+
     async sendWebhook(endpoint, payload, secret = null) {
         const url = `/metrics/${endpoint}`;
         const headers = { 'Content-Type': 'application/json' };
-        
+
         if (secret) {
             const payloadStr = JSON.stringify(payload);
             const signature = crypto
                 .createHmac('sha256', secret)
                 .update(payloadStr)
                 .digest('hex');
-            
+
             if (endpoint === 'jira') {
                 headers['X-Webhook-Secret'] = signature;
             } else if (endpoint === 'gitlab') {
                 headers['X-Gitlab-Token'] = secret;
             }
         }
-        
+
         const response = await this.client.post(url, payload, { headers });
         return response.data;
     }
-    
+
     async getHealth() {
         const response = await this.client.get('/metrics/health');
         return response.data;
     }
-    
+
     async getStats(period = 'today', filters = {}) {
         const params = { period, ...filters };
         const response = await this.client.get('/metrics/stats', { params });

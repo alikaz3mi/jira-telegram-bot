@@ -67,13 +67,13 @@ graph TD
    Jira -->|Returns created issues| UseCase
    UseCase -->|Returns results| Handler
    Handler -->|Displays results| User
-   
+
    %% Styling with better fonts and improved colors
    classDef framework fill:#4d668f,stroke:#8ba3d2,color:#ffffff,font-family:Arial,font-weight:bold;
    classDef usecase fill:#5c8a5c,stroke:#9ed49e,color:#ffffff,font-family:Arial,font-weight:bold;
    classDef external fill:#a85656,stroke:#e6a0a0,color:#ffffff,font-family:Arial,font-weight:bold;
    classDef ai fill:#b38c3e,stroke:#ffcc80,color:#ffffff,font-family:Arial,font-weight:bold;
-   
+
    class User,TelegramBot,Handler framework;
    class UseCase usecase;
    class Jira external;
@@ -98,14 +98,14 @@ sequenceDiagram
     User->>Handler: Select epic
     Handler->>User: Ask for task type
     User->>Handler: Select task type (story/subtask)
-    
+
     alt Task type is subtask
         Handler->>User: Display parent story selection
         User->>Handler: Select parent story
     end
-    
+
     Handler->>User: Request description
-    
+
     alt Voice message
         User->>Handler: Send voice message
         Handler->>AI: Transcribe voice
@@ -118,13 +118,13 @@ sequenceDiagram
 
     Handler->>User: Show confirmation prompt
     User->>Handler: Confirm task creation
-    
+
     alt Create story
         Handler->>UseCase: create_structured_user_story()
         UseCase->>AI: Generate user story
         AI->>UseCase: Return structured user story
         UseCase->>Jira: Create user story
-        
+
         Handler->>UseCase: create_tasks(type="story")
         UseCase->>AI: Decompose story
         AI->>UseCase: Return tasks data
@@ -136,7 +136,7 @@ sequenceDiagram
         AI->>UseCase: Return subtask data
         UseCase->>Jira: Create subtasks
     end
-    
+
     Jira->>UseCase: Return created issues
     UseCase->>Handler: Return created issues
     Handler->>User: Display created tasks

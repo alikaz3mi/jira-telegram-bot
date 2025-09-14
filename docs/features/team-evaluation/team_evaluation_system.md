@@ -132,7 +132,7 @@ The composite quality score (درصد حسن انجام کار) combines four we
 
 Formula:
 ```
-Score = (0.35 × DeadlineScore) + (0.25 × WorklogScore) + 
+Score = (0.35 × DeadlineScore) + (0.25 × WorklogScore) +
         (0.20 × HighPriorityScore) + (0.20 × DefectScore)
 ```
 
