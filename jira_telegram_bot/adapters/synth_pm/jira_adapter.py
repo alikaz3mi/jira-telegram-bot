@@ -250,6 +250,9 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             # Handle assignee changes and task type conversions
             await self._handle_assignee_changes(feature, issue, assignees)
 
+            # Update subtask deadlines if deadline changed
+            await self._update_subtask_deadlines(issue.key, feature)
+
             return True
 
         except Exception as e:
@@ -356,26 +359,53 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 ]
 
         # Handle sprint updates
-        if feature.sprint and hasattr(
-            issue.fields,
-            self.jira_repository.jira_sprint_id,
-        ):
+        if hasattr(issue.fields, self.jira_repository.jira_sprint_id):
             current_sprint = getattr(
                 issue.fields,
                 self.jira_repository.jira_sprint_id,
                 None,
             )
-            if current_sprint != feature.sprint:
+            if feature.sprint and current_sprint != feature.sprint:
                 # Get or create the sprint and update the field
                 sprint_id = self._get_or_create_sprint(feature.sprint)
                 if sprint_id:
                     update_fields[self.jira_repository.jira_sprint_id] = sprint_id
+            elif feature.sprint is None and current_sprint is not None:
+                # Remove from sprint
+                update_fields[self.jira_repository.jira_sprint_id] = None
 
         # Handle component updates based on departments
         components = SynthPMComponentService.map_components(feature)
         current_components = [comp.name for comp in issue.fields.components]
         if set(current_components) != set(components):
             update_fields["components"] = [{"name": comp} for comp in components]
+
+        # Handle due date updates
+        if feature.deadline:
+            feature_duedate = feature.deadline.strftime("%Y-%m-%d")
+            if feature_duedate != issue.fields.duedate:
+                update_fields["duedate"] = feature_duedate
+
+        # Handle target start and end dates
+        if hasattr(self.jira_repository, "jira_target_start_id"):
+            current_target_start = getattr(
+                issue.fields,
+                self.jira_repository.jira_target_start_id,
+                None,
+            )
+            if feature.deadline:  # Using deadline as target_end for now
+                feature_target_end = feature.deadline.strftime("%Y-%m-%d")
+                if (
+                    hasattr(self.jira_repository, "jira_target_end_id")
+                    and feature_target_end != getattr(
+                        issue.fields,
+                        self.jira_repository.jira_target_end_id,
+                        None,
+                    )
+                ):
+                    update_fields[
+                        self.jira_repository.jira_target_end_id
+                    ] = feature_target_end
 
         # Handle time estimates for tasks
         if feature.total_hours and issue.fields.issuetype.name == "Task":
@@ -394,10 +424,42 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 original_estimate_seconds / 3600 if original_estimate_seconds else 0
             )
             if feature.total_hours != original_estimate_hours:
+                # Get logged time to calculate remaining estimate
+                logged_time_seconds = (
+                    self.jira_repository.get_issue_spent_time_in_seconds(issue.key)
+                    if hasattr(self.jira_repository, "get_issue_spent_time_in_seconds")
+                    else 0
+                )
+                logged_time_hours = logged_time_seconds / 3600
+                remaining_estimate_hours = max(0, feature.total_hours - logged_time_hours)
+                
                 update_fields["timetracking"] = {
                     "originalEstimate": f"{feature.total_hours}h",
-                    "remainingEstimate": f"{feature.total_hours}h",
+                    "remainingEstimate": f"{remaining_estimate_hours}h",
                 }
+
+        # Handle involved_people labels
+        if feature.involved_people:
+            current_labels = [label for label in issue.fields.labels]
+            involved_label = feature.involved_people.replace(" ", "-")
+            
+            # Check if involved_people label needs updating
+            needs_label_update = False
+            new_labels = current_labels[:]
+            
+            # Remove any existing involved_people labels and add the new one
+            for i, label in enumerate(current_labels):
+                if any(name in label for name in feature.involved_people.split(" ")):
+                    new_labels.pop(i)
+                    needs_label_update = True
+                    break
+            
+            if involved_label not in new_labels:
+                new_labels.append(involved_label)
+                needs_label_update = True
+            
+            if needs_label_update:
+                update_fields["labels"] = new_labels
 
         return update_fields
 
@@ -616,6 +678,11 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
 
             new_assignees = set(assignees)
 
+            # If assignees haven't changed, update existing subtasks
+            if current_assignees == new_assignees and current_subtasks:
+                await self._update_subtask_deadlines(issue_key, feature)
+                return
+
             # Remove subtasks for assignees no longer needed
             assignees_to_remove = current_assignees - new_assignees
             for subtask in current_subtasks:
@@ -659,3 +726,109 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             LOGGER.error(
                 f"Failed to update assignees and subtasks for {issue_key}: {e}",
             )
+
+    async def _update_subtask_deadlines(
+        self,
+        issue_key: str,
+        feature: SynthPMFeatureEntity,
+    ):
+        """Update deadlines and related fields for all subtasks of the given issue.
+
+        Args:
+            issue_key: Parent issue key
+            feature: Feature entity containing deadline information
+        """
+        try:
+            issue = self.jira_repository.jira.issue(issue_key, expand="subtasks")
+            current_subtasks = getattr(issue.fields, "subtasks", [])
+
+            for subtask in current_subtasks:
+                try:
+                    subtask_obj = self.jira_repository.jira.issue(subtask.key)
+                    update_fields = {}
+
+                    # Update deadline (due date)
+                    if feature.deadline:
+                        feature_duedate = feature.deadline.strftime("%Y-%m-%d")
+                        if subtask_obj.fields.duedate != feature_duedate:
+                            update_fields["duedate"] = feature_duedate
+
+                    # Update target dates if available
+                    if hasattr(self.jira_repository, "jira_target_start_id"):
+                        target_start_field = self.jira_repository.jira_target_start_id
+                        current_target_start = getattr(
+                            subtask_obj.fields,
+                            target_start_field,
+                            None,
+                        )
+                        # Set target_start from deadline for now (can be enhanced)
+                        if feature.deadline:
+                            feature_target_start = feature.deadline.strftime("%Y-%m-%d")
+                            if current_target_start != feature_target_start:
+                                update_fields[target_start_field] = feature_target_start
+
+                    if hasattr(self.jira_repository, "jira_target_end_id"):
+                        target_end_field = self.jira_repository.jira_target_end_id
+                        current_target_end = getattr(
+                            subtask_obj.fields,
+                            target_end_field,
+                            None,
+                        )
+                        if feature.deadline:
+                            feature_target_end = feature.deadline.strftime("%Y-%m-%d")
+                            if current_target_end != feature_target_end:
+                                update_fields[target_end_field] = feature_target_end
+
+                    # Update summary to match parent
+                    if (
+                        feature.task_title
+                        and subtask_obj.fields.summary != feature.task_title
+                    ):
+                        update_fields["summary"] = feature.task_title
+
+                    # Update time estimates if needed
+                    if feature.total_hours and subtask_obj.fields.assignee:
+                        assignee = subtask_obj.fields.assignee.name
+                        # Calculate story points per assignee
+                        # This is a simplified version - could be enhanced with component mapping
+                        timetracking = getattr(subtask_obj.fields, "timetracking", None)
+                        current_estimate_seconds = (
+                            getattr(timetracking, "originalEstimateSeconds", 0)
+                            if timetracking
+                            else 0
+                        )
+                        current_estimate_hours = current_estimate_seconds / 3600
+
+                        # For now, divide total hours equally among assignees
+                        # This could be enhanced with proper story point calculation
+                        parent_issue = self.jira_repository.jira.issue(issue_key, expand="subtasks")
+                        total_assignees = len(getattr(parent_issue.fields, "subtasks", []))
+                        if total_assignees > 0:
+                            assignee_hours = feature.total_hours / total_assignees
+                            if abs(current_estimate_hours - assignee_hours) > 0.01:
+                                # Get logged time
+                                logged_time_seconds = (
+                                    self.jira_repository.get_issue_spent_time_in_seconds(subtask.key)
+                                    if hasattr(self.jira_repository, "get_issue_spent_time_in_seconds")
+                                    else 0
+                                )
+                                logged_time_hours = logged_time_seconds / 3600
+                                remaining_hours = max(0, assignee_hours - logged_time_hours)
+
+                                update_fields["timetracking"] = {
+                                    "originalEstimate": f"{assignee_hours}h",
+                                    "remainingEstimate": f"{remaining_hours}h",
+                                }
+
+                    # Apply updates if any
+                    if update_fields:
+                        subtask_obj.update(fields=update_fields)
+                        LOGGER.info(
+                            f"Updated subtask {subtask.key} with fields: {list(update_fields.keys())}"
+                        )
+
+                except Exception as e:
+                    LOGGER.error(f"Failed to update subtask {subtask.key}: {e}")
+
+        except Exception as e:
+            LOGGER.error(f"Error updating subtask deadlines for {issue_key}: {e}")
