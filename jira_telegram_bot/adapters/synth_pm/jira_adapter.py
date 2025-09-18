@@ -244,7 +244,7 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             if update_fields:
                 issue.update(fields=update_fields)
                 LOGGER.info(
-                    f"Updated Developer Board task {feature.developer_board_issue_key}",
+                    f"Updated Developer Board task {feature.developer_board_issue_key} with {update_fields.keys()}",
                 )
 
             # Handle assignee changes and task type conversions
@@ -396,7 +396,8 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             if feature.deadline:  # Using deadline as target_end for now
                 feature_target_end = feature.deadline.strftime("%Y-%m-%d")
                 if hasattr(
-                    self.jira_repository, "jira_target_end_id"
+                    self.jira_repository,
+                    "jira_target_end_id",
                 ) and feature_target_end != getattr(
                     issue.fields,
                     self.jira_repository.jira_target_end_id,
@@ -423,21 +424,41 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 original_estimate_seconds / 3600 if original_estimate_seconds else 0
             )
             if feature.total_hours != original_estimate_hours:
-                # Get logged time to calculate remaining estimate
+                # IMPORTANT: Get logged time to preserve worklog data
+                # This ensures we don't lose any existing work hours when updating estimates
                 logged_time_seconds = (
                     self.jira_repository.get_issue_spent_time_in_seconds(issue.key)
                     if hasattr(self.jira_repository, "get_issue_spent_time_in_seconds")
                     else 0
                 )
                 logged_time_hours = logged_time_seconds / 3600
+
+                # Calculate remaining estimate while preserving logged work
+                # If logged time exceeds new estimate, remaining should be 0
                 remaining_estimate_hours = max(
-                    0, feature.total_hours - logged_time_hours
+                    0,
+                    feature.total_hours - logged_time_hours,
                 )
+
+                # Warn if logged time exceeds new estimate
+                if logged_time_hours > feature.total_hours:
+                    LOGGER.warning(
+                        f"Logged time ({logged_time_hours}h) exceeds new estimate "
+                        f"({feature.total_hours}h) for {issue.key}. "
+                        "Remaining estimate will be set to 0.",
+                    )
 
                 update_fields["timetracking"] = {
                     "originalEstimate": f"{feature.total_hours}h",
                     "remainingEstimate": f"{remaining_estimate_hours}h",
                 }
+
+                LOGGER.debug(
+                    f"Updating time tracking for {issue.key}: "
+                    f"original={feature.total_hours}h, "
+                    f"remaining={remaining_estimate_hours}h, "
+                    f"logged={logged_time_hours}h",
+                )
 
         # Handle involved_people labels
         if feature.involved_people:
@@ -514,10 +535,17 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
         Returns:
             Sprint dictionary with state, id, name if successful
         """
+        sprint_name = None
         try:
-            sprint_name = sprint_info.name if sprint_info else feature.sprint
+            sprint_name = sprint_info.sprint_id if sprint_info else feature.sprint
             if not sprint_name:
+                LOGGER.debug(
+                    f"No sprint name available - sprint_info: {sprint_info}, "
+                    f"feature.sprint: {getattr(feature, 'sprint', 'not set')}",
+                )
                 return None
+
+            LOGGER.debug(f"Attempting to get or create sprint: {sprint_name}")
 
             # First try to find existing sprint
             board_id = getattr(
@@ -525,23 +553,36 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 "JIRA_BOARD_ID",
                 None,
             )
+
+            if not board_id:
+                LOGGER.warning("No JIRA_BOARD_ID found in settings")
+                return None
+
+            LOGGER.debug(f"Using board_id: {board_id}")
+
             if board_id:
                 sprints = self.jira_repository.jira.sprints(board_id, extended=True)
                 for sprint in sprints:
                     if sprint.name == sprint_name:
+                        LOGGER.debug(
+                            f"Found existing sprint: {sprint.name} (ID: {sprint.id})",
+                        )
                         return {
                             "id": sprint.id,
                             "name": sprint.name,
                             "state": getattr(sprint, "state", "active"),
                         }
 
-            # If not found, create new sprint
-            if board_id:
+                LOGGER.debug(f"Sprint {sprint_name} not found, creating new one")
+                # If not found, create new sprint
                 new_sprint = self.jira_repository.jira.create_sprint(
                     name=sprint_name,
                     board_id=board_id,
                     startDate=None,
                     endDate=None,
+                )
+                LOGGER.info(
+                    f"Created new sprint: {new_sprint.name} (ID: {new_sprint.id})",
                 )
                 return {
                     "id": new_sprint.id,
@@ -550,7 +591,12 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 }
 
         except Exception as e:
-            LOGGER.warning(f"Failed to get or create sprint {sprint_name}: {e}")
+            sprint_identifier = sprint_name or "unknown sprint"
+            LOGGER.error(f"Failed to get or create sprint {sprint_identifier}: {e}")
+            # Add more detailed error information
+            LOGGER.error(
+                f"Sprint info: {sprint_info}, Feature sprint: {getattr(feature, 'sprint', 'not set')}",
+            )
 
         return None
 
@@ -735,6 +781,12 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
     ):
         """Update deadlines and related fields for all subtasks of the given issue.
 
+        IMPORTANT: This method preserves existing worklogs by:
+        1. Reading current logged time before updating time estimates
+        2. Calculating remaining estimate as: max(0, new_estimate - logged_time)
+        3. Only updating fields that actually need changes
+        4. Using JIRA's standard update API which doesn't affect worklogs
+
         Args:
             issue_key: Parent issue key
             feature: Feature entity containing deadline information
@@ -803,18 +855,20 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                         # For now, divide total hours equally among assignees
                         # This could be enhanced with proper story point calculation
                         parent_issue = self.jira_repository.jira.issue(
-                            issue_key, expand="subtasks"
+                            issue_key,
+                            expand="subtasks",
                         )
                         total_assignees = len(
-                            getattr(parent_issue.fields, "subtasks", [])
+                            getattr(parent_issue.fields, "subtasks", []),
                         )
                         if total_assignees > 0:
                             assignee_hours = feature.total_hours / total_assignees
                             if abs(current_estimate_hours - assignee_hours) > 0.01:
-                                # Get logged time
+                                # IMPORTANT: Get logged time to preserve worklog data
+                                # This ensures we don't lose any existing work hours
                                 logged_time_seconds = (
                                     self.jira_repository.get_issue_spent_time_in_seconds(
-                                        subtask.key
+                                        subtask.key,
                                     )
                                     if hasattr(
                                         self.jira_repository,
@@ -823,14 +877,34 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                                     else 0
                                 )
                                 logged_time_hours = logged_time_seconds / 3600
+
+                                # Calculate remaining estimate while preserving logged work
+                                # If logged time exceeds new estimate, remaining should be 0
                                 remaining_hours = max(
-                                    0, assignee_hours - logged_time_hours
+                                    0,
+                                    assignee_hours - logged_time_hours,
                                 )
 
-                                update_fields["timetracking"] = {
-                                    "originalEstimate": f"{assignee_hours}h",
-                                    "remainingEstimate": f"{remaining_hours}h",
-                                }
+                                # Warn if logged time exceeds new estimate
+                                if logged_time_hours > assignee_hours:
+                                    LOGGER.warning(
+                                        f"Logged time ({logged_time_hours}h) exceeds new estimate "
+                                        f"({assignee_hours}h) for subtask {subtask.key}. "
+                                        "Remaining estimate will be set to 0.",
+                                    )
+
+                                # Only update time tracking if we have valid estimates
+                                if assignee_hours > 0:
+                                    update_fields["timetracking"] = {
+                                        "originalEstimate": f"{assignee_hours}h",
+                                        "remainingEstimate": f"{remaining_hours}h",
+                                    }
+                                    LOGGER.debug(
+                                        f"Updating time tracking for {subtask.key}: "
+                                        f"original={assignee_hours}h, "
+                                        f"remaining={remaining_hours}h, "
+                                        f"logged={logged_time_hours}h",
+                                    )
 
                     # Apply updates if any
                     if update_fields:

@@ -1,14 +1,20 @@
 """Integration tests for project status API."""
 
-import json
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch, MagicMock
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from jira_telegram_bot import app_container
-from jira_telegram_bot.entities.api_schemas.project_status import ProjectDetailResponse, ProjectSummary, TaskStatusCount
-from jira_telegram_bot.frameworks.api.entry_point import app
+from jira_telegram_bot.entities.api_schemas.project_status import (
+    ProjectDetailResponse, 
+    ProjectListResponse,
+    ProjectStatusUpdateRequest,
+    ProjectStatusUpdateResponse,
+    ProjectSummary, 
+    TaskStatusCount
+)
+from jira_telegram_bot.frameworks.api.endpoints.project_status import ProjectStatusEndpoint
 from jira_telegram_bot.use_cases.project_status.get_project_status_use_case import GetProjectStatusUseCase
 from jira_telegram_bot.use_cases.project_status.update_project_tracking_use_case import UpdateProjectTrackingUseCase
 
@@ -19,11 +25,26 @@ class TestProjectStatusAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test fixtures before running tests."""
+        # Create a test FastAPI app
+        cls.app = FastAPI()
+        
+        # Create mock use cases
+        cls.get_project_status_use_case = MagicMock(spec=GetProjectStatusUseCase)
+        cls.update_project_tracking_use_case = MagicMock(spec=UpdateProjectTrackingUseCase)
+        
+        # Create project status endpoint and add its router
+        project_status_endpoint = ProjectStatusEndpoint(
+            get_project_status_use_case=cls.get_project_status_use_case,
+            update_project_tracking_use_case=cls.update_project_tracking_use_case
+        )
+        
+        # Add the router with api/v1 prefix to match test expectations
+        cls.app.include_router(project_status_endpoint.create_rest_api_route(), prefix="/api/v1")
+        
         # Create a test client
-        cls.client = TestClient(app)
+        cls.client = TestClient(cls.app)
     
-    @patch.object(GetProjectStatusUseCase, 'get_project_list')
-    def test_get_projects_endpoint(self, mock_get_project_list):
+    def test_get_projects_endpoint(self):
         """Test the GET /projects/ endpoint."""
         # Arrange
         project_summaries = [
@@ -49,7 +70,7 @@ class TestProjectStatusAPI(unittest.TestCase):
             )
         ]
         
-        mock_get_project_list.return_value = project_summaries
+        self.get_project_status_use_case.get_project_list.return_value = project_summaries
         
         # Act
         response = self.client.get("/api/v1/projects/")
@@ -63,8 +84,7 @@ class TestProjectStatusAPI(unittest.TestCase):
         self.assertEqual(data["projects"][0]["key"], "TEST")
         self.assertEqual(data["projects"][1]["key"], "DEMO")
     
-    @patch.object(GetProjectStatusUseCase, 'get_project_detail')
-    def test_get_project_detail_endpoint(self, mock_get_project_detail):
+    def test_get_project_detail_endpoint(self):
         """Test the GET /projects/{project_key} endpoint."""
         # Arrange
         project_summary = ProjectSummary(
@@ -84,7 +104,7 @@ class TestProjectStatusAPI(unittest.TestCase):
             upcoming_deadlines=[{"key": "TEST-1", "summary": "Task 1", "dueDate": "2025-05-20"}]
         )
         
-        mock_get_project_detail.return_value = project_detail
+        self.get_project_status_use_case.get_project_detail.return_value = project_detail
         
         # Act
         response = self.client.get("/api/v1/projects/TEST")
@@ -100,11 +120,10 @@ class TestProjectStatusAPI(unittest.TestCase):
         self.assertIn("upcoming_deadlines", data)
         self.assertEqual(len(data["upcoming_deadlines"]), 1)
     
-    @patch.object(GetProjectStatusUseCase, 'get_project_detail')
-    def test_get_project_detail_not_found(self, mock_get_project_detail):
+    def test_get_project_detail_not_found(self):
         """Test the GET /projects/{project_key} endpoint for non-existent project."""
         # Arrange
-        mock_get_project_detail.return_value = None
+        self.get_project_status_use_case.get_project_detail.return_value = None
         
         # Act
         response = self.client.get("/api/v1/projects/NOTFOUND")
@@ -115,11 +134,10 @@ class TestProjectStatusAPI(unittest.TestCase):
         self.assertIn("detail", data)
         self.assertIn("NOT FOUND", data["detail"].upper())
     
-    @patch.object(UpdateProjectTrackingUseCase, 'update_tracking')
-    def test_update_project_tracking_endpoint(self, mock_update_tracking):
+    def test_update_project_tracking_endpoint(self):
         """Test the PUT /projects/{project_key}/tracking endpoint."""
         # Arrange
-        mock_update_tracking.return_value = {
+        self.update_project_tracking_use_case.update_tracking.return_value = {
             "tracking_enabled": True,
             "notification_channel": "123456789"
         }
@@ -138,17 +156,16 @@ class TestProjectStatusAPI(unittest.TestCase):
         self.assertEqual(data["tracking_enabled"], True)
         self.assertEqual(data["notification_channel"], "123456789")
         
-        mock_update_tracking.assert_called_once_with(
+        self.update_project_tracking_use_case.update_tracking.assert_called_once_with(
             project_key="TEST", 
             track=True,
             notification_channel="123456789"
         )
     
-    @patch.object(UpdateProjectTrackingUseCase, 'update_tracking')
-    def test_update_project_tracking_error(self, mock_update_tracking):
+    def test_update_project_tracking_error(self):
         """Test the PUT /projects/{project_key}/tracking endpoint with error."""
         # Arrange
-        mock_update_tracking.side_effect = ValueError("Project not found")
+        self.update_project_tracking_use_case.update_tracking.side_effect = ValueError("Project not found")
         
         # Act
         response = self.client.put(

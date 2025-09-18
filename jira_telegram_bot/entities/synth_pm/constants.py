@@ -11,7 +11,7 @@ class SynthPMStatus(Enum):
     IN_DESIGN_PHASE = "۴"  # در مرحله طراحی (UI/UX tasks)
     IN_TECHNICAL_TESTING = "۷"  # در مرحله تست فنی
     READY_FOR_DELIVERY = "۸"  # آماده تحویل
-    
+
     # Legacy statuses
     TODO = "۱"
     IN_PROGRESS_LEGACY = "۲"
@@ -20,13 +20,13 @@ class SynthPMStatus(Enum):
 
 class JiraStatus(Enum):
     """Jira status constants."""
-    
+
     TO_DO = "To Do"
     SELECTED_FOR_DEVELOPMENT = "Selected for Development"
     IN_PROGRESS = "In Progress"
     REVIEW = "Review"
     DONE = "Done"
-    
+
     # Legacy statuses
     IN_REVIEW = "In Review"
     TESTING = "Testing"
@@ -35,7 +35,7 @@ class JiraStatus(Enum):
 
 class JiraPriority(Enum):
     """Jira priority constants."""
-    
+
     HIGHEST = "Highest"
     HIGH = "High"
     MEDIUM = "Medium"
@@ -44,20 +44,20 @@ class JiraPriority(Enum):
 
 class TelegramIcons(Enum):
     """Telegram message icons."""
-    
+
     # Priority icons
     PRIORITY_HIGHEST = "🔴"
     PRIORITY_HIGH = "🟠"
     PRIORITY_MEDIUM = "🟡"
     PRIORITY_LOW = "🟢"
-    
+
     # Status icons
     STATUS_READY_FOR_TECH = "📋"  # آماده پیاده سازی فنی
     STATUS_IN_IMPLEMENTATION = "⚡"  # در حال پیاده سازی
     STATUS_IN_DESIGN = "🎨"  # در مرحله طراحی
     STATUS_IN_TESTING = "🔍"  # در مرحله تست فنی
     STATUS_READY_FOR_DELIVERY = "✅"  # آماده تحویل
-    
+
     # Component icons
     COMPONENT_AI = "🤖"
     COMPONENT_BACKEND = "⚙️"
@@ -68,7 +68,7 @@ class TelegramIcons(Enum):
 
 class StatusDescriptions(Enum):
     """Human readable status descriptions."""
-    
+
     INITIATION_AND_PRIORITIZATION = "۱. ثبت و اولویت بندی"
     ANALYSIS_AND_RFP = "۲. تحلیل مسئله و RFP"
     USER_STORY_PREPARATION = "۳. آماده سازی یوزر استوری"
@@ -84,16 +84,27 @@ class StatusDescriptions(Enum):
 # Status mapping dictionaries
 GOOGLE_SHEET_TO_JIRA_STATUS = {
     # Sheet -> Jira mapping (based on actual Jira workflow)
-    "۱": "BACKLOG",  # ۱. ثبت و اولویت بندی
-    "۲": "SELECTED FOR DEVELOPMENT",  # ۲. تحلیل مسئله و RFP
-    "۳": "TO DO",  # ۳. آماده سازی یوزر استوری
-    "۴": "IN REVIEW",  # ۴. در مرحله طراحی
-    "۵": "REOPENED",  # ۵. پیاده سازی فنی
-    "۶": "IN PROGRESS",  # ۶. در حال پیاده سازی
-    "۷": "REVIEW",  # ۷. تست فنی
-    "۸": "RESOLVED",  # ۸. آماده تحویل
-    "۹": "DONE",  # ۹. مستندسازی فنی
-    "۱۰": "CLOSED",  # ۱۰. تکمیل شده
+    "۱. ثبت و اولویت بندی": "BACKLOG",
+    "۲. تحلیل مسئله و RFP": "SELECTED FOR DEVELOPMENT",
+    "۳. آماده سازی یوزر استوری": "TO DO",
+    "۴. در مرحله طراحی": "IN REVIEW",
+    "۵. آماده پیاده سازی فنی": "REOPENED",
+    "۶. در حال پیاده سازی": "IN PROGRESS",
+    "۷. تست فنی": "REVIEW",
+    "۸. آماده تحویل": "RESOLVED",
+    "۹. مستندسازی فنی": "DONE",
+    "۱۰. تکمیل شده": "CLOSED",
+    # Legacy number-only mappings for backward compatibility
+    "۱": "BACKLOG",
+    "۲": "SELECTED FOR DEVELOPMENT",
+    "۳": "TO DO",
+    "۴": "IN REVIEW",
+    "۵": "REOPENED",
+    "۶": "IN PROGRESS",
+    "۷": "REVIEW",
+    "۸": "RESOLVED",
+    "۹": "DONE",
+    "۱۰": "CLOSED",
 }
 
 JIRA_TO_GOOGLE_SHEET_STATUS = {

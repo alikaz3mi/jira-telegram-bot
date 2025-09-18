@@ -7,7 +7,6 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from jira_telegram_bot import app_container
-from jira_telegram_bot.frameworks.api.entry_point import app
 
 
 class TestWebhookEndpoints(unittest.TestCase):

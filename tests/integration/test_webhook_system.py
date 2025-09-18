@@ -4,11 +4,11 @@ import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
+from fastapi import Request, Response
 from fastapi.testclient import TestClient
 
 from jira_telegram_bot.app_container import get_container
-from jira_telegram_bot.frameworks.api.entry_point import app
 
 
 class TestWebhookSystem(unittest.TestCase):
@@ -26,8 +26,7 @@ class TestWebhookSystem(unittest.TestCase):
         cls.telegram_webhook_use_case_mock.process_update = AsyncMock(return_value={"status": "success"})
         
         # Create a mocked app
-        from fastapi import FastAPI, APIRouter
-        from fastapi import Request, Response
+
         
         # Create a test app with the endpoints
         cls.app = FastAPI()

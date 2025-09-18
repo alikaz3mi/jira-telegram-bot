@@ -6,6 +6,7 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
+from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.constants import GOOGLE_SHEET_TO_JIRA_STATUS
 from jira_telegram_bot.entities.synth_pm.constants import JIRA_TO_GOOGLE_SHEET_STATUS
 from jira_telegram_bot.entities.synth_pm.constants import PRIORITY_MAPPING

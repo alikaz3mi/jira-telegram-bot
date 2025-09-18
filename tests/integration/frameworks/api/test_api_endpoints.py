@@ -5,11 +5,13 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from lagom.integrations.fast_api import FastApiIntegration
 
 from jira_telegram_bot.entities.api_schemas import WebhookResponse
-from jira_telegram_bot.frameworks.api.entry_point import app
+from jira_telegram_bot.adapters.controllers.jira_webhook_controller import JiraWebhookController
+from jira_telegram_bot.frameworks.api.endpoints.jira_webhook import JiraWebhookEndpoint
+from jira_telegram_bot.frameworks.api.endpoints.telegram_webhook import TelegramWebhookEndpoint
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase, TelegramWebhookUseCase
 
 
@@ -18,8 +20,8 @@ class TestApiEndpoints(unittest.TestCase):
     
     def setUp(self):
         """Set up the test client and mocked dependencies."""
-        # Create a client for testing
-        self.client = TestClient(app)
+        # Create a test FastAPI app
+        self.app = FastAPI()
         
         # Mock the use cases
         self.jira_webhook_use_case = AsyncMock(spec=JiraWebhookUseCase)
@@ -36,32 +38,26 @@ class TestApiEndpoints(unittest.TestCase):
             message="Telegram update processed"
         )
         
-        # Set up the patches
-        self.patches = []
+        # Create mock controllers for Jira webhook
+        self.jira_controller = MagicMock(spec=JiraWebhookController)
+        self.jira_controller.process_webhook = AsyncMock(return_value=WebhookResponse(
+            status="success", message="Jira webhook processed"
+        ))
         
-        # Mock FastApiIntegration.depends for JiraWebhookUseCase
-        self.patches.append(
-            patch("lagom.integrations.fast_api.FastApiIntegration.depends", 
-                  side_effect=self._mock_depends)
-        )
+        # Create webhook endpoints
+        jira_webhook_endpoint = JiraWebhookEndpoint(jira_webhook_controller=self.jira_controller)
+        telegram_webhook_endpoint = TelegramWebhookEndpoint(telegram_webhook_use_case=self.telegram_webhook_use_case)
         
-        # Start all patches
-        for patcher in self.patches:
-            patcher.start()
+        # Add the routers with api/v1 prefix to match test expectations
+        self.app.include_router(jira_webhook_endpoint.create_rest_api_route(), prefix="/api/v1")
+        self.app.include_router(telegram_webhook_endpoint.create_rest_api_route(), prefix="/api/v1")
+        
+        # Create a client for testing
+        self.client = TestClient(self.app)
     
     def tearDown(self):
         """Clean up test fixtures."""
-        for patcher in self.patches:
-            patcher.stop()
-    
-    def _mock_depends(self, use_case_class):
-        """Mock dependency resolution based on the requested class."""
-        if use_case_class == JiraWebhookUseCase:
-            return self.jira_webhook_use_case
-        elif use_case_class == TelegramWebhookUseCase:
-            return self.telegram_webhook_use_case
-        else:
-            return MagicMock()
+        pass
     
     def test_jira_webhook_endpoint(self):
         """Test the Jira webhook endpoint."""

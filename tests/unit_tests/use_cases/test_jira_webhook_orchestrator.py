@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 from jira_telegram_bot.entities.jira_status_constants import JiraStatusConstants
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
-from jira_telegram_bot.use_cases.handle_jira_webhook_usecase_refactored import HandleJiraWebhookUseCase
+from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
 )

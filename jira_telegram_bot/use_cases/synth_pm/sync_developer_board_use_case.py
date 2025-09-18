@@ -11,6 +11,7 @@ from jira_telegram_bot.adapters.synth_pm.google_sheets_adapter import (
     SynthPMGoogleSheetsAdapter,
 )
 from jira_telegram_bot.adapters.synth_pm.jira_adapter import SynthPMJiraAdapter
+from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
@@ -198,15 +199,27 @@ class SyncDeveloperBoardUseCase:
             # Parse sprint information from feature
             sprint_info = None
             if feature.sprint_list:
-                # Handle sprint parsing
-                # For now, use a simple approach
-                from jira_telegram_bot.entities.release_notes import SprintInfo
+                # Select best sprint from multiple sprints
+                best_sprint_string = None
+                if isinstance(feature.sprint_list, list) and feature.sprint_list:
+                    # Use application logic to find the best sprint
+                    best_sprint_string = self._select_best_sprint_from_list(
+                        feature.sprint_list,
+                    )
+                elif isinstance(feature.sprint_list, str):
+                    # Handle if it's incorrectly provided as a string
+                    best_sprint_string = feature.sprint_list
 
-                sprint_info = SprintInfo(
-                    sprint_id="1",  # Changed from int to string
-                    start_date="01-01",
-                    end_date="01-15",
-                )
+                if best_sprint_string:
+                    sprint_info = SprintInfo.parse_sprint_string(best_sprint_string)
+                    if not sprint_info:
+                        LOGGER.warning(
+                            f"Failed to parse best sprint string: {best_sprint_string}",
+                        )
+                    else:
+                        LOGGER.debug(
+                            f"Selected sprint: {best_sprint_string} from list: {feature.sprint_list}",
+                        )
 
             return await self.jira_adapter.create_developer_board_task(
                 feature,
@@ -219,3 +232,68 @@ class SyncDeveloperBoardUseCase:
                 f"Error creating developer board task for {feature.task_title}: {e}",
             )
             return None
+
+    def _select_best_sprint_from_list(self, sprint_list: List[str]) -> str:
+        """Select the best sprint from a list of sprints.
+
+        Priority:
+        1. Active sprint (if any sprint is currently active in Jira)
+        2. Closest future sprint based on dates
+        3. First sprint (fallback)
+
+        Args:
+            sprint_list: List of sprint strings
+
+        Returns:
+            Best sprint string
+        """
+        if not sprint_list:
+            return ""
+
+        if len(sprint_list) == 1:
+            return sprint_list[0]
+
+        # Parse all sprints first
+        parsed_sprints = []
+        for sprint_string in sprint_list:
+            sprint_info = SprintInfo.parse_sprint_string(sprint_string)
+            if sprint_info:
+                parsed_sprints.append((sprint_string, sprint_info))
+
+        if not parsed_sprints:
+            return sprint_list[0]  # Fallback to first
+
+        # Try to find active sprint from Jira
+        active_sprint = self._find_active_sprint(parsed_sprints)
+        if active_sprint:
+            return active_sprint
+
+        # Fallback to first sprint for now
+        # TODO: Implement date-based selection if needed
+        return parsed_sprints[0][0]
+
+    def _find_active_sprint(self, parsed_sprints: List[tuple]) -> Optional[str]:
+        """Find active sprint from Jira.
+
+        Args:
+            parsed_sprints: List of (sprint_string, sprint_info) tuples
+
+        Returns:
+            Sprint string if active sprint found, None otherwise
+        """
+        try:
+            sprints = self.jira_adapter.jira_repository.jira.sprints(
+                self.jira_adapter.developer_board_id,
+                extended=True,
+            )
+            for sprint in sprints:
+                if getattr(sprint, "state", "").lower() == "active":
+                    # Find matching sprint in our parsed list
+                    for sprint_string, sprint_info in parsed_sprints:
+                        if sprint_info.sprint_id == sprint.name:
+                            LOGGER.debug(f"Found active sprint: {sprint_string}")
+                            return sprint_string
+        except Exception as e:
+            LOGGER.debug(f"Could not fetch active sprints: {e}")
+
+        return None
