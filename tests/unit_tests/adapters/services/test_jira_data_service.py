@@ -13,7 +13,7 @@ from tests.samples.jira_report_test_factory import JiraReportTestFactory
 
 class MockJiraIssue:
     """Mock Jira issue for testing."""
-    
+
     def __init__(self, key: str = "TEST-1"):
         self.key = key
         self.fields = MockJiraFields()
@@ -21,7 +21,7 @@ class MockJiraIssue:
 
 class MockJiraFields:
     """Mock Jira issue fields for testing."""
-    
+
     def __init__(self):
         self.summary = "Test Issue Summary"
         self.description = "Test Description"
@@ -33,6 +33,8 @@ class MockJiraFields:
         self.created = "2025-06-20T10:00:00.000+0000"
         self.updated = "2025-06-27T10:00:00.000+0000"
         self.resolutiondate = None
+        self.duedate = "2025-07-01T23:59:59.000+0000"
+        self.project = MockProject("RADTHARN")
         self.components = [MockComponent("Frontend")]
         self.labels = ["urgent", "feature"]
         self.fixVersions = [MockVersion("v1.0.0")]
@@ -49,42 +51,56 @@ class MockJiraFields:
 
 class MockIssueType:
     """Mock issue type."""
+
     def __init__(self, name: str = "Story"):
         self.name = name
 
 
 class MockUser:
     """Mock user."""
+
     def __init__(self, display_name: str):
         self.displayName = display_name
 
 
 class MockPriority:
     """Mock priority."""
+
     def __init__(self, name: str = "High"):
         self.name = name
 
 
 class MockStatus:
     """Mock status."""
+
     def __init__(self, name: str = "In Progress"):
         self.name = name
 
 
 class MockComponent:
     """Mock component."""
+
     def __init__(self, name: str):
         self.name = name
 
 
 class MockVersion:
     """Mock version."""
+
     def __init__(self, name: str):
         self.name = name
 
 
+class MockProject:
+    """Mock project."""
+
+    def __init__(self, key: str):
+        self.key = key
+
+
 class MockComment:
     """Mock comment."""
+
     def __init__(self, author_name: str, body: str):
         self.author = MockUser(author_name)
         self.body = body
@@ -92,6 +108,7 @@ class MockComment:
 
 class MockCommentCollection:
     """Mock comment collection."""
+
     def __init__(self):
         self.comments = [
             MockComment("User A", "First comment"),
@@ -101,6 +118,7 @@ class MockCommentCollection:
 
 class MockTimeTracking:
     """Mock time tracking."""
+
     def __init__(self):
         self.originalEstimate = "3d"
         self.remainingEstimate = "1d"
@@ -108,6 +126,7 @@ class MockTimeTracking:
 
 class MockWorklog:
     """Mock worklog entry."""
+
     def __init__(self):
         self.id = "12345"
         self.author = MockUser("Test User")
@@ -121,6 +140,7 @@ class MockWorklog:
 
 class MockWorklogCollection:
     """Mock worklog collection."""
+
     def __init__(self):
         self.worklogs = [MockWorklog()]
 
@@ -137,7 +157,7 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         """Test successful project issues fetching."""
         project_key = "TEST"
         mock_issues = [MockJiraIssue("TEST-1"), MockJiraIssue("TEST-2")]
-        
+
         self.mock_repository.search_issues.return_value = mock_issues
 
         result = await self.service.fetch_project_issues(project_key)
@@ -146,17 +166,17 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result), 2)
         for issue in result:
             self.assertIsInstance(issue, JiraIssueDetail)
-        
+
         self.mock_repository.search_issues.assert_called()
 
     async def test_a_fetch_project_issues_pagination(self):
         """Test project issues fetching with pagination."""
         project_key = "TEST"
-        
+
         # Mock pagination: first call returns 100 issues, second returns 50
         first_batch = [MockJiraIssue(f"TEST-{i}") for i in range(1, 101)]
         second_batch = [MockJiraIssue(f"TEST-{i}") for i in range(101, 151)]
-        
+
         self.mock_repository.search_issues.side_effect = [first_batch, second_batch]
 
         result = await self.service.fetch_project_issues(project_key)
@@ -167,7 +187,7 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
     async def test_a_fetch_project_issues_no_issues(self):
         """Test project issues fetching with no issues."""
         project_key = "EMPTY"
-        
+
         self.mock_repository.search_issues.return_value = []
 
         result = await self.service.fetch_project_issues(project_key)
@@ -180,7 +200,7 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         epic_issue = MockJiraIssue("EPIC-1")
         epic_issue.fields.issuetype.name = "Epic"
         story_issue = MockJiraIssue("TEST-1")
-        
+
         self.mock_repository.search_issues.return_value = [epic_issue, story_issue]
 
         result = await self.service.fetch_project_issues(project_key)
@@ -194,7 +214,7 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         mock_issue = MockJiraIssue(issue_key)
         epic_issue = MockJiraIssue("EPIC-1")
         epic_issue.fields.summary = "Test Epic"
-        
+
         self.mock_repository.get_issue_with_expand.return_value = mock_issue
         self.mock_repository.get_issue.return_value = epic_issue
 
@@ -209,7 +229,7 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         issue_key = "TEST-1"
         mock_issue = MockJiraIssue(issue_key)
         mock_issue.fields.customfield_10100 = None
-        
+
         self.mock_repository.get_issue_with_expand.return_value = mock_issue
 
         result = await self.service.fetch_issue_details(issue_key)
@@ -222,17 +242,17 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         epic1 = MockJiraIssue("EPIC-1")
         epic1.fields.issuetype.name = "Epic"
         epic1.fields.summary = "First Epic"
-        
+
         epic2 = MockJiraIssue("EPIC-2")
         epic2.fields.issuetype.name = "Epic"
         epic2.fields.summary = "Second Epic"
-        
+
         story = MockJiraIssue("TEST-1")
-        
+
         issues = [epic1, epic2, story]
-        
+
         result = self.service._extract_epics(issues)
-        
+
         self.assertEqual(len(result), 2)
         self.assertEqual(result["EPIC-1"], "First Epic")
         self.assertEqual(result["EPIC-2"], "Second Epic")
@@ -241,9 +261,9 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         """Test comment extraction from issue."""
         mock_issue = MockJiraIssue()
         mock_issue.fields.reporter.displayName = "Test Reporter"
-        
+
         result = self.service._extract_comments(mock_issue)
-        
+
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 2)
         self.assertIn("User A: First comment", result)
@@ -253,9 +273,9 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         """Test that reporter comments are filtered out."""
         mock_issue = MockJiraIssue()
         mock_issue.fields.reporter.displayName = "User A"  # Same as comment author
-        
+
         result = self.service._extract_comments(mock_issue)
-        
+
         self.assertEqual(len(result), 1)
         self.assertIn("User B: Second comment", result)
 
@@ -263,11 +283,11 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         """Test sprint information extraction."""
         mock_issue = MockJiraIssue()
         mock_issue.fields.customfield_10104 = [
-            "com.atlassian.greenhopper.service.sprint.Sprint@123[id=1,name=Sprint 1,startDate=2025-06-01,endDate=2025-06-15]"
+            "com.atlassian.greenhopper.service.sprint.Sprint@123[id=1,name=Sprint 1,startDate=2025-06-01,endDate=2025-06-15]",
         ]
-        
+
         result = self.service._extract_sprint_info(mock_issue)
-        
+
         self.assertEqual(result["name"], "Sprint 1")
         self.assertEqual(result["count"], 1)
 
@@ -275,18 +295,18 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         """Test sprint extraction when no sprint is assigned."""
         mock_issue = MockJiraIssue()
         mock_issue.fields.customfield_10104 = None
-        
+
         result = self.service._extract_sprint_info(mock_issue)
-        
+
         self.assertEqual(result["name"], "Backlog")
         self.assertEqual(result["count"], 0)
 
     def test_extract_worklog_entries(self):
         """Test worklog entries extraction."""
         mock_issue = MockJiraIssue()
-        
+
         result = self.service._extract_worklog_entries(mock_issue)
-        
+
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].id, "12345")
         self.assertEqual(result[0].author, "Test User")
@@ -296,37 +316,37 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         """Test worklog extraction when no worklog exists."""
         mock_issue = MockJiraIssue()
         mock_issue.fields.worklog = None
-        
+
         result = self.service._extract_worklog_entries(mock_issue)
-        
+
         self.assertEqual(len(result), 0)
 
     def test_extract_linked_issues_no_links(self):
         """Test linked issues extraction when no links exist."""
         mock_issue = MockJiraIssue()
-        
+
         result = self.service._extract_linked_issues(mock_issue)
-        
+
         self.assertEqual(len(result), 0)
 
     def test_parse_datetime_valid(self):
         """Test datetime parsing with valid input."""
         date_str = "2025-06-27T10:00:00.000+0000"
-        
+
         result = self.service._parse_datetime(date_str)
-        
+
         self.assertIsNotNone(result)
 
     def test_parse_datetime_none(self):
         """Test datetime parsing with None input."""
         result = self.service._parse_datetime(None)
-        
+
         self.assertIsNone(result)
 
     def test_parse_datetime_invalid(self):
         """Test datetime parsing with invalid input."""
         result = self.service._parse_datetime("invalid-date")
-        
+
         self.assertIsNone(result)
 
 

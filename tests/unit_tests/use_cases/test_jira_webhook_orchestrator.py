@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
+from unittest.mock import patch
 
 from jira_telegram_bot.entities.jira_status_constants import JiraStatusConstants
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
-from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import HandleJiraWebhookUseCase
+from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
+    HandleJiraWebhookUseCase,
+)
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
-from jira_telegram_bot.use_cases.webhooks.jira_issue_status_manager import JiraIssueStatusManager
+from jira_telegram_bot.use_cases.webhooks.jira_issue_status_manager import (
+    JiraIssueStatusManager,
+)
 from jira_telegram_bot.use_cases.webhooks.jira_transition_permission_validator import (
     JiraTransitionPermissionValidator,
 )
@@ -43,7 +48,9 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
             jira_repository=self.mock_jira_repository,
         )
 
-    @patch('jira_telegram_bot.use_cases.handle_jira_webhook_usecase_refactored.get_mapping_by_issue_key')
+    @patch(
+        "jira_telegram_bot.use_cases.handle_jira_webhook_usecase.get_mapping_by_issue_key",
+    )
     def test_status_change_review_to_done_by_reporter_allowed(self, mock_get_mapping):
         """Test that reporter can move task from review to done."""
         # Arrange
@@ -69,8 +76,8 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
                         "field": "status",
                         "fromString": "Review",
                         "toString": "Done",
-                    }
-                ]
+                    },
+                ],
             },
         }
 
@@ -82,11 +89,19 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
 
         # Assert
         self.assertEqual(result["status"], "success")
-        self.mock_jira_repository.update_time_estimate.assert_called_once_with("TEST-123", "0h")
+        self.mock_jira_repository.update_time_estimate.assert_called_once_with(
+            "TEST-123",
+            "0h",
+        )
         self.mock_telegram_gateway.send_message.assert_called()
 
-    @patch('jira_telegram_bot.use_cases.handle_jira_webhook_usecase_refactored.get_mapping_by_issue_key')
-    def test_status_change_review_to_done_by_unauthorized_user_reverted(self, mock_get_mapping):
+    @patch(
+        "jira_telegram_bot.use_cases.handle_jira_webhook_usecase.get_mapping_by_issue_key",
+    )
+    def test_status_change_review_to_done_by_unauthorized_user_reverted(
+        self,
+        mock_get_mapping,
+    ):
         """Test that unauthorized user cannot move task from review to done."""
         # Arrange
         mock_get_mapping.return_value = {
@@ -111,8 +126,8 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
                         "field": "status",
                         "fromString": "Review",
                         "toString": "Done",
-                    }
-                ]
+                    },
+                ],
             },
         }
 
@@ -125,7 +140,10 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
 
         # Assert
         self.assertEqual(result["status"], "reverted")
-        self.mock_jira_repository.transition_task.assert_called_once_with("TEST-123", "Review")
+        self.mock_jira_repository.transition_task.assert_called_once_with(
+            "TEST-123",
+            "Review",
+        )
         self.mock_jira_repository.add_comment.assert_called_once()
         self.mock_telegram_gateway.send_message.assert_called()
 
@@ -146,7 +164,10 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
 
         # Act
         result = self.validator.check_transition_permission(
-            issue_data, webhook_body, "Review", "Done"
+            issue_data,
+            webhook_body,
+            "Review",
+            "Done",
         )
 
         # Assert
@@ -161,12 +182,17 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
 
         # Act
         result = self.validator.check_transition_permission(
-            issue_data, webhook_body, "Review", "Done"
+            issue_data,
+            webhook_body,
+            "Review",
+            "Done",
         )
 
         # Assert
         self.assertTrue(result)
-        self.mock_jira_repository.is_user_jira_admin.assert_called_once_with("admin.user")
+        self.mock_jira_repository.is_user_jira_admin.assert_called_once_with(
+            "admin.user",
+        )
 
     def test_check_transition_permission_review_to_done_by_unauthorized(self):
         """Test permission check for unauthorized user moving from review to done."""
@@ -177,12 +203,17 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
 
         # Act
         result = self.validator.check_transition_permission(
-            issue_data, webhook_body, "Review", "Done"
+            issue_data,
+            webhook_body,
+            "Review",
+            "Done",
         )
 
         # Assert
         self.assertFalse(result)
-        self.mock_jira_repository.is_user_jira_admin.assert_called_once_with("unauthorized.user")
+        self.mock_jira_repository.is_user_jira_admin.assert_called_once_with(
+            "unauthorized.user",
+        )
 
     def test_check_transition_permission_other_transitions(self):
         """Test permission check for other transitions always returns True."""
@@ -192,7 +223,10 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
 
         # Act
         result = self.validator.check_transition_permission(
-            issue_data, webhook_body, "To Do", "In Progress"
+            issue_data,
+            webhook_body,
+            "To Do",
+            "In Progress",
         )
 
         # Assert
@@ -229,7 +263,10 @@ class TestJiraIssueStatusManager(unittest.TestCase):
         self.status_manager.update_time_estimate_to_zero("TEST-123")
 
         # Assert
-        self.mock_jira_repository.update_time_estimate.assert_called_once_with("TEST-123", "0h")
+        self.mock_jira_repository.update_time_estimate.assert_called_once_with(
+            "TEST-123",
+            "0h",
+        )
 
     def test_revert_status_and_comment(self):
         """Test reverting status and adding comment."""
@@ -237,7 +274,10 @@ class TestJiraIssueStatusManager(unittest.TestCase):
         self.status_manager.revert_status_and_comment("TEST-123", "Review", "John Doe")
 
         # Assert
-        self.mock_jira_repository.transition_task.assert_called_once_with("TEST-123", "Review")
+        self.mock_jira_repository.transition_task.assert_called_once_with(
+            "TEST-123",
+            "Review",
+        )
         self.mock_jira_repository.add_comment.assert_called_once()
 
 
@@ -273,7 +313,11 @@ class TestJiraWebhookMessageFormatter(unittest.TestCase):
     def test_format_status_change_message(self):
         """Test formatting status change message."""
         # Act
-        result = self.formatter.format_status_change_message("TEST-123", "To Do", "In Progress")
+        result = self.formatter.format_status_change_message(
+            "TEST-123",
+            "To Do",
+            "In Progress",
+        )
 
         # Assert
         self.assertIn("TEST-123", result)
@@ -283,7 +327,11 @@ class TestJiraWebhookMessageFormatter(unittest.TestCase):
     def test_format_status_reversion_message(self):
         """Test formatting status reversion message."""
         # Act
-        result = self.formatter.format_status_reversion_message("TEST-123", "Done", "Review")
+        result = self.formatter.format_status_reversion_message(
+            "TEST-123",
+            "Done",
+            "Review",
+        )
 
         # Assert
         self.assertIn("TEST-123", result)

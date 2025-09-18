@@ -17,29 +17,27 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         self.mock_jira_repo = Mock()
         self.mock_jira_repo.create_task = Mock()
         self.mock_jira_repo.get_issue = AsyncMock()
-        
+
         # Mock user config
         self.mock_user_config = Mock()
-        
+
         # Mock AI service
         self.mock_ai_service = Mock()
         self.mock_ai_service.run = AsyncMock()
-        
+
         # Mock prompt catalog
         self.mock_prompt_catalog = Mock()
         self.mock_prompt_catalog.get_prompt = AsyncMock()
-        
+
         # Mock story generator
-        self.mock_story_generator = Mock()
-        self.mock_story_generator.generate = AsyncMock()
-        
+        self.mock_story_generator = AsyncMock()
+
         # Mock story decomposition service
-        self.mock_story_decomposition = Mock()
+        self.mock_story_decomposition = AsyncMock()
         self.mock_story_decomposition.decompose_story = AsyncMock()
-        
+
         # Mock subtask creation service
-        self.mock_subtask_creation = Mock()
-        self.mock_subtask_creation.create_subtasks = AsyncMock()
+        self.mock_subtask_creation = AsyncMock()
 
         # Setup mock project info
         self.projects_info = {
@@ -85,7 +83,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                 ],
             },
         }
-        
+
         # Mock project info repository
         self.mock_project_info_repo = Mock()
         self.mock_project_info_repo.get_project_info = AsyncMock()
@@ -99,15 +97,15 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
             story_decomposition_usecase=self.mock_story_decomposition,
             subtask_creation_usecase=self.mock_subtask_creation,
         )
-        
+
         # Patch the project_info_repository.get_project_info method to return our mock data
         self.patcher = patch.object(
             self.mock_project_info_repo,
-            'get_project_info',
-            AsyncMock(return_value=self.projects_info["RADTHARN"])
+            "get_project_info",
+            AsyncMock(return_value=self.projects_info["RADTHARN"]),
         )
         self.mock_get_project_info = self.patcher.start()
-        
+
     async def asyncTearDown(self):
         # Stop all patches
         self.patcher.stop()
@@ -120,7 +118,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         - Password reset functionality
         - User profile management
         """
-        
+
         # Setup mock story decomposition service response
         mock_story_response = {
             "stories": [
@@ -164,10 +162,10 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                 },
             ],
         }
-        
+
         # Configure the mock story decomposition service
-        self.mock_story_decomposition.decompose_story.return_value = mock_story_response
-        
+        self.mock_story_decomposition.execute.return_value = mock_story_response
+
         # Mock the create_task response with a proper async mock
         def mock_create_task(task_data):
             return Mock(
@@ -177,20 +175,21 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                     components=[Mock(name=c) for c in (task_data.components or [])],
                 ),
             )
+
         self.mock_jira_repo.create_task = Mock(side_effect=mock_create_task)
 
         # Call the method under test
         tasks = await self.creator.create_tasks(description, "RADTHARN")
 
         # Verify that the story decomposition service was called with the correct arguments
-        self.mock_story_decomposition.decompose_story.assert_awaited_once()
-        call_args = self.mock_story_decomposition.decompose_story.call_args[1]
+        self.mock_story_decomposition.execute.assert_awaited_once()
+        call_args = self.mock_story_decomposition.execute.call_args[1]
         self.assertEqual(call_args["description"], description)
         self.assertIn("project_context", call_args)
         self.assertIn("departments", call_args)
         self.assertIn("department_details", call_args)
         self.assertIn("assignee_details", call_args)
-        
+
         # Verify structure of created tasks
         self.assertGreater(len(tasks), 0, "Should create multiple tasks")
 
@@ -203,21 +202,23 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
 
         # Verify task assignments by department
         frontend_tasks = [
-            t for t in tasks if "frontend" in [c._mock_name for c in t.fields.components]
+            t
+            for t in tasks
+            if "frontend" in [c._mock_name for c in t.fields.components]
         ]
         backend_tasks = [
             t for t in tasks if "backend" in [c._mock_name for c in t.fields.components]
         ]
-        
+
         self.assertGreater(len(frontend_tasks), 0, "Should have frontend tasks")
         self.assertGreater(len(backend_tasks), 0, "Should have backend tasks")
-        
+
     async def test_create_structured_user_story(self):
         """Test creating a structured user story using the story generator service"""
         description = "Implement user profile page with editable fields"
         project_key = "RADTHARN"
         epic_key = "RADTHARN-123"
-        
+
         # Setup mock user story
         mock_user_story = UserStory(
             project_key=project_key,
@@ -237,20 +238,24 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
             story_points=5,
             priority="Medium",
         )
-        
+
         # Configure the mock story generator
         self.mock_story_generator.generate.return_value = mock_user_story
-        
+
         # Setup mock issue for epic context
         mock_epic_issue = Mock()
         mock_epic_issue.fields.summary = "User Account Management Epic"
-        mock_epic_issue.fields.description = "This epic covers all user account related features"
+        mock_epic_issue.fields.description = (
+            "This epic covers all user account related features"
+        )
         self.mock_jira_repo.get_issue = Mock(return_value=mock_epic_issue)
-        
+
         # Mock the create_task response
-        self.mock_jira_repo.create_task = Mock(return_value=Mock(
-            key="RADTHARN-456"
-        ))
+        self.mock_jira_repo.create_task = Mock(
+            return_value=Mock(
+                key="RADTHARN-456",
+            ),
+        )
 
         # Call the method under test
         result = await self.creator.create_structured_user_story(
@@ -265,19 +270,22 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         self.assertEqual(call_args["raw_text"], description)
         # The AdvancedTaskCreation class is using the first department key as project key for the story
         # Let's verify it's one of the department keys rather than project_key
-        self.assertIn(call_args["project"], list(self.projects_info["RADTHARN"]["departments"].keys()))
+        self.assertIn(
+            call_args["project"],
+            list(self.projects_info["RADTHARN"]["departments"].keys()),
+        )
         self.assertIn("product_area", call_args)
         self.assertIn("business_goal", call_args)
         self.assertIn("primary_persona", call_args)
         self.assertIn("epic_context", call_args)
-        
+
         # Verify the returned task data
         self.assertEqual(result.summary, mock_user_story.summary)
         self.assertEqual(result.description, mock_user_story.description)
         self.assertEqual(result.components, mock_user_story.components)
         self.assertEqual(result.story_points, mock_user_story.story_points)
         self.assertEqual(result.priority, mock_user_story.priority)
-        
+
         # Verify that the task was created in Jira
         self.mock_jira_repo.create_task.assert_called_once_with(result)
 
@@ -332,9 +340,9 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                 },
             ],
         }
-        
+
         # Configure the mock story decomposition service
-        self.mock_story_decomposition.decompose_story.return_value = mock_story_response
+        self.mock_story_decomposition.execute.return_value = mock_story_response
 
         def mock_create_task(task_data):
             return Mock(
@@ -346,6 +354,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                     components=[Mock(name=c) for c in (task_data.components or [])],
                 ),
             )
+
         self.mock_jira_repo.create_task = Mock(side_effect=mock_create_task)
 
         tasks = await self.creator.create_tasks(voice_text, "RADTHARN")
@@ -361,19 +370,25 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
 
         self.assertIn("frontend", components_used, "Should have frontend tasks")
         self.assertIn("backend", components_used, "Should have backend tasks")
-        
+
         # Verify that we got appropriate task types
         stories = [t for t in tasks if t.fields.issuetype._mock_name == "Story"]
         subtasks = [t for t in tasks if t.fields.issuetype._mock_name == "Sub-task"]
-        
+
         self.assertGreaterEqual(len(stories), 1, "Should have at least one story")
         self.assertGreaterEqual(len(subtasks), 1, "Should have at least one subtask")
-        
+
         # Verify that tasks have appropriate information
         for task in tasks:
             self.assertIsNotNone(task.fields.summary, "Task should have a summary")
-            self.assertIsNotNone(task.fields.description, "Task should have a description")
-            self.assertTrue(len(task.fields.components) > 0, "Task should have at least one component")
+            self.assertIsNotNone(
+                task.fields.description,
+                "Task should have a description",
+            )
+            self.assertTrue(
+                len(task.fields.components) > 0,
+                "Task should have at least one component",
+            )
 
     async def test_story_point_allocation(self):
         """Test that story points are allocated within valid ranges"""
@@ -387,6 +402,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                     customfield_10106=task_data.story_points,
                 ),
             )
+
         self.mock_jira_repo.create_task = Mock(side_effect=mock_create_task)
 
         tasks = await self.creator.create_tasks(description, "RADTHARN")
@@ -414,9 +430,12 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                 fields=Mock(
                     issuetype=Mock(name=task_data.task_type),
                     customfield_10106=task_data.story_points,
-                    assignee=Mock(name=task_data.assignee) if task_data.assignee else None,
+                    assignee=Mock(name=task_data.assignee)
+                    if task_data.assignee
+                    else None,
                 ),
             )
+
         self.mock_jira_repo.create_task = AsyncMock(side_effect=mock_create_task)
 
         tasks = await self.creator.create_tasks(description, "RADTHARN")
@@ -482,9 +501,9 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                 },
             ],
         }
-        
+
         # Configure the mock story decomposition service
-        self.mock_story_decomposition.decompose_story.return_value = mock_story_response
+        self.mock_story_decomposition.execute.return_value = mock_story_response
 
         def mock_create_task(task_data):
             return Mock(
@@ -497,6 +516,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                     components=[Mock(name=c) for c in (task_data.components or [])],
                 ),
             )
+
         self.mock_jira_repo.create_task = Mock(side_effect=mock_create_task)
 
         tasks = await self.creator.create_tasks(description, "RADTHARN")
@@ -512,7 +532,9 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
 
         # Check component distribution
         frontend_tasks = [
-            t for t in tasks if "frontend" in [c._mock_name for c in t.fields.components]
+            t
+            for t in tasks
+            if "frontend" in [c._mock_name for c in t.fields.components]
         ]
         backend_tasks = [
             t for t in tasks if "backend" in [c._mock_name for c in t.fields.components]
@@ -530,7 +552,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         description = "Add pagination to the existing user list table"
         project_key = "RADTHARN"
         parent_story_key = "RADTHARN-789"
-        
+
         # Setup mock subtasks response
         mock_subtasks_response = {
             "subtasks": [
@@ -554,10 +576,10 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                 },
             ],
         }
-        
+
         # Configure the mock subtask creation service
         self.mock_subtask_creation.create_subtasks.return_value = mock_subtasks_response
-        
+
         # Mock the create_task response with a proper async mock
         def mock_create_task(task_data):
             return Mock(
@@ -567,6 +589,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                     components=[Mock(name=c) for c in (task_data.components or [])],
                 ),
             )
+
         self.mock_jira_repo.create_task = Mock(side_effect=mock_create_task)
 
         # Call the method under test
@@ -585,18 +608,30 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         self.assertIn("departments", call_args)
         self.assertIn("department_details", call_args)
         self.assertIn("assignee_details", call_args)
-        
+
         # Verify structure of created tasks
         self.assertEqual(len(tasks), 3, "Should create exactly 3 subtasks")
-        
+
         # All tasks should be subtasks
         for task in tasks:
-            self.assertEqual(task.fields.issuetype._mock_name, "Sub-task", "All tasks should be subtasks")
-        
+            self.assertEqual(
+                task.fields.issuetype._mock_name,
+                "Sub-task",
+                "All tasks should be subtasks",
+            )
+
         # Verify component distribution
-        frontend_tasks = [t for t in tasks if any(comp._mock_name == "frontend" for comp in t.fields.components)]
-        backend_tasks = [t for t in tasks if any(comp._mock_name == "backend" for comp in t.fields.components)]
-        
+        frontend_tasks = [
+            t
+            for t in tasks
+            if any(comp._mock_name == "frontend" for comp in t.fields.components)
+        ]
+        backend_tasks = [
+            t
+            for t in tasks
+            if any(comp._mock_name == "backend" for comp in t.fields.components)
+        ]
+
         self.assertEqual(len(frontend_tasks), 1, "Should have 1 frontend subtask")
         self.assertEqual(len(backend_tasks), 2, "Should have 2 backend subtasks")
 
@@ -604,7 +639,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
         """Test direct use of story decomposition service"""
         description = "Create a user profile edit page with avatar upload"
         project_key = "RADTHARN"
-        
+
         # Setup mock story decomposition response
         mock_story_response = {
             "stories": [
@@ -621,47 +656,48 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                                     "summary": "Create profile edit form UI",
                                     "description": "Implement form with all user fields",
                                     "story_points": 3,
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
         }
-        
+
         # Configure the mock services
+        self.mock_story_decomposition.execute.return_value = mock_story_response
         self.mock_story_decomposition.decompose_story.return_value = mock_story_response
-        
+
         # Create a sample project info dictionary
         project_info = self.projects_info["RADTHARN"]
-        
+
         # Call the story decomposition service directly
         result = await self.mock_story_decomposition.decompose_story(
             description=description,
             project_context=project_info["project_info"]["description"],
             departments=", ".join(project_info["departments"].keys()),
             department_details=self.creator._format_department_details(project_info),
-            assignee_details=self.creator._format_assignee_details(project_info)
+            assignee_details=self.creator._format_assignee_details(project_info),
         )
-        
+
         # Verify that the story decomposition service was called with correct arguments
         self.mock_story_decomposition.decompose_story.assert_awaited_once()
         call_args = self.mock_story_decomposition.decompose_story.call_args[1]
         self.assertEqual(call_args["description"], description)
         self.assertEqual(call_args["project_context"], "AI Chat Bot Project")
         self.assertEqual(call_args["departments"], "frontend, backend")
-        
+
         # Verify that the result contains the expected structure
         self.assertIn("stories", result)
         self.assertEqual(len(result["stories"]), 1)
         self.assertEqual(result["stories"][0]["summary"], "User Profile Edit Page")
         self.assertEqual(result["stories"][0]["story_points"], 8)
-        
+
         # Verify component tasks
         component_tasks = result["stories"][0]["component_tasks"]
         self.assertEqual(len(component_tasks), 1)
         self.assertEqual(component_tasks[0]["component"], "frontend")
-        
+
         # Verify subtasks
         subtasks = component_tasks[0]["subtasks"]
         self.assertEqual(len(subtasks), 1)
@@ -670,7 +706,7 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
     async def test_task_assignment_algorithm(self):
         """Test the task assignment handling logic"""
         project_info = self.projects_info["RADTHARN"]
-        
+
         # Create a mock task structure with pre-assigned tasks and some without assignees
         tasks_data = {
             "stories": [
@@ -718,10 +754,10 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                 },
             ],
         }
-        
+
         # Call the _assign_tasks method
         result = self.creator._assign_tasks(tasks_data, project_info)
-        
+
         # Verify that the assignment logic works correctly
         for story in result["stories"]:
             for comp_task in story["component_tasks"]:
@@ -729,58 +765,60 @@ class TestAdvancedTaskCreation(IsolatedAsyncioTestCase):
                     # Tasks with pre-existing assignees should keep them
                     if subtask["summary"] == "Implement complex UI component":
                         self.assertEqual(
-                            subtask.get("assignee"), 
+                            subtask.get("assignee"),
                             "frontend_lead",
-                            "Pre-assigned tasks should keep their assignee"
+                            "Pre-assigned tasks should keep their assignee",
                         )
                     elif subtask["summary"] == "Write basic unit tests":
                         self.assertEqual(
-                            subtask.get("assignee"), 
+                            subtask.get("assignee"),
                             "junior_dev",
-                            "Pre-assigned tasks should keep their assignee"
+                            "Pre-assigned tasks should keep their assignee",
                         )
                     # Tasks with empty assignees should have the field removed
                     elif subtask["summary"] == "Implement simple styling":
                         self.assertNotIn(
                             "assignee",
                             subtask,
-                            "Empty assignee should be removed from task"
+                            "Empty assignee should be removed from task",
                         )
                     # Tasks without assignees should remain unassigned
                     elif subtask["summary"] == "Implement complex API endpoint":
                         self.assertNotIn(
                             "assignee",
                             subtask,
-                            "Tasks without assignees should remain unassigned"
+                            "Tasks without assignees should remain unassigned",
                         )
-    
+
     async def test_error_handling_with_invalid_project(self):
         """Test that proper error handling occurs when an invalid project is specified"""
         description = "Create a simple feature"
         invalid_project_key = "NONEXISTENT"
-        
+
         # Configure project info repository to raise an exception
-        self.mock_project_info_repo.get_project_info.side_effect = KeyError(f"Project {invalid_project_key} not found")
-        
+        self.mock_project_info_repo.get_project_info.side_effect = KeyError(
+            f"Project {invalid_project_key} not found",
+        )
+
         # Verify that the method raises an appropriate exception
         with self.assertRaises(Exception) as context:
             await self.creator.create_tasks(description, invalid_project_key)
-        
+
         # Verify that the exception message mentions the invalid project key
         self.assertIn(invalid_project_key, str(context.exception))
-    
+
     async def test_error_handling_missing_parent_story(self):
         """Test error handling when creating subtasks without a parent story"""
         description = "Implement new feature components"
         project_key = "RADTHARN"
-        
+
         # Verify that trying to create subtasks without a parent story raises an error
         with self.assertRaises(ValueError) as context:
             await self.creator.create_tasks(
                 description=description,
                 project_key=project_key,
                 parent_story_key=None,
-                task_type="subtask"
+                task_type="subtask",
             )
-            
+
         self.assertIn("Parent story key is required", str(context.exception))

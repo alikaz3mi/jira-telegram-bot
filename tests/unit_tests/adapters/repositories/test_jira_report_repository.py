@@ -6,11 +6,15 @@ from datetime import datetime
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraReportRepository
-from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraTaskModel
+from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import (
+    JiraReportRepository,
+)
+from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import (
+    JiraTaskModel,
+)
 from jira_telegram_bot.entities.jira_report import ProjectReport
-from tests.samples.jira_report_test_factory import JiraReportTestFactory
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
+from tests.samples.jira_report_test_factory import JiraReportTestFactory
 
 
 class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
@@ -18,17 +22,23 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         """Set up test dependencies."""
-        with patch('jira_telegram_bot.adapters.repositories.jira_report_repository.create_engine'), \
-             patch('jira_telegram_bot.adapters.repositories.jira_report_repository.sessionmaker'), \
-             patch.object(JiraReportRepository, '_ensure_schema_exists'):
-            self.repository = JiraReportRepository(PostgresSettings())
-            self.mock_session = MagicMock()
-            self.repository._session_maker.return_value = self.mock_session
+        from unittest.mock import MagicMock
+
+        # Create mock database connection interface
+        self.mock_db_connection = MagicMock()
+        self.mock_engine = MagicMock()
+        self.mock_session = MagicMock()
+
+        self.mock_db_connection.get_engine.return_value = self.mock_engine
+        self.mock_db_connection.get_session.return_value = self.mock_session
+
+        with patch.object(JiraReportRepository, "_ensure_schema_exists"):
+            self.repository = JiraReportRepository(self.mock_db_connection)
 
     async def test_a_store_issues_success(self):
         """Test successful issue storage."""
         issues = JiraReportTestFactory.create_multiple_issues(3)
-        
+
         self.mock_session.merge.return_value = None
         self.mock_session.commit.return_value = None
 
@@ -50,7 +60,7 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     async def test_a_store_issues_database_error(self):
         """Test issue storage with database error."""
         issues = JiraReportTestFactory.create_multiple_issues(2)
-        
+
         self.mock_session.merge.side_effect = Exception("Database error")
 
         with self.assertRaises(Exception):
@@ -62,9 +72,14 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     async def test_a_get_project_report_success(self):
         """Test successful project report retrieval."""
         project_key = "TEST"
-        mock_tasks = [self._create_mock_task_model("TEST-1"), self._create_mock_task_model("TEST-2")]
-        
-        self.mock_session.query.return_value.filter.return_value.all.return_value = mock_tasks
+        mock_tasks = [
+            self._create_mock_task_model("TEST-1"),
+            self._create_mock_task_model("TEST-2"),
+        ]
+
+        self.mock_session.query.return_value.filter.return_value.all.return_value = (
+            mock_tasks
+        )
 
         result = await self.repository.get_project_report(project_key)
 
@@ -76,7 +91,7 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     async def test_a_get_project_report_no_issues(self):
         """Test project report retrieval with no issues."""
         project_key = "EMPTY"
-        
+
         self.mock_session.query.return_value.filter.return_value.all.return_value = []
 
         result = await self.repository.get_project_report(project_key)
@@ -87,7 +102,7 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     async def test_a_get_project_report_database_error(self):
         """Test project report retrieval with database error."""
         project_key = "TEST"
-        
+
         self.mock_session.query.side_effect = Exception("Query error")
 
         with self.assertRaises(Exception):
@@ -98,9 +113,14 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     async def test_a_get_issues_by_keys_success(self):
         """Test successful issues retrieval by keys."""
         issue_keys = ["TEST-1", "TEST-2"]
-        mock_tasks = [self._create_mock_task_model("TEST-1"), self._create_mock_task_model("TEST-2")]
-        
-        self.mock_session.query.return_value.filter.return_value.all.return_value = mock_tasks
+        mock_tasks = [
+            self._create_mock_task_model("TEST-1"),
+            self._create_mock_task_model("TEST-2"),
+        ]
+
+        self.mock_session.query.return_value.filter.return_value.all.return_value = (
+            mock_tasks
+        )
 
         result = await self.repository.get_issues_by_keys(issue_keys)
 
@@ -117,7 +137,7 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     async def test_a_get_issues_by_keys_database_error(self):
         """Test issues retrieval with database error."""
         issue_keys = ["TEST-1"]
-        
+
         self.mock_session.query.side_effect = Exception("Query error")
 
         with self.assertRaises(Exception):
@@ -128,9 +148,9 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     def test_convert_to_model(self):
         """Test conversion from entity to model."""
         issue = JiraReportTestFactory.create_jira_issue_detail()
-        
+
         result = self.repository._convert_to_model(issue)
-        
+
         self.assertIsInstance(result, JiraTaskModel)
         self.assertEqual(result.key, issue.key)
         self.assertEqual(result.summary, issue.summary)
@@ -139,10 +159,13 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
 
     def test_convert_to_model_with_collections(self):
         """Test model conversion with worklog and linked issues."""
-        issue = JiraReportTestFactory.create_jira_issue_detail(with_worklogs=True, with_linked_issues=True)
-        
+        issue = JiraReportTestFactory.create_jira_issue_detail(
+            with_worklogs=True,
+            with_linked_issues=True,
+        )
+
         result = self.repository._convert_to_model(issue)
-        
+
         self.assertIsNotNone(result.worklog_entries)
         self.assertIsNotNone(result.linked_issues)
         self.assertIsInstance(result.worklog_entries, list)
@@ -151,9 +174,9 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
     def test_convert_from_model(self):
         """Test conversion from model to entity."""
         task_model = self._create_mock_task_model("TEST-1")
-        
+
         result = self.repository._convert_from_model(task_model)
-        
+
         self.assertEqual(result.key, "TEST-1")
         self.assertEqual(result.summary, "Test Summary")
         self.assertEqual(result.task_type, "Story")
@@ -169,9 +192,9 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
             created_at=None,
             updated_at=None,
         )
-        
+
         result = self.repository._convert_from_model(task_model)
-        
+
         self.assertEqual(result.summary, "")
         self.assertEqual(result.task_type, "")
         self.assertEqual(result.reporter, "")
@@ -192,7 +215,7 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
                 "updated": "2025-06-27T10:30:00",
                 "started": "2025-06-27T09:00:00",
                 "comment": "Test worklog",
-            }
+            },
         ]
         task_model.linked_issues = [
             {
@@ -201,29 +224,15 @@ class TestJiraReportRepository(unittest.IsolatedAsyncioTestCase):
                 "status": "Open",
                 "issue_type": "Bug",
                 "relationship": "blocks",
-            }
+            },
         ]
-        
+
         result = self.repository._convert_from_model(task_model)
-        
+
         self.assertEqual(len(result.worklog_entries), 1)
         self.assertEqual(len(result.linked_issues), 1)
         self.assertEqual(result.worklog_entries[0].id, "12345")
         self.assertEqual(result.linked_issues[0].key, "TEST-2")
-
-    @patch('jira_telegram_bot.adapters.repositories.jira_report_repository.urllib.parse.quote_plus')
-    @patch('jira_telegram_bot.adapters.repositories.jira_report_repository.create_engine')
-    def test_create_engine(self, mock_create_engine, mock_quote_plus):
-        """Test database engine creation."""
-        mock_quote_plus.return_value = "encoded_password"
-        
-        with patch.object(JiraReportRepository, '_ensure_schema_exists'):
-            repository = JiraReportRepository(PostgresSettings())
-        
-        mock_create_engine.assert_called()
-        call_args = mock_create_engine.call_args[0][0]
-        self.assertIn("postgresql://", call_args)
-        self.assertIn("encoded_password", call_args)
 
     def _create_mock_task_model(self, key: str) -> JiraTaskModel:
         """Create a mock task model for testing."""

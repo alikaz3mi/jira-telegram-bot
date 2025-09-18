@@ -10,19 +10,21 @@ from jira import Issue
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.entities.task import UserStory
+from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
+from jira_telegram_bot.use_cases.ai_agents.story_decomposition import (
+    StoryDecompositionUseCase,
+)
+from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
 from jira_telegram_bot.use_cases.interfaces.interfaces import StoryGeneratorInterface
+from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
+    ProjectInfoRepositoryInterface,
+)
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
-from jira_telegram_bot.use_cases.interfaces.project_info_repository_interface import (
-    ProjectInfoRepositoryInterface,
-)
-from jira_telegram_bot.use_cases.ai_agents.create_subtasks import CreateSubtasksUseCase
-from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
-from jira_telegram_bot.use_cases.ai_agents.story_decomposition import StoryDecompositionUseCase
 
 
 class AdvancedTaskCreation:
@@ -87,7 +89,7 @@ class AdvancedTaskCreation:
                 assignee_details=self._format_assignee_details(project_info),
             )
         else:  # task_type == "subtask"
-            tasks_data = await self.subtask_creation_service.create_subtasks(
+            tasks_data = await self.subtask_creation_usecase.create_subtasks(
                 project_context=project_info["project_info"]["description"],
                 description=description,
                 departments=", ".join(project_info["departments"].keys()),
@@ -102,7 +104,12 @@ class AdvancedTaskCreation:
         created_tasks = []
 
         if task_type == "story":
-            created_tasks = await self._create_stories(created_tasks, epic_key, project_key, tasks_data)
+            created_tasks = await self._create_stories(
+                created_tasks,
+                epic_key,
+                project_key,
+                tasks_data,
+            )
         else:  # task_type == "subtask"
             created_tasks = await self._create_subtasks_for_story(
                 created_tasks,
@@ -178,7 +185,7 @@ class AdvancedTaskCreation:
                 f"Subtask created: {subtask_issue.key} under parent story {parent_story_key}",
             )
             created_tasks.append(subtask_issue)
-        
+
         return created_tasks
 
     async def _create_stories(
@@ -284,10 +291,12 @@ class AdvancedTaskCreation:
         try:
             # Extract business goals and product area
             business_goal = project_info.get("project_info", {}).get(
-                "objective", "Improve user experience"
+                "objective",
+                "Improve user experience",
             )
             product_area = project_info.get("project_info", {}).get(
-                "description", "Software Product"
+                "description",
+                "Software Product",
             )
 
             # Main personas from project info
@@ -440,7 +449,9 @@ class AdvancedTaskCreation:
 {new_content}"""
 
     def _update_existing_user_story_content(
-        self, original: str, new_content: str
+        self,
+        original: str,
+        new_content: str,
     ) -> str:
         """Update an existing user story with new content, preserving structure.
 
@@ -461,7 +472,9 @@ class AdvancedTaskCreation:
                 # Update existing section
                 start_idx = result.find(section_name)
                 next_section_idx = self._find_next_section(
-                    result, section_name, start_idx
+                    result,
+                    section_name,
+                    start_idx,
                 )
 
                 if next_section_idx < float("inf"):
@@ -507,7 +520,10 @@ class AdvancedTaskCreation:
         return sections
 
     def _find_next_section(
-        self, content: str, current_section: str, start_idx: int
+        self,
+        content: str,
+        current_section: str,
+        start_idx: int,
     ) -> float:
         """Find the index of the next section in the content.
 
@@ -578,13 +594,19 @@ class AdvancedTaskCreation:
                 for task in comp_tasks["subtasks"]:
                     if "summary" not in task or not task["summary"]:
                         task["summary"] = "Task needs description"
-                        LOGGER.warning(f"Missing summary in task under component {dept}, adding default summary")
-                    
+                        LOGGER.warning(
+                            f"Missing summary in task under component {dept}, adding default summary",
+                        )
+
                     if task.get("assignee") is None or task.get("assignee") == "":
-                        LOGGER.info(f"No assignee found in description for task: {task.get('summary')}, leaving unassigned")
+                        LOGGER.info(
+                            f"No assignee found in description for task: {task.get('summary')}, leaving unassigned",
+                        )
                         if "assignee" in task:
                             del task["assignee"]
                     else:
-                        LOGGER.info(f"Using assignee '{task['assignee']}' extracted from description for task: {task.get('summary')}")
+                        LOGGER.info(
+                            f"Using assignee '{task['assignee']}' extracted from description for task: {task.get('summary')}",
+                        )
 
         return parsed_data
