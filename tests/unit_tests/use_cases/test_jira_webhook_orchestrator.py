@@ -27,16 +27,16 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.mock_jira_settings = Mock(spec=JiraConnectionSettings)
-        
+
         # Create a mock domain object with the required attributes
         mock_domain = Mock()
         mock_domain.scheme = "https"
         mock_domain.host = "example.atlassian.net"
         self.mock_jira_settings.domain = mock_domain
-        
+
         self.mock_telegram_gateway = Mock(spec=NotificationGatewayInterface)
         self.mock_jira_repository = Mock(spec=TaskManagerRepositoryInterface)
-        
+
         self.use_case = HandleJiraWebhookUseCase(
             jira_settings=self.mock_jira_settings,
             telegram_gateway=self.mock_telegram_gateway,
@@ -52,7 +52,7 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
             "group_chat_id": "456",
             "reply_message_id": "789",
         }
-        
+
         webhook_body = {
             "issue_event_type_name": "issue_updated",
             "issue": {
@@ -73,13 +73,13 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
                 ]
             },
         }
-        
+
         self.mock_jira_repository.is_user_jira_admin.return_value = False
         self.mock_jira_repository.update_time_estimate = Mock()
-        
+
         # Act
         result = self.use_case.run(webhook_body)
-        
+
         # Assert
         self.assertEqual(result["status"], "success")
         self.mock_jira_repository.update_time_estimate.assert_called_once_with("TEST-123", "0h")
@@ -94,7 +94,7 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
             "group_chat_id": "456",
             "reply_message_id": "789",
         }
-        
+
         webhook_body = {
             "issue_event_type_name": "issue_updated",
             "issue": {
@@ -115,14 +115,14 @@ class TestJiraWebhookOrchestrator(unittest.TestCase):
                 ]
             },
         }
-        
+
         self.mock_jira_repository.is_user_jira_admin.return_value = False
         self.mock_jira_repository.transition_task = Mock()
         self.mock_jira_repository.add_comment = Mock()
-        
+
         # Act
         result = self.use_case.run(webhook_body)
-        
+
         # Assert
         self.assertEqual(result["status"], "reverted")
         self.mock_jira_repository.transition_task.assert_called_once_with("TEST-123", "Review")
@@ -143,12 +143,12 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
         # Arrange
         issue_data = {"fields": {"reporter": {"name": "john.doe"}}}
         webhook_body = {"user": {"name": "john.doe"}}
-        
+
         # Act
         result = self.validator.check_transition_permission(
             issue_data, webhook_body, "Review", "Done"
         )
-        
+
         # Assert
         self.assertTrue(result)
 
@@ -158,12 +158,12 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
         issue_data = {"fields": {"reporter": {"name": "john.doe"}}}
         webhook_body = {"user": {"name": "admin.user"}}
         self.mock_jira_repository.is_user_jira_admin.return_value = True
-        
+
         # Act
         result = self.validator.check_transition_permission(
             issue_data, webhook_body, "Review", "Done"
         )
-        
+
         # Assert
         self.assertTrue(result)
         self.mock_jira_repository.is_user_jira_admin.assert_called_once_with("admin.user")
@@ -174,12 +174,12 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
         issue_data = {"fields": {"reporter": {"name": "john.doe"}}}
         webhook_body = {"user": {"name": "unauthorized.user"}}
         self.mock_jira_repository.is_user_jira_admin.return_value = False
-        
+
         # Act
         result = self.validator.check_transition_permission(
             issue_data, webhook_body, "Review", "Done"
         )
-        
+
         # Assert
         self.assertFalse(result)
         self.mock_jira_repository.is_user_jira_admin.assert_called_once_with("unauthorized.user")
@@ -189,12 +189,12 @@ class TestJiraTransitionPermissionValidator(unittest.TestCase):
         # Arrange
         issue_data = {"fields": {"reporter": {"name": "john.doe"}}}
         webhook_body = {"user": {"name": "any.user"}}
-        
+
         # Act
         result = self.validator.check_transition_permission(
             issue_data, webhook_body, "To Do", "In Progress"
         )
-        
+
         # Assert
         self.assertTrue(result)
 
@@ -211,7 +211,7 @@ class TestJiraIssueStatusManager(unittest.TestCase):
         """Test that time estimate should be updated when moving to Done."""
         # Act
         result = self.status_manager.should_update_time_estimate("Done")
-        
+
         # Assert
         self.assertTrue(result)
 
@@ -219,7 +219,7 @@ class TestJiraIssueStatusManager(unittest.TestCase):
         """Test that time estimate should not be updated for other statuses."""
         # Act
         result = self.status_manager.should_update_time_estimate("In Progress")
-        
+
         # Assert
         self.assertFalse(result)
 
@@ -227,7 +227,7 @@ class TestJiraIssueStatusManager(unittest.TestCase):
         """Test updating time estimate to zero."""
         # Act
         self.status_manager.update_time_estimate_to_zero("TEST-123")
-        
+
         # Assert
         self.mock_jira_repository.update_time_estimate.assert_called_once_with("TEST-123", "0h")
 
@@ -235,7 +235,7 @@ class TestJiraIssueStatusManager(unittest.TestCase):
         """Test reverting status and adding comment."""
         # Act
         self.status_manager.revert_status_and_comment("TEST-123", "Review", "John Doe")
-        
+
         # Assert
         self.mock_jira_repository.transition_task.assert_called_once_with("TEST-123", "Review")
         self.mock_jira_repository.add_comment.assert_called_once()
@@ -247,13 +247,13 @@ class TestJiraWebhookMessageFormatter(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.mock_jira_settings = Mock(spec=JiraConnectionSettings)
-        
+
         # Create a mock domain object with the required attributes
         mock_domain = Mock()
         mock_domain.scheme = "https"
         mock_domain.host = "example.atlassian.net"
         self.mock_jira_settings.domain = mock_domain
-        
+
         self.formatter = JiraWebhookMessageFormatter(self.mock_jira_settings)
 
     def test_format_issue_created_message(self):
@@ -261,10 +261,10 @@ class TestJiraWebhookMessageFormatter(unittest.TestCase):
         # Arrange
         issue_data = {"key": "TEST-123", "fields": {"summary": "Test issue"}}
         webhook_body = {"user": {"displayName": "John Doe"}}
-        
+
         # Act
         result = self.formatter.format_issue_created_message(issue_data, webhook_body)
-        
+
         # Assert
         self.assertIn("TEST-123", result)
         self.assertIn("John Doe", result)
@@ -274,7 +274,7 @@ class TestJiraWebhookMessageFormatter(unittest.TestCase):
         """Test formatting status change message."""
         # Act
         result = self.formatter.format_status_change_message("TEST-123", "To Do", "In Progress")
-        
+
         # Assert
         self.assertIn("TEST-123", result)
         self.assertIn("To Do", result)
@@ -284,7 +284,7 @@ class TestJiraWebhookMessageFormatter(unittest.TestCase):
         """Test formatting status reversion message."""
         # Act
         result = self.formatter.format_status_reversion_message("TEST-123", "Done", "Review")
-        
+
         # Assert
         self.assertIn("TEST-123", result)
         self.assertIn("reverted", result)

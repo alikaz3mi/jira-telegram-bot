@@ -28,11 +28,11 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         self.mock_jira_adapter = Mock(spec=SynthPMJiraAdapter)
         self.mock_google_sheets_adapter = Mock(spec=SynthPMGoogleSheetsAdapter)
         self.mock_user_config = Mock(spec=UserConfigInterface)
-        
+
         # Setup mock jira adapter properties
         self.mock_jira_adapter.developer_board_id = 123
         self.mock_jira_adapter.jira_repository = Mock()
-        
+
         self.use_case = SyncDeveloperBoardUseCase(
             google_sheets_adapter=self.mock_google_sheets_adapter,
             jira_adapter=self.mock_jira_adapter,
@@ -43,7 +43,7 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Test sprint selection with empty list."""
         # Act
         result = self.use_case._select_best_sprint_from_list([])
-        
+
         # Assert
         self.assertEqual(result, "")
 
@@ -51,10 +51,10 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Test sprint selection with single sprint."""
         # Arrange
         sprint_list = ["49: 06-15 to 06-21"]
-        
+
         # Act
         result = self.use_case._select_best_sprint_from_list(sprint_list)
-        
+
         # Assert
         self.assertEqual(result, "49: 06-15 to 06-21")
 
@@ -62,13 +62,13 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Test sprint selection with multiple sprints when no active sprint."""
         # Arrange
         sprint_list = ["49: 06-15 to 06-21", "50: 06-22 to 06-28", "51: 06-29 to 07-05"]
-        
+
         # Mock _find_active_sprint to return None
         self.use_case._find_active_sprint = Mock(return_value=None)
-        
+
         # Act
         result = self.use_case._select_best_sprint_from_list(sprint_list)
-        
+
         # Assert - Should return first sprint as fallback
         self.assertEqual(result, "49: 06-15 to 06-21")
 
@@ -76,13 +76,13 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Test sprint selection when active sprint is found."""
         # Arrange
         sprint_list = ["49: 06-15 to 06-21", "50: 06-22 to 06-28", "51: 06-29 to 07-05"]
-        
+
         # Mock _find_active_sprint to return specific sprint
         self.use_case._find_active_sprint = Mock(return_value="50: 06-22 to 06-28")
-        
+
         # Act
         result = self.use_case._select_best_sprint_from_list(sprint_list)
-        
+
         # Assert
         self.assertEqual(result, "50: 06-22 to 06-28")
 
@@ -90,13 +90,13 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Test sprint selection with invalid sprint format."""
         # Arrange
         sprint_list = ["invalid-format", "49: 06-15 to 06-21"]
-        
+
         # Mock _find_active_sprint to return None
         self.use_case._find_active_sprint = Mock(return_value=None)
-        
+
         # Act
         result = self.use_case._select_best_sprint_from_list(sprint_list)
-        
+
         # Assert - Should return first valid parsed sprint
         self.assertEqual(result, "49: 06-15 to 06-21")
 
@@ -104,10 +104,10 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Test sprint selection when all sprints have invalid format."""
         # Arrange
         sprint_list = ["invalid-format", "another-invalid"]
-        
+
         # Act
         result = self.use_case._select_best_sprint_from_list(sprint_list)
-        
+
         # Assert - Should fallback to first sprint
         self.assertEqual(result, "invalid-format")
 
@@ -118,23 +118,23 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
             ("49: 06-15 to 06-21", SprintInfo(sprint_id="49", start_date="06-15", end_date="06-21")),
             ("50: 06-22 to 06-28", SprintInfo(sprint_id="50", start_date="06-22", end_date="06-28")),
         ]
-        
+
         # Mock Jira sprint response
         mock_sprint_1 = Mock()
         mock_sprint_1.name = "49"
         mock_sprint_1.state = "closed"
-        
+
         mock_sprint_2 = Mock()
         mock_sprint_2.name = "50"
         mock_sprint_2.state = "active"
-        
+
         self.mock_jira_adapter.jira_repository.jira.sprints.return_value = [
             mock_sprint_1, mock_sprint_2
         ]
-        
+
         # Act
         result = self.use_case._find_active_sprint(parsed_sprints)
-        
+
         # Assert
         self.assertEqual(result, "50: 06-22 to 06-28")
         self.mock_jira_adapter.jira_repository.jira.sprints.assert_called_once_with(
@@ -147,17 +147,17 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         parsed_sprints = [
             ("49: 06-15 to 06-21", SprintInfo(sprint_id="49", start_date="06-15", end_date="06-21")),
         ]
-        
+
         # Mock Jira sprint response - no active sprints
         mock_sprint = Mock()
         mock_sprint.name = "49"
         mock_sprint.state = "closed"
-        
+
         self.mock_jira_adapter.jira_repository.jira.sprints.return_value = [mock_sprint]
-        
+
         # Act
         result = self.use_case._find_active_sprint(parsed_sprints)
-        
+
         # Assert
         self.assertIsNone(result)
 
@@ -167,13 +167,13 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         parsed_sprints = [
             ("49: 06-15 to 06-21", SprintInfo(sprint_id="49", start_date="06-15", end_date="06-21")),
         ]
-        
+
         # Mock Jira to raise exception
         self.mock_jira_adapter.jira_repository.jira.sprints.side_effect = Exception("Jira error")
-        
+
         # Act
         result = self.use_case._find_active_sprint(parsed_sprints)
-        
+
         # Assert
         self.assertIsNone(result)
 
@@ -183,17 +183,17 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         parsed_sprints = [
             ("49: 06-15 to 06-21", SprintInfo(sprint_id="49", start_date="06-15", end_date="06-21")),
         ]
-        
+
         # Mock Jira sprint response - active sprint with different ID
         mock_sprint = Mock()
         mock_sprint.name = "52"  # Different sprint ID
         mock_sprint.state = "active"
-        
+
         self.mock_jira_adapter.jira_repository.jira.sprints.return_value = [mock_sprint]
-        
+
         # Act
         result = self.use_case._find_active_sprint(parsed_sprints)
-        
+
         # Assert
         self.assertIsNone(result)
 
@@ -203,17 +203,17 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         parsed_sprints = [
             ("49: 06-15 to 06-21", SprintInfo(sprint_id="49", start_date="06-15", end_date="06-21")),
         ]
-        
+
         # Mock Jira sprint response - sprint without state
         mock_sprint = Mock()
         mock_sprint.name = "49"
         # Don't set state attribute
-        
+
         self.mock_jira_adapter.jira_repository.jira.sprints.return_value = [mock_sprint]
-        
+
         # Act
         result = self.use_case._find_active_sprint(parsed_sprints)
-        
+
         # Assert
         self.assertIsNone(result)
 
@@ -222,18 +222,18 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Test that sprint selection properly calls SprintInfo.parse_sprint_string."""
         # Arrange
         sprint_list = ["49: 06-15 to 06-21", "50: 06-22 to 06-28"]
-        
+
         # Mock SprintInfo.parse_sprint_string
         mock_parsed_sprint = Mock()
         mock_parsed_sprint.sprint_id = "49"
         mock_sprint_info.parse_sprint_string.return_value = mock_parsed_sprint
-        
+
         # Mock _find_active_sprint to return None
         self.use_case._find_active_sprint = Mock(return_value=None)
-        
+
         # Act
         self.use_case._select_best_sprint_from_list(sprint_list)
-        
+
         # Assert
         self.assertEqual(mock_sprint_info.parse_sprint_string.call_count, 2)
         mock_sprint_info.parse_sprint_string.assert_any_call("49: 06-15 to 06-21")
@@ -243,13 +243,13 @@ class TestSyncDeveloperBoardUseCase(unittest.TestCase):
         """Integration test with real SprintInfo parsing."""
         # Arrange
         sprint_list = ["49: 06-15 to 06-21", "50: 06-22 to 06-28"]
-        
+
         # Mock _find_active_sprint to return None
         self.use_case._find_active_sprint = Mock(return_value=None)
-        
+
         # Act
         result = self.use_case._select_best_sprint_from_list(sprint_list)
-        
+
         # Assert - Should return first sprint
         self.assertEqual(result, "49: 06-15 to 06-21")
         # Verify _find_active_sprint was called with properly parsed sprints
