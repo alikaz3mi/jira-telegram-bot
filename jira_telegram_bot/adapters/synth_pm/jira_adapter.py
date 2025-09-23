@@ -621,7 +621,7 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                     sprint_info = SprintInfo.parse_sprint_string(s)
                     if not sprint_info:
                         continue
-                        
+
                     sprint = self.jira_repository.get_sprint_by_id(
                         sprint_info.sprint_id,
                         board_id,
@@ -652,7 +652,7 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
                 if not sprint_info:
                     return None
-                    
+
                 sprint = self.jira_repository.get_sprint_by_id(
                     sprint_info.sprint_id,
                     board_id,
@@ -669,11 +669,11 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             if sprint is None and sprint_info:
                 start_date = sprint_info.start_date
                 end_date = sprint_info.end_date
-                
+
                 # Parse Persian dates and convert to Gregorian
                 start_date_parts = start_date.split("-")
                 end_date_parts = end_date.split("-")
-                
+
                 start_date_gregorian = jdatetime.JalaliToGregorian(
                     current_jalali_year,
                     int(start_date_parts[0]),
@@ -684,15 +684,15 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                     int(end_date_parts[0]),
                     int(end_date_parts[1]),
                 )
-                
+
                 start_date_list = start_date_gregorian.getGregorianList()
                 end_date_list = end_date_gregorian.getGregorianList()
-                
+
                 start_date_str = f"{start_date_list[0]}-{start_date_list[1]:02d}-{start_date_list[2]:02d}"
                 end_date_str = f"{end_date_list[0]}-{end_date_list[1]:02d}-{end_date_list[2]:02d}"
-                
+
                 sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
-                
+
                 new_sprint = self.jira_repository.create_sprint(
                     board_id=board_id,
                     sprint_name=sprint_name,
@@ -700,7 +700,7 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
                     end_date=end_date_str,
                     goal=f"{sprint_info.start_date} to {sprint_info.end_date}",
                 )
-                
+
                 if new_sprint:
                     LOGGER.info(f"Created new sprint: {sprint_name} (ID: {new_sprint['id']})")
                     return {
@@ -787,7 +787,7 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             for assignee in assignees:
                 try:
                     task_title = feature.task_title or parent_issue.fields.summary
-                    
+
                     # Build task data for subtask using repository pattern
                     subtask_data = TaskData(
                         project_key=parent_issue.fields.project.key,

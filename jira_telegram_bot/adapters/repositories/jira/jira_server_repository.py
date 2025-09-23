@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
-from datetime import datetime
-
 
 from jira import Issue
 from jira import JIRA
@@ -17,10 +16,10 @@ from jira_telegram_bot import DEFAULT_PATH
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.release import Release
 from jira_telegram_bot.entities.task import TaskData
-from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+from jira_telegram_bot.entities.team_evaluation import ChangeLogEvent
 from jira_telegram_bot.entities.team_evaluation import IssueSnapshot
 from jira_telegram_bot.entities.team_evaluation import WorklogSlice
-from jira_telegram_bot.entities.team_evaluation import ChangeLogEvent
+from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
