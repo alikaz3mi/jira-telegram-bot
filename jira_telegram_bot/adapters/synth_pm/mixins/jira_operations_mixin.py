@@ -73,10 +73,10 @@ class JiraOperationsMixin:
             Sprint ID if found, None otherwise
         """
         try:
-            sprints = self.jira_repository.get_board_sprints(board_id)
+            sprints = self.jira_repository.get_sprints(board_id)
             for sprint in sprints:
-                if sprint_name.lower() in sprint.get("name", "").lower():
-                    return sprint.get("id")
+                if sprint_name.lower() in sprint.name.lower():
+                    return sprint.id
             return None
         except Exception as e:
             LOGGER.error(f"Error getting sprint ID for {sprint_name}: {e}")

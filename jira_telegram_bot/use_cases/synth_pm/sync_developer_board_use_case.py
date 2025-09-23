@@ -63,7 +63,8 @@ class SyncDeveloperBoardUseCase:
 
             for feature in current_features:
                 try:
-                    await self._process_feature(feature, sync_results)
+                    if feature.version in ["04.06.28", "04.07.11"]:
+                        await self._process_feature(feature, sync_results)
                 except Exception as e:
                     error_msg = f"Error processing feature {feature.task_title}: {e}"
                     LOGGER.error(error_msg)

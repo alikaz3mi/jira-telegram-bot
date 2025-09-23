@@ -7,6 +7,8 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from datetime import datetime
+
 
 from jira import Issue
 from jira import JIRA
@@ -16,6 +18,9 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.release import Release
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+from jira_telegram_bot.entities.team_evaluation import IssueSnapshot
+from jira_telegram_bot.entities.team_evaluation import WorklogSlice
+from jira_telegram_bot.entities.team_evaluation import ChangeLogEvent
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
@@ -1100,7 +1105,6 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         Returns:
             List of IssueSnapshot objects
         """
-        from jira_telegram_bot.entities.team_evaluation import IssueSnapshot
 
         try:
             # Build JQL to get issues for the sprint
@@ -1180,7 +1184,6 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         Returns:
             List of WorklogSlice objects
         """
-        from jira_telegram_bot.entities.team_evaluation import WorklogSlice
 
         worklogs = []
 
@@ -1216,7 +1219,6 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         Returns:
             Dictionary mapping issue keys to list of ChangeLogEvent objects
         """
-        from jira_telegram_bot.entities.team_evaluation import ChangeLogEvent
 
         changelogs = {}
 
@@ -1287,7 +1289,6 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
 
         try:
             # Jira typically returns dates in ISO format
-            from datetime import datetime
 
             if isinstance(date_str, str):
                 if "T" in date_str:
