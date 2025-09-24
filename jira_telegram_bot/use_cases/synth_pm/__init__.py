@@ -33,7 +33,7 @@ from jira_telegram_bot.use_cases.synth_pm.sync_release_notes_use_case import (
 )
 
 
-class SynthPMUseCase:
+class SynthPMUseCase2:
     """Refactored use case for managing SynthPM operations following SOLID principles."""
 
     def __init__(

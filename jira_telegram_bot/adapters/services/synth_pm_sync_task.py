@@ -5,7 +5,7 @@ import contextlib
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
-from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 
 class SynthPMSyncTask:

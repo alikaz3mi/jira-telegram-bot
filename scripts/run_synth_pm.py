@@ -11,7 +11,7 @@ from jira_telegram_bot.entities.synth_pm.sync_filter_criteria import (
     SynthPMSyncFilterCriteria,
 )
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
-from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 
 async def setup_components():
@@ -43,8 +43,8 @@ async def run_sync_once(use_case: SynthPMUseCase, filter_criteria=None):
                 f"Applying filter: sprints={filter_criteria.sprints}, "
                 f"releases={filter_criteria.releases}, versions={filter_criteria.release_versions}",
             )
-
-        result = await use_case.sync_developer_board_features(filter_criteria)
+        # TODO: add filter criteria
+        result = await use_case.sync_developer_board_features()
 
         if result["status"] == "success":
             LOGGER.info("✅  Features synchronization completed successfully!")

@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.api_schemas import WebhookResponse
 from jira_telegram_bot.frameworks.api.base_endpoint import ServiceAPIEndpointBluePrint
-from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 
 class SynthPMEndpoint(ServiceAPIEndpointBluePrint):

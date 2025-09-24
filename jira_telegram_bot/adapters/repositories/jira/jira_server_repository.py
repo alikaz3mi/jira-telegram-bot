@@ -752,13 +752,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             LOGGER.error(
                 f"Error fetching sprint {sprint_name} for board {board_id}: {e}",
             )
-            return {
-                "id": None,
-                "name": None,
-                "state": None,
-                "startDate": None,
-                "endDate": None,
-            }
+            return None
 
     def create_sprint(
         self,

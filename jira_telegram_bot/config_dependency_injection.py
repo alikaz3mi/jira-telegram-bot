@@ -219,30 +219,13 @@ from jira_telegram_bot.use_cases.scheduled_report_use_case import ScheduledRepor
 from jira_telegram_bot.use_cases.send_deadline_alerts_use_case import (
     SendDeadlineAlertsUseCase,
 )
-from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
+
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
     GetCurrentStoriesUseCase,
 )
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase
 from jira_telegram_bot.use_cases.webhooks import TelegramWebhookUseCase
-
-# Core dependencies
-# Settings imports
-# AI Models and Services imports
-# Database imports
-# Repository imports
-# Service imports
-# Use case imports
-# Interface imports
-# AI Agent use case imports
-# Webhook use case imports
-# Metrics use case imports
-# Metrics interface imports
-# Controller imports
-# Framework imports - API endpoints
-# Framework imports - Scheduler
-# Metrics adapter imports
-
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
     """Read user configuration from specified path.
@@ -676,8 +659,8 @@ def _configure_synth_pm_board(container: Container) -> None:
             google_sheet_client=c[GoogleSheetClient],
             jira_repository=c[TaskManagerRepositoryInterface],
             settings=c[SynthPMSettings],
-            user_config=c[UserConfigInterface],
-        ),
+            user_config=c[UserConfigInterface]
+        )
     )
 
     # Adapters
@@ -695,6 +678,8 @@ def _configure_synth_pm_board(container: Container) -> None:
             settings=c[SynthPMSettings],
         ),
     )
+    
+
 
     # Use case
     container[SynthPMUseCase] = Singleton(
@@ -702,12 +687,10 @@ def _configure_synth_pm_board(container: Container) -> None:
             repository=c[SynthPMRepositoryInterface],
             settings=c[SynthPMSettings],
             user_config=c[UserConfigInterface],
-            notification_gateway=NotificationGateway(
-                token=c[SynthPMSettings].telegram_bot_token,
-            ),
-            google_sheets_adapter=c["SynthPMGoogleSheetsAdapter"],
-            jira_adapter=c["SynthPMJiraAdapter"],
-        ),
+            notification_gateway=NotificationGateway(token=c[SynthPMSettings].telegram_bot_token),
+            generate_acceptance_criteria_use_case=c[GenerateAcceptanceCriteriaUseCase],
+            generate_test_scenarios_use_case=c[GenerateTestScenariosUseCase],
+        )
     )
 
     # Endpoint (will be imported when needed)

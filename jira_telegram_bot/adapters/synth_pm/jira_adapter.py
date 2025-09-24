@@ -502,11 +502,18 @@ class SynthPMJiraAdapter(JiraOperationsMixin):
             new_labels = current_labels[:]
 
             # Remove any existing involved_people labels and add the new one
+            labels_to_remove = []
             for i, label in enumerate(current_labels):
                 if any(name in label for name in feature.involved_people.split(" ")):
-                    new_labels.pop(i)
-                    needs_label_update = True
-                    break
+                    labels_to_remove.append(i)
+                    LOGGER.debug(f"Marked label {label} for removal from {issue.key}")
+            
+            # Remove labels in reverse order to maintain correct indices
+            for index in reversed(labels_to_remove):
+                removed_label = new_labels.pop(index)
+                needs_label_update = True
+                LOGGER.debug(f"Removed label {removed_label} from {issue.key}")
+                    # break
 
             if involved_label not in new_labels:
                 new_labels.append(involved_label)
