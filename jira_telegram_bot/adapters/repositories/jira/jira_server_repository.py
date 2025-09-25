@@ -110,7 +110,32 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             return result
 
         if self.board_type == "scrum":
-            result = self.jira.sprints(board_id=board_id)
+            # Get all sprints with pagination to handle boards with many sprints
+            result = []
+            start_at = 0
+            max_results = 50  # Jira default
+            
+            while True:
+                try:
+                    sprint_page = self.jira.sprints(
+                        board_id=board_id, 
+                        startAt=start_at, 
+                        maxResults=max_results
+                    )
+                    if not sprint_page:
+                        break
+                    
+                    result.extend(sprint_page)
+                    
+                    # If we got fewer than max_results, we're at the end
+                    if len(sprint_page) < max_results:
+                        break
+                        
+                    start_at += max_results
+                    
+                except Exception as e:
+                    LOGGER.warning(f"Error fetching sprint page starting at {start_at}: {e}")
+                    break
         else:
             result = []
         self._set_cache(cache_key, result)
@@ -702,7 +727,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         try:
             sprints = self.get_sprints(board_id, get_from_cache=False)
             for sprint in sprints:
-                if int(sprint.name.split(" ")[-1]) == int(sprint_id):
+                if str(sprint.id) == str(sprint_id):
                     return {
                         "id": sprint.id,
                         "name": sprint.name,
@@ -733,7 +758,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         try:
             sprints = self.get_sprints(board_id, get_from_cache=False)
             for sprint in sprints:
-                if sprint.name == sprint_name:
+                if sprint.name.lower() == sprint_name.lower():
                     return {
                         "id": sprint.id,
                         "name": sprint.name,
@@ -741,13 +766,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                         "startDate": sprint.startDate,
                         "endDate": sprint.endDate,
                     }
-            return {
-                "id": None,
-                "name": None,
-                "state": None,
-                "startDate": None,
-                "endDate": None,
-            }
+            return None
         except Exception as e:
             LOGGER.error(
                 f"Error fetching sprint {sprint_name} for board {board_id}: {e}",

@@ -178,8 +178,34 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
         if not hasattr(self, "board_type") or self.board_type == "scrum":
             try:
-                # In cloud, we need to filter out closed sprints
-                result = self.jira.sprints(board_id=board_id, state="active,future")
+                # Get all sprints with pagination to handle boards with many sprints
+                result = []
+                start_at = 0
+                max_results = 50  # Jira default
+                
+                while True:
+                    try:
+                        sprint_page = self.jira.sprints(
+                            board_id=board_id, 
+                            state="active,future,closed",  # Get all sprints, not just active/future
+                            startAt=start_at, 
+                            maxResults=max_results
+                        )
+                        if not sprint_page:
+                            break
+                        
+                        result.extend(sprint_page)
+                        
+                        # If we got fewer than max_results, we're at the end
+                        if len(sprint_page) < max_results:
+                            break
+                            
+                        start_at += max_results
+                        
+                    except Exception as e:
+                        LOGGER.warning(f"Error fetching sprint page starting at {start_at}: {e}")
+                        break
+                        
             except Exception as e:
                 LOGGER.warning(f"Failed to get sprints: {e}, defaulting to empty list")
                 result = []

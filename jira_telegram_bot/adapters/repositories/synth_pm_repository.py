@@ -961,8 +961,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # Find first active or future sprint
                     for s in sorted_sprints:
                         sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint = self.jira_repository.get_sprint_by_id(
-                            sprint_info.sprint_id,
+                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint = self.jira_repository.get_sprint_by_name(
+                            sprint_name,
                             self.developer_board_id,
                         )
                         if sprint is not None and sprint.get('state') == "closed":
@@ -978,8 +979,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # If no active sprint found, use first non-closed sprint or create first sprint
                     if target_sprint is None:
                         sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint = self.jira_repository.get_sprint_by_id(
-                            sprint_info.sprint_id,
+                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint = self.jira_repository.get_sprint_by_name(
+                            sprint_name,
                             self.developer_board_id,
                         )
                         if sprint is None:
@@ -989,8 +991,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         
                 elif len(feature.sprint_list) == 1:
                     sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                    sprint = self.jira_repository.get_sprint_by_id(
-                        sprint_info.sprint_id,
+                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
                         self.developer_board_id,
                     )
                     
@@ -1000,6 +1003,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         # Create sprint if it doesn't exist
                         target_sprint = self._create_sprint(sprint_info, current_jalali_year)
                     # If sprint is closed, target_sprint remains None (will remove sprint assignment)
+            # If feature.sprint_list is empty or None, target_sprint remains None (will remove sprint assignment)
             
             # Update sprint assignment based on target_sprint
             current_sprint_data = issue.fields.__dict__.get(self.jira_repository.jira_sprint_id)
@@ -1027,39 +1031,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if current_sprint_id != target_sprint_id:
                     update_fields[self.jira_repository.jira_sprint_id] = target_sprint_id
                     LOGGER.debug(f"Updating sprint for {issue.key} from {current_sprint_id} to {target_sprint_id}")
-
-            if feature_assignees and len(feature_assignees) > 1 and feature.description:
-                current_desc = issue.fields.description or ""
-                preserved_lines = []
-
-                lines = current_desc.split("\n")
-                for line in lines:
-                    if any(
-                        keyword in line
-                        for keyword in [
-                            "🔗 **Linked to PM Board**:",
-                            "📅 **Sprint**:",
-                            "👥 **Assignees**:",
-                            "📝 **Original ETA**:",
-                        ]
-                    ):
-                        preserved_lines.append(line)
-                    elif line.strip() == "":
-                        preserved_lines.append(line)
-                        if len(preserved_lines) > 5:
-                            break
-
-                preserved_lines = [
-                    line for line in preserved_lines if "👥 **Assignees**:" not in line
-                ]
-                preserved_lines.insert(
-                    -1,
-                    f"👥 **Assignees**: {', '.join(feature_assignees)}",
-                )
-                # TODO: description update will be occured from some place else.
-                # update_fields["description"] = (
-                #     "\n".join(preserved_lines) + f"\n{feature.description}"
-                # )
 
             if feature.priority:
                 feature_priority = self._map_priority(feature.priority)
