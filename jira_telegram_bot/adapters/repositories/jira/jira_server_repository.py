@@ -757,8 +757,13 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         """
         try:
             sprints = self.get_sprints(board_id, get_from_cache=False)
+            LOGGER.debug(f"Found {len(sprints)} total sprints on board {board_id}")
+            LOGGER.debug(f"Looking for sprint name: '{sprint_name}'")
+            
+            matching_sprints = []
             for sprint in sprints:
                 if sprint.name.lower() == sprint_name.lower():
+                    matching_sprints.append(sprint.name)
                     return {
                         "id": sprint.id,
                         "name": sprint.name,
@@ -766,6 +771,13 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                         "startDate": sprint.startDate,
                         "endDate": sprint.endDate,
                     }
+            
+            # Log some sprint names for debugging
+            if sprints:
+                sample_names = [s.name for s in sprints[:5]]  # First 5 sprint names
+                LOGGER.debug(f"Sample sprint names: {sample_names}")
+                
+            LOGGER.debug(f"No exact match found for '{sprint_name}'")
             return None
         except Exception as e:
             LOGGER.error(

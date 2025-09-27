@@ -113,8 +113,8 @@ class SynthPMUseCase:
             # new_features = features
             for feature in new_features + modified_features:
                 # Skip test rows
-                # if feature.sheet_row_number not in [9, 10, 66, 67]:
-                #     continue
+                if feature.sheet_row_number not in [9, 10, 66, 67]:
+                    continue
                 # if feature.version not in ["04.06.14", "04.06.28", "04.07.11"]:
                 #     continue
                     
@@ -123,7 +123,7 @@ class SynthPMUseCase:
                     processed_features.append(feature)
 
                     # Generate documentation for new features
-                    if False and feature in new_features and await self._generate_and_update_documentation(feature):
+                    if feature in new_features and await self._generate_and_update_documentation(feature):
                         sync_results["generated_documentation"] += 1
                         doc_generated_rows.append(feature.sheet_row_number)
 
@@ -134,7 +134,7 @@ class SynthPMUseCase:
 
             # Generate documentation for existing features that need it
             for feature in features_needing_docs:
-                if feature not in new_features and feature.sheet_row_number not in [9, 10, 66, 67]:
+                if feature not in new_features and feature.sheet_row_number in [171]:
                     try:
                         if await self._generate_and_update_documentation(feature):
                             sync_results["generated_documentation"] += 1

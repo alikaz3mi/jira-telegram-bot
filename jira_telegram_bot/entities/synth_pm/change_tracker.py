@@ -127,9 +127,18 @@ class SynthPMChangeTracker(BaseModel):
             else:
                 # Existing feature - check for changes
                 snapshot = self.snapshots[row_num]
+                current_snapshot = FeatureSnapshot.from_feature(feature)
                 
-                if snapshot.needs_documentation_update(feature):
+                # Check if content actually changed
+                content_changed = snapshot.content_hash != current_snapshot.content_hash
+                needs_docs = snapshot.needs_documentation_update(feature)
+                
+                if content_changed:
                     changes["modified"].append(feature)
+                    changes["needs_docs"].append(feature)
+                elif needs_docs:
+                    # Content unchanged but needs documentation
+                    changes["unchanged"].append(feature)
                     changes["needs_docs"].append(feature)
                 else:
                     changes["unchanged"].append(feature)

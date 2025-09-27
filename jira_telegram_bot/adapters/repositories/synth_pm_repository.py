@@ -19,6 +19,7 @@ from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.change_tracker import SynthPMChangeTracker
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
+from jira_telegram_bot.entities.synth_pm.change_tracker import FeatureSnapshot
 from jira_telegram_bot.entities.synth_pm.constants import (
     STATUS_DESCRIPTIONS,
     SynthPMStatus,
@@ -962,18 +963,24 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     for s in sorted_sprints:
                         sprint_info = SprintInfo.parse_sprint_string(s)
                         sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        LOGGER.debug(f"Looking for sprint: '{sprint_name}' on board {self.developer_board_id}")
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
                         )
+                        LOGGER.debug(f"Sprint lookup result: {sprint}")
                         if sprint is not None and sprint.get('state') == "closed":
+                            LOGGER.debug(f"Sprint {sprint_name} is closed, continuing search")
                             continue
                         if sprint is not None and sprint.get('state') == "active":
+                            LOGGER.debug(f"Found active sprint {sprint_name}")
                             target_sprint = sprint
                             break
                         elif sprint is None:
                             # Create sprint if it doesn't exist
+                            LOGGER.info(f"Creating new sprint: {sprint_name}")
                             target_sprint = self._create_sprint(sprint_info, current_jalali_year)
+                            LOGGER.debug(f"Created sprint: {target_sprint}")
                             break
                     
                     # If no active sprint found, use first non-closed sprint or create first sprint
@@ -992,16 +999,21 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 elif len(feature.sprint_list) == 1:
                     sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
                     sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    LOGGER.debug(f"Looking for single sprint: '{sprint_name}' on board {self.developer_board_id}")
                     sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.developer_board_id,
                     )
+                    LOGGER.debug(f"Single sprint lookup result: {sprint}")
                     
                     if sprint is not None and sprint.get('state') != "closed":
+                        LOGGER.debug(f"Found existing non-closed sprint {sprint_name}")
                         target_sprint = sprint
                     elif sprint is None:
                         # Create sprint if it doesn't exist
+                        LOGGER.info(f"Creating new single sprint: {sprint_name}")
                         target_sprint = self._create_sprint(sprint_info, current_jalali_year)
+                        LOGGER.debug(f"Created single sprint: {target_sprint}")
                     # If sprint is closed, target_sprint remains None (will remove sprint assignment)
             # If feature.sprint_list is empty or None, target_sprint remains None (will remove sprint assignment)
             
@@ -2644,6 +2656,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 f"{len(changes['unchanged'])} unchanged, "
                 f"{len(changes['needs_docs'])} need docs"
             )
+            
+            # Debug logging for modified features
+            if changes['modified']:
+                LOGGER.info("Modified features detected:")
+                for feature in changes['modified']:
+                    old_snapshot = tracker.snapshots.get(feature.sheet_row_number)
+                    new_snapshot = FeatureSnapshot.from_feature(feature)
+                    LOGGER.info(f"  Row {feature.sheet_row_number}: {feature.task_title}")
+                    LOGGER.info(f"    Old hash: {old_snapshot.content_hash if old_snapshot else 'None'}")
+                    LOGGER.info(f"    New hash: {new_snapshot.content_hash}")
+                    LOGGER.info(f"    Description: '{feature.description}'")
 
             return changes
 
