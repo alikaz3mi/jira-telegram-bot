@@ -1192,9 +1192,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         for name in issue.fields.labels[label_index].split("---")
                     ]
                     if set(sheet_usernames) != set(names):
-                        update_fields["labels"] = list(
-                            set(issue.fields.labels) - {sheet_username},
-                        ) + [name.replace(" ", "-") for name in names]
+                        # Remove all individual assignee labels and the old combined label
+                        existing_labels = set(issue.fields.labels)
+                        # Remove all sheet usernames (individual labels) and the old combined label
+                        for username in sheet_usernames:
+                            existing_labels.discard(username.replace(" ", "-"))
+                        if label_index < len(issue.fields.labels):
+                            existing_labels.discard(issue.fields.labels[label_index])
+                        
+                        # Add only the new combined label
+                        combined_label = "---".join(sorted([name.replace(" ", "-") for name in sheet_usernames]))
+                        update_fields["labels"] = list(existing_labels) + [combined_label]
 
             else:
                 LOGGER.warning(f"Invalid update. Not handled for {feature} and {issue}")

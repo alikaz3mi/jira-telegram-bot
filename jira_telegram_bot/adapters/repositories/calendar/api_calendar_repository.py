@@ -86,7 +86,7 @@ class ApiCalendarRepository(CalendarRepositoryInterface):
         try:
             # Check if it's a weekend (Friday/Saturday in Iran)
             # In Python datetime, Friday is 4, Saturday is 5
-            if check_date.weekday() in [4, 5]:  # Friday, Saturday
+            if check_date.weekday() in [4]:  # Friday
                 LOGGER.debug(f"{check_date} is a weekend")
                 return True
 
