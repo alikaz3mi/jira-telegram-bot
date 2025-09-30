@@ -67,11 +67,11 @@ class SendDeadlineAlertsUseCase:
             if await self._should_skip_notifications():
                 return self._create_skip_stats("holiday_or_weekend")
 
-            stats = self._initialize_stats()
+            stats = self._initialize_stats() 
             issues = await self._get_approaching_deadline_issues(
                 lookahead_days,
                 additional_jql,
-            )
+            ) # TODO: make sure that all issues are returned.
 
             if not issues:
                 LOGGER.info("No issues with approaching deadlines found")
@@ -201,7 +201,7 @@ class SendDeadlineAlertsUseCase:
             assignee=self._extract_assignee(issue),
             due_date=self._parse_date_field(getattr(issue.fields, "duedate", None)),
             target_end=self._parse_date_field(
-                getattr(issue.fields, "customfield_10110", None),
+                getattr(issue.fields, self.task_manager_repository.jira_target_end_id, None),
             ),
             days_remaining=days_remaining,
             project_key=issue.fields.project.key,
@@ -216,7 +216,7 @@ class SendDeadlineAlertsUseCase:
         """Extract the effective deadline from due date or target end fields."""
         due_date = self._parse_date_field(getattr(issue.fields, "duedate", None))
         target_end = self._parse_date_field(
-            getattr(issue.fields, "customfield_10110", None),
+            getattr(issue.fields, self.task_manager_repository.jira_target_end_id, None),
         )
         return due_date or target_end
 
@@ -244,7 +244,7 @@ class SendDeadlineAlertsUseCase:
 
     def _extract_active_sprint_info(self, issue: Issue) -> Optional[str]:
         """Extract active sprint information from the issue."""
-        sprint_field = getattr(issue.fields, "customfield_10020", None)
+        sprint_field = getattr(issue.fields, self.task_manager_repository.jira_sprint_id, None)
 
         if not sprint_field:
             return None
@@ -433,7 +433,7 @@ class SendDeadlineAlertsUseCase:
             if await self._is_group_notification_already_sent(chat_id, today):
                 stats["skipped"] += 1
                 return
-
+            # TODO: check that only stories are sent for grups.
             urgent_alerts = self._filter_urgent_alerts_for_chat(chat_id, alerts)
 
             if not urgent_alerts:
