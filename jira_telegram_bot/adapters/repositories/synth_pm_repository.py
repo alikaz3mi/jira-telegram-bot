@@ -692,8 +692,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 
                 for s in sorted_sprints:
                     sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint = self.jira_repository.get_sprint_by_id(
-                        sprint_info.sprint_id,
+                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
                         self.developer_board_id,
                     )
                     if sprint is not None and sprint.get('state') == "closed":
@@ -708,15 +709,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if sprint is None:
                     sprint = sorted_sprints[0]
                     sprint_info = SprintInfo.parse_sprint_string(sprint)
-                    sprint = self.jira_repository.get_sprint_by_id(
-                        sprint_info.sprint_id,
+                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
                         self.developer_board_id,
                     )
                     
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                sprint = self.jira_repository.get_sprint_by_id(
-                    sprint_info.sprint_id,
+                sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                sprint = self.jira_repository.get_sprint_by_name(
+                    sprint_name,
                     self.developer_board_id,
                 )
                 if sprint is not None and sprint.get('state') == "closed":
@@ -726,7 +729,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return None
 
             if sprint is None:
+                LOGGER.info(f"Creating new sprint: {sprint_info.sprint_id} for feature {feature.task_title}")
                 sprint = self._create_sprint(sprint_info, current_jalali_year)
+                LOGGER.debug(f"Created sprint: {sprint}")
 
             task_type = "Story" if len(assignees) > 1 else "Task"
             if task_type == "Task":
