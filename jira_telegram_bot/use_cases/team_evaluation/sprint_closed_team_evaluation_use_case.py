@@ -219,10 +219,21 @@ class SprintClosedTeamEvaluationUseCase:
                 if not departments:
                     departments = ["Unknown"]
                 
-                # Create separate entries for each department
-                for department in departments:
-                    key = (issue.assignee, department)
-                    developer_dept_data[key]["issues"].append(issue)
+                # Filter to user's actual department to avoid duplicates
+                user_department = self._get_user_department_from_config(
+                    issue.assignee, 
+                    issue.project_key
+                )
+                
+                # If user has a configured department and it matches one of the issue departments, use only that
+                if user_department and user_department in departments:
+                    selected_department = user_department
+                else:
+                    # Otherwise, use the first department (or only one if single)
+                    selected_department = list(departments)[0]
+                
+                key = (issue.assignee, selected_department)
+                developer_dept_data[key]["issues"].append(issue)
         
         # Group worklogs by author and match with issue departments
         for worklog in worklogs:
@@ -239,10 +250,21 @@ class SprintClosedTeamEvaluationUseCase:
                 if not departments:
                     departments = ["Unknown"]
                 
-                # Add worklog to each department this issue belongs to
-                for department in departments:
-                    key = (worklog.author, department)
-                    developer_dept_data[key]["worklogs"].append(worklog)
+                # Filter to user's actual department to avoid duplicates
+                user_department = self._get_user_department_from_config(
+                    worklog.author,
+                    issue.project_key
+                )
+                
+                # If user has a configured department and it matches one of the issue departments, use only that
+                if user_department and user_department in departments:
+                    selected_department = user_department
+                else:
+                    # Otherwise, use the first department (or only one if single)
+                    selected_department = list(departments)[0]
+                
+                key = (worklog.author, selected_department)
+                developer_dept_data[key]["worklogs"].append(worklog)
         
         # Group changelogs by issue assignee and departments
         for issue_key, events in changelogs.items():
@@ -259,10 +281,21 @@ class SprintClosedTeamEvaluationUseCase:
                 if not departments:
                     departments = ["Unknown"]
                 
-                # Add changelog to each department this issue belongs to
-                for department in departments:
-                    key = (issue.assignee, department)
-                    developer_dept_data[key]["changelogs"][issue_key] = events
+                # Filter to user's actual department to avoid duplicates
+                user_department = self._get_user_department_from_config(
+                    issue.assignee,
+                    issue.project_key
+                )
+                
+                # If user has a configured department and it matches one of the issue departments, use only that
+                if user_department and user_department in departments:
+                    selected_department = user_department
+                else:
+                    # Otherwise, use the first department (or only one if single)
+                    selected_department = list(departments)[0]
+                
+                key = (issue.assignee, selected_department)
+                developer_dept_data[key]["changelogs"][issue_key] = events
         
         return dict(developer_dept_data)
 
@@ -306,6 +339,26 @@ class SprintClosedTeamEvaluationUseCase:
                 developer_data[assignee]["changelogs"][issue_key] = events
         
         return dict(developer_data)
+
+    def _get_user_department_from_config(
+        self,
+        username: str,
+        project_key: str
+    ) -> Optional[str]:
+        """Get user's department from user config.
+        
+        Args:
+            username: User's Jira username
+            project_key: Project key
+            
+        Returns:
+            Department name if found in user config, None otherwise
+        """
+        user_config = self.user_config_service.get_user_config_by_jira_username(username)
+        if user_config and user_config.user_components:
+            # user_components is a dict like {"PARSCHAT": "Front-end"}
+            return user_config.user_components.get(project_key)
+        return None
 
     async def _get_developer_department(
         self,
