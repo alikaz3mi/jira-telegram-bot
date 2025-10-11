@@ -40,20 +40,20 @@ services:
     ports:
       - "2315:2315"
 
-  jira-report-scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: jira_report_scheduler
-    image: jira_telegram_bot:v3
-    volumes:
-      - .:/app
-    command: >
-      python3 scripts/run_scheduled_reports.py
-    restart: always
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
+  # jira-report-scheduler:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: jira_report_scheduler
+  #   image: jira_telegram_bot:v3
+  #   volumes:
+  #     - .:/app
+  #   command: >
+  #     python3 scripts/run_scheduled_reports.py
+  #   restart: always
+  #   environment:
+  #     - POSTGRES_HOST=postgres
+  #     - POSTGRES_PORT=5432
 
   # synth-pm-service:
   #   build:

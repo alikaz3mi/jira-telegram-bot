@@ -76,8 +76,9 @@ class BaseWebhookController(ABC):
         Returns:
             Dictionary with extracted basic information
         """
+        # TODO: get webhook data from jira-server repostory or jira cloud repository and not in here
         return {
-            "event_type": webhook_data.get("issue_event_type_name"),
+            "event_type": webhook_data.get("webhookEvent"),
             "issue_key": webhook_data.get("issue", {}).get("key"),
             "timestamp": webhook_data.get("timestamp"),
             "webhook_id": webhook_data.get("webhookEvent")

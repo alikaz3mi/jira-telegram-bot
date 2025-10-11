@@ -1,14 +1,3 @@
-#!/bin/bash
-# Team Evaluation CLI Usage Examples
-
-# Set your environment variables first (or use .env file)
-export GOOGLE_SHEETS_CREDENTIALS_PATH="./parschat-684f8662ca98.json"
-export JIRA_SERVER="https://your-company.atlassian.net"
-export JIRA_USERNAME="your-email@company.com"
-export JIRA_API_TOKEN="your-jira-api-token"
-export DATABASE_URL="postgresql://user:pass@localhost/db"
-
-# Example 1: Basic evaluation for a specific sprint
 echo "Example 1: Basic sprint evaluation"
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \

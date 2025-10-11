@@ -1,5 +1,6 @@
 """API endpoint for SynthPM operations."""
 from __future__ import annotations
+from typing import Any, Dict
 
 from fastapi import APIRouter
 from fastapi import HTTPException
@@ -86,6 +87,40 @@ class SynthPMEndpoint(ServiceAPIEndpointBluePrint):
                     status_code=500,
                 )
 
+        
+        @api_route.post(
+            "/sprint_evaluation",
+            summary="Handle sprint evaluation",
+            description="Process sprint evaluation data from jira and update Google Sheets",
+        )
+        async def sprint_evaluation(payload: Dict[str, Any]):
+            """Handle sprint evaluation events."""
+            try:
+                sprint_event = {
+                    "sprint_id": payload.get("sprint", {}).get("id"),
+                    "sprint_name": payload.get("sprint", {}).get("name"),
+                    "start_date": payload.get("sprint", {}).get("startDate"),
+                    "end_date": payload.get("sprint", {}).get("endDate"),
+                    "completed_issues": payload.get("completed_issues", []),
+                    "incomplete_issues": payload.get("incomplete_issues", []),
+                }
+                LOGGER.debug(f"Received sprint evaluation data: {payload}")
+
+                result = await self.synth_developer_board_use_case.handle_sprint_evaluation(
+                    sprint_event,
+                )
+                return JSONResponse(content=result)
+
+            except Exception as e:
+                LOGGER.error(f"Error handling sprint evaluation: {str(e)}", exc_info=True)
+                return JSONResponse(
+                    content=WebhookResponse(
+                        status="error",
+                        message=f"Sprint evaluation error: {str(e)}",
+                    ).model_dump(),
+                    status_code=500,
+                )
+        
         @api_route.post(
             "/sheet-update",
             summary="Handle Google Sheets update",

@@ -35,13 +35,13 @@ class MetricsWebhookEndpoint(ServiceAPIEndpointBluePrint):
             APIRouter with metrics webhook routes configured
         """
         api_route = APIRouter()
-        
+
         @api_route.post("/jira", tags=["Metrics"])
         async def process_jira_webhook(
             payload: Dict[str, Any],
             background_tasks: BackgroundTasks
         ) -> WebhookResponse:
-            """Process Jira webhook for metrics tracking.
+            """Process Jira webhook for metrics tracking. on sprint closed event
             
             Args:
                 payload: Raw webhook payload from Jira
@@ -59,7 +59,7 @@ class MetricsWebhookEndpoint(ServiceAPIEndpointBluePrint):
                     self._process_jira_webhook_background,
                     payload
                 )
-                
+
                 return WebhookResponse(
                     status="success",
                     message="Jira webhook received and queued for metrics processing"
@@ -72,7 +72,7 @@ class MetricsWebhookEndpoint(ServiceAPIEndpointBluePrint):
                     message=f"Failed to process Jira webhook: {str(e)}"
                 )
         
-        @api_route.post("/gitlab", tags=["Metrics"])
+        @api_route.post("/gitlab-metric-evaluator", tags=["Metrics"])
         async def process_gitlab_webhook(
             payload: Dict[str, Any],
             background_tasks: BackgroundTasks

@@ -49,8 +49,8 @@ class JiraWebhookController(BaseWebhookController):
         if not event_type:
             return self._create_ignored_response("No event_type found in webhook data")
         
-        if not issue_key:
-            return self._create_ignored_response("No issue_key found in webhook data")
+        # if not issue_key:
+        #     return self._create_ignored_response("No issue_key found in webhook data")
         
         return None
     
