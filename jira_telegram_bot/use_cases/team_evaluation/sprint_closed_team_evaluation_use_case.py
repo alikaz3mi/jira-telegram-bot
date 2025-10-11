@@ -172,6 +172,7 @@ class SprintClosedTeamEvaluationUseCase:
                         issues=project_issues,
                         worklogs=[w for w in data["worklogs"] if any(i.key in w.issue_key for i in project_issues)],
                         changelogs={k: v for k, v in data["changelogs"].items() if any(i.key == k for i in project_issues)},
+                        sprint_start_date=event.started_at,
                         sprint_end_date=event.ended_at
                     )
                     
@@ -404,6 +405,7 @@ class SprintClosedTeamEvaluationUseCase:
         issues: List[IssueSnapshot],
         worklogs: List[WorklogSlice],
         changelogs: Dict[str, List[ChangeLogEvent]],
+        sprint_start_date: datetime,
         sprint_end_date: datetime
     ) -> Optional[TeamEvaluationRow]:
         """Compute evaluation row for a single developer.
@@ -416,6 +418,7 @@ class SprintClosedTeamEvaluationUseCase:
             issues: Developer's issues in this project
             worklogs: Developer's worklogs
             changelogs: Developer's changelogs
+            sprint_start_date: Sprint start date
             sprint_end_date: Sprint end date
             
         Returns:
@@ -424,6 +427,19 @@ class SprintClosedTeamEvaluationUseCase:
         try:
             if not issues:
                 return None
+            
+            # Filter worklogs to only include those within sprint date range
+            sprint_worklogs = [
+                w for w in worklogs 
+                if sprint_start_date <= w.started_at <= sprint_end_date
+            ]
+            
+            if len(sprint_worklogs) < len(worklogs):
+                filtered_count = len(worklogs) - len(sprint_worklogs)
+                LOGGER.debug(
+                    f"Filtered {filtered_count} worklogs outside sprint range for {developer}. "
+                    f"Using {len(sprint_worklogs)}/{len(worklogs)} worklogs."
+                )
             
             # Classify issues
             dev_issues = []
@@ -448,18 +464,18 @@ class SprintClosedTeamEvaluationUseCase:
                 if issue.status in DONE_STATUSES:
                     delivered_issues.append(issue)
             
-            # Calculate worklog hours by type
-            total_hours = sum(w.hours for w in worklogs)
+            # Calculate worklog hours by type (only for worklogs within sprint range)
+            total_hours = sum(w.hours for w in sprint_worklogs)
             bug_hours = sum(
-                w.hours for w in worklogs 
+                w.hours for w in sprint_worklogs 
                 if any(i.key == w.issue_key for i in bug_issues)
             )
             dev_hours = sum(
-                w.hours for w in worklogs 
+                w.hours for w in sprint_worklogs 
                 if any(i.key == w.issue_key for i in dev_issues)
             )
             support_hours = sum(
-                w.hours for w in worklogs 
+                w.hours for w in sprint_worklogs 
                 if any(i.key == w.issue_key for i in support_issues)
             )
             
