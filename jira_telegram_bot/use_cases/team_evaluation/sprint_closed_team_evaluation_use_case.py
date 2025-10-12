@@ -13,7 +13,7 @@ from jira_telegram_bot.entities.team_evaluation import (
     ChangeLogEvent,
     Department
 )
-from jira_telegram_bot.entities.constants import DONE_STATUSES
+from jira_telegram_bot.entities.constants import DONE_STATUSES, DEFAULT_WEEKLY_HOURS
 from jira_telegram_bot.settings.team_evaluation_settings import TeamEvaluationSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
@@ -490,10 +490,34 @@ class SprintClosedTeamEvaluationUseCase:
             )
             expected_hours = round(expected_hours)
 
-            # Calculate deadline performance
-            delivered_with_deadlines = [i for i in delivered_issues if i.due_date]
+            # Handle task overload: select which tasks to evaluate
+            tasks_for_eval, extra_tasks = self.deadline_service.select_tasks_for_evaluation(
+                issues=issues,
+                max_hours=DEFAULT_WEEKLY_HOURS
+            )
+            
+            # Count completed extra tasks
+            extra_completed_count = sum(
+                1 for task in extra_tasks 
+                if task.status in DONE_STATUSES
+            )
+            
+            # Calculate deadline performance using per-task penalties
+            # Only evaluate selected tasks (fair when overloaded)
+            delivered_with_deadlines = [
+                i for i in delivered_issues 
+                if i.due_date and i in tasks_for_eval
+            ]
+            deadline_penalty_score = self.deadline_service.calculate_per_task_deadline_penalties(
+                issues=delivered_with_deadlines,
+                changelogs=changelogs,
+                grace_period_days=2
+            )
+            
+            # Keep average for display purposes (all tasks)
+            all_delivered_with_deadlines = [i for i in delivered_issues if i.due_date]
             avg_deadline_delta = self.deadline_service.average_deadline_delta_days(
-                delivered_with_deadlines, 
+                all_delivered_with_deadlines, 
                 changelogs
             )
             avg_deadline_str = (
@@ -517,17 +541,19 @@ class SprintClosedTeamEvaluationUseCase:
             # Calculate completed high priority
             completed_high_priority = len([i for i in high_priority_issues if i.status in DONE_STATUSES])
             
-            # Calculate quality score
+            # Calculate quality score with new per-task logic and extra task bonus
             quality_score = self.score_service.compute_hosn_score(
                 weights=self.settings.score_weights,
-                avg_deadline_delta_days=avg_deadline_delta or 0.0,
+                deadline_penalty_score=deadline_penalty_score,
                 registered_hours=total_hours,
                 expected_hours=expected_hours,
+                all_issues=issues,
                 completed_high_priority=completed_high_priority,
                 total_high_priority=len(high_priority_issues),
                 support_bugs_per_story=support_bugs_per_story,
                 tester_bugs_per_story=tester_bugs_per_story,
-                defect_thresholds=self.settings.defect_thresholds
+                defect_thresholds=self.settings.defect_thresholds,
+                extra_completed_tasks_count=extra_completed_count
             )
             
             # Create evaluation row

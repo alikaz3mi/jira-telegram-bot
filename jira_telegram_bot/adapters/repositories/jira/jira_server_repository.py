@@ -1185,6 +1185,11 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
                         created_date=self._parse_jira_date(issue.fields.created),
                         updated_date=self._parse_jira_date(issue.fields.updated),
                         linked_issues=linked_issues,
+                        time_estimate_hours=(
+                            issue.fields.timeoriginalestimate / 3600.0
+                            if issue.fields.timeoriginalestimate
+                            else 0.0
+                        )
                     )
                     snapshots.append(snapshot)
                 except Exception as e:

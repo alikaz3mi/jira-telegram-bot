@@ -38,6 +38,9 @@ MAX_EARLY_DELIVERY_BONUS = 110    # Maximum score with early delivery bonus
 
 DEFAULT_DEADLINE_PENALTY_RATE = 2.0  # 2 points per hour late (deprecated - use per day)
 
+# Task overload handling
+EXTRA_TASK_COMPLETION_BONUS = 3.0  # Bonus points per extra task completed beyond capacity
+
 # Default workweek configuration
 DEFAULT_WEEKLY_HOURS = 46.0
 DEFAULT_WORKDAYS = (6, 0, 1, 2, 3, 5)  # Sat-Thu (Saturday=6, Sunday=0, etc.)

@@ -101,6 +101,7 @@ class IssueSnapshot(BaseModel):
     created_date: datetime
     updated_date: datetime
     linked_issues: List[str] = Field(default_factory=list)
+    time_estimate_hours: Optional[float] = Field(default=None)
 
 
 class TeamEvaluationRow(BaseModel):
