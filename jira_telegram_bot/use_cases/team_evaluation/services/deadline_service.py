@@ -132,14 +132,31 @@ class DeadlineService:
             None: 6
         }
         
-        sorted_issues = sorted(
-            issues,
-            key=lambda x: (
-                priority_order.get(x.priority, 6),
-                x.due_date if x.due_date else datetime.max.replace(tzinfo=None),
-                x.key
+        now = datetime.now(timezone.utc)
+        
+        def sort_key(issue: IssueSnapshot):
+            """Sort key: overdue Highest tasks first, then by deadline and priority."""
+            due_date = issue.due_date if issue.due_date else datetime.max.replace(tzinfo=None)
+            due_date_normalized = DeadlineService._normalize_datetime(due_date) if issue.due_date else due_date
+            priority = priority_order.get(issue.priority, 6)
+            
+            # Check if task is overdue
+            is_overdue = due_date_normalized < now if issue.due_date else False
+            
+            # Sort order:
+            # 1. Overdue status (overdue first)
+            # 2. Priority (for overdue tasks, Highest comes first)
+            # 3. Due date (earlier deadline first)
+            # 4. Issue key (for stability)
+            return (
+                not is_overdue,  # False (overdue) comes before True (not overdue)
+                priority if is_overdue else 999,  # Priority matters only for overdue
+                due_date_normalized,
+                priority if not is_overdue else 999,  # Priority for non-overdue
+                issue.key
             )
-        )
+        
+        sorted_issues = sorted(issues, key=sort_key)
         
         selected_for_eval = []
         extra_tasks = []
@@ -164,17 +181,22 @@ class DeadlineService:
     ) -> float:
         """Calculate total deadline penalty/bonus based on individual task delivery times.
         
+        Penalty/bonus per day is calculated dynamically based on task count:
+        - Few tasks (1-2): High penalty coefficient (~15 points/day)
+        - Many tasks (10+): Lower penalty coefficient (~5 points/day)
+        - Formula: base_coefficient = 15 - (10 * (task_count - 1) / 9)
+          Clamped between 5 and 15
+        
+        This is then multiplied by priority weight:
+        - Highest: 1.0x
+        - High: 0.6x
+        - Others: 0.2x
+        
         Penalties (positive values):
-        - Late delivery after grace period: penalty per day based on priority
-          * Highest: -10 points per day
-          * High: -5 points per day  
-          * Others: -2 points per day
+        - Late delivery after grace period
           
         Bonuses (negative values = reducing penalty):
-        - Early delivery: bonus per day based on priority
-          * Highest: +10 points per day
-          * High: +5 points per day
-          * Others: +2 points per day
+        - Early delivery (same rate as penalties)
         
         Args:
             issues: List of delivered issues
@@ -185,6 +207,17 @@ class DeadlineService:
             Total penalty score (positive = penalty, negative = bonus)
         """
         total_penalty = 0.0
+        
+        # Calculate dynamic penalty coefficient based on task count
+        task_count = len(issues)
+        if task_count == 0:
+            return 0.0
+        
+        # Formula: starts at 15 for 1 task, decreases to 5 for 10+ tasks
+        # For 1 task: 15 - (10 * 0 / 9) = 15
+        # For 10 tasks: 15 - (10 * 9 / 9) = 5
+        base_coefficient = 15.0 - (10.0 * min(task_count - 1, 9) / 9.0)
+        base_coefficient = max(5.0, min(15.0, base_coefficient))
         
         for issue in issues:
             if not issue.due_date:
@@ -199,12 +232,15 @@ class DeadlineService:
             
             delta_days = (delivery_time_normalized - due_date_normalized).total_seconds() / (24 * 3600)
             
+            # Priority weight multiplier
             if issue.priority == "Highest":
-                points_per_day = 5
+                priority_weight = 1.0
             elif issue.priority == "High":
-                points_per_day = 3
+                priority_weight = 0.6
             else:
-                points_per_day = 1
+                priority_weight = 0.2
+            
+            points_per_day = base_coefficient * priority_weight
             
             if delta_days > grace_period_days:
                 days_late = delta_days - grace_period_days
@@ -219,24 +255,28 @@ class DeadlineService:
 
     @staticmethod
     def _find_review_time(issue_key: str, changelogs: Dict[str, List[ChangeLogEvent]]) -> Optional[datetime]:
-        """Find when an issue was moved to Review status.
+        """Find when an issue was last moved to Review status.
         
         Args:
             issue_key: The issue key to check
             changelogs: Dictionary of changelog events per issue
             
         Returns:
-            Datetime when issue was moved to Review, or None if not found
+            Datetime of the last (most recent) transition to Review, or None if not found
         """
         issue_changelogs = changelogs.get(issue_key, [])
         
+        last_review_time = None
+        
+        # Find the most recent transition to Review status by comparing timestamps
         for changelog in issue_changelogs:
             if (changelog.field.lower() == "status" and 
                 changelog.to_status and 
                 changelog.to_status in REVIEW_STATUSES):
-                return changelog.changed_at
+                if last_review_time is None or changelog.changed_at > last_review_time:
+                    last_review_time = changelog.changed_at
         
-        return None
+        return last_review_time
 
     @staticmethod
     def _find_delivery_time(issue_key: str, changelogs: Dict[str, List[ChangeLogEvent]]) -> Optional[datetime]:
@@ -254,22 +294,23 @@ class DeadlineService:
         """
         issue_changelogs = changelogs.get(issue_key, [])
         
+        # Find the most recent Done time by comparing timestamps
         done_time = None
-        review_time = None
-        
-        # Find both Review and Done times
         for changelog in issue_changelogs:
-            if changelog.field.lower() == "status" and changelog.to_status:
-                if changelog.to_status in REVIEW_STATUSES and not review_time:
-                    review_time = changelog.changed_at
-                elif changelog.to_status in DONE_STATUSES and not done_time:
+            if (changelog.field.lower() == "status" and 
+                changelog.to_status and 
+                changelog.to_status in DONE_STATUSES):
+                if done_time is None or changelog.changed_at > done_time:
                     done_time = changelog.changed_at
         
         if not done_time:
             return None
         
+        # Find the last Review time using helper method
+        review_time = DeadlineService._find_review_time(issue_key, changelogs)
+        
         # If both Review and Done exist and happened on the same day, use Review time
-        if review_time and done_time:
+        if review_time:
             review_date = review_time.date()
             done_date = done_time.date()
             

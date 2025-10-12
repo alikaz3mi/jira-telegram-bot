@@ -427,6 +427,8 @@ class SprintClosedTeamEvaluationUseCase:
         try:
             if not issues:
                 return None
+            if developer.lower() == 'sh_zanganeh':
+                x = 1
             
             # Filter worklogs to only include those within sprint date range
             sprint_worklogs = [
