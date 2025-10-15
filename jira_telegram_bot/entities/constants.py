@@ -27,19 +27,37 @@ DEFAULT_DEFECT_THRESHOLDS = {
 }
 
 # High Priority Task Requirements
-MIN_HIGH_PRIORITY_TASKS_PER_WEEK = 1
 HIGH_PRIORITY_ZERO_COMPLETION_PENALTY = -50  # Severe penalty for zero completion
 HIGH_PRIORITY_BELOW_MIN_SCORE = 20           # Low score for below minimum
 
 # Deadline calculation (days instead of hours)
-DEADLINE_PENALTY_PER_DAY = 2.0    # Points deducted per day late
-EARLY_DELIVERY_BONUS_PER_DAY = 1.0  # Points added per day early
 MAX_EARLY_DELIVERY_BONUS = 110    # Maximum score with early delivery bonus
 
-DEFAULT_DEADLINE_PENALTY_RATE = 2.0  # 2 points per hour late (deprecated - use per day)
 
 # Task overload handling
 EXTRA_TASK_COMPLETION_BONUS = 3.0  # Bonus points per extra task completed beyond capacity
+
+# Required tasks calculation
+REQUIRED_TASKS_HOURS_RATIO = 0.5  # 50% of weekly hours for required tasks
+
+# Deadline penalty configuration
+DEADLINE_GRACE_PERIOD_DAYS = 2  # Grace period before penalties apply
+UNDELIVERED_TASK_DELAY_DAYS = 1  # Assume undelivered tasks are 1 day after sprint end
+
+# Dynamic penalty coefficient (based on task count)
+PENALTY_COEFFICIENT_MAX = 15.0  # Maximum penalty coefficient (1 task)
+PENALTY_COEFFICIENT_MIN = 5.0   # Minimum penalty coefficient (10+ tasks)
+PENALTY_COEFFICIENT_TASK_THRESHOLD = 9  # Task count threshold for minimum penalty
+
+# Priority weight multipliers for deadline penalties
+PRIORITY_WEIGHT_HIGHEST = 1.0
+PRIORITY_WEIGHT_HIGH = 0.6
+PRIORITY_WEIGHT_OTHERS = 0.2
+
+# Time registration thresholds and penalties
+TIME_REGISTRATION_THRESHOLD = 0.65  # 65% of minimum required hours
+TIME_REGISTRATION_PENALTY_BASE = 30  # Base penalty for no time registration
+TIME_REGISTRATION_PENALTY_MULTIPLIER = 30  # Multiplier for shortage percentage
 
 # Default workweek configuration
 DEFAULT_WEEKLY_HOURS = 46.0

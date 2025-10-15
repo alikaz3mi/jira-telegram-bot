@@ -4,6 +4,7 @@ The team evaluation system provides comprehensive metrics and scoring for develo
 
 ## 📄 Documentation Files
 
+- **scoring-methodology.md** - 📊 راهنمای فارسی محاسبه امتیاز حسن انجام کار (برای مدیران)
 - **team_evaluation_system.md** - Complete system overview, scoring algorithms, and evaluation criteria
 - **team_evaluation_cli.md** - Command-line interface documentation for running evaluations
 

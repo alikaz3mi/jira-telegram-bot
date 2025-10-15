@@ -1,10 +1,20 @@
 """Deadline service for team evaluation."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict
 
 from jira_telegram_bot.entities.team_evaluation import IssueSnapshot, ChangeLogEvent
-from jira_telegram_bot.entities.constants import DONE_STATUSES, REVIEW_STATUSES
+from jira_telegram_bot.entities.constants import (
+    DONE_STATUSES,
+    REVIEW_STATUSES,
+    PENALTY_COEFFICIENT_MAX,
+    PENALTY_COEFFICIENT_MIN,
+    PENALTY_COEFFICIENT_TASK_THRESHOLD,
+    PRIORITY_WEIGHT_HIGHEST,
+    PRIORITY_WEIGHT_HIGH,
+    PRIORITY_WEIGHT_OTHERS,
+    UNDELIVERED_TASK_DELAY_DAYS
+)
 
 
 class DeadlineService:
@@ -177,31 +187,34 @@ class DeadlineService:
     def calculate_per_task_deadline_penalties(
         issues: List[IssueSnapshot],
         changelogs: Dict[str, List[ChangeLogEvent]],
-        grace_period_days: int = 2
+        grace_period_days: int = 2,
+        sprint_end_date: Optional[datetime] = None
     ) -> float:
         """Calculate total deadline penalty/bonus based on individual task delivery times.
         
         Penalty/bonus per day is calculated dynamically based on task count:
-        - Few tasks (1-2): High penalty coefficient (~15 points/day)
-        - Many tasks (10+): Lower penalty coefficient (~5 points/day)
-        - Formula: base_coefficient = 15 - (10 * (task_count - 1) / 9)
-          Clamped between 5 and 15
+        - Few tasks (1-2): High penalty coefficient (PENALTY_COEFFICIENT_MAX = 15 points/day)
+        - Many tasks (10+): Lower penalty coefficient (PENALTY_COEFFICIENT_MIN = 5 points/day)
+        - Formula: base_coefficient = MAX - (range × min(task_count - 1, threshold) / threshold)
+          Clamped between PENALTY_COEFFICIENT_MIN and PENALTY_COEFFICIENT_MAX
         
         This is then multiplied by priority weight:
-        - Highest: 1.0x
-        - High: 0.6x
-        - Others: 0.2x
+        - Highest: PRIORITY_WEIGHT_HIGHEST (1.0x)
+        - High: PRIORITY_WEIGHT_HIGH (0.6x)
+        - Others: PRIORITY_WEIGHT_OTHERS (0.2x)
         
         Penalties (positive values):
         - Late delivery after grace period
+        - For undelivered tasks: assumed delivered 1 day after sprint end
           
         Bonuses (negative values = reducing penalty):
         - Early delivery (same rate as penalties)
         
         Args:
-            issues: List of delivered issues
+            issues: List of issues (both delivered and undelivered)
             changelogs: Dictionary of changelog events per issue
             grace_period_days: Number of days grace period before penalties apply (for late delivery)
+            sprint_end_date: Sprint end date (used for undelivered tasks)
             
         Returns:
             Total penalty score (positive = penalty, negative = bonus)
@@ -213,18 +226,28 @@ class DeadlineService:
         if task_count == 0:
             return 0.0
         
-        # Formula: starts at 15 for 1 task, decreases to 5 for 10+ tasks
+        # Formula: starts at PENALTY_COEFFICIENT_MAX for 1 task, decreases to PENALTY_COEFFICIENT_MIN for 10+ tasks
         # For 1 task: 15 - (10 * 0 / 9) = 15
         # For 10 tasks: 15 - (10 * 9 / 9) = 5
-        base_coefficient = 15.0 - (10.0 * min(task_count - 1, 9) / 9.0)
-        base_coefficient = max(5.0, min(15.0, base_coefficient))
+        coefficient_range = PENALTY_COEFFICIENT_MAX - PENALTY_COEFFICIENT_MIN
+        base_coefficient = PENALTY_COEFFICIENT_MAX - (coefficient_range * min(task_count - 1, PENALTY_COEFFICIENT_TASK_THRESHOLD) / PENALTY_COEFFICIENT_TASK_THRESHOLD)
+        base_coefficient = max(PENALTY_COEFFICIENT_MIN, min(PENALTY_COEFFICIENT_MAX, base_coefficient))
         
         for issue in issues:
             if not issue.due_date:
                 continue
             
+            # Try to find actual delivery time
             delivery_time = DeadlineService._find_delivery_time(issue.key, changelogs)
+            
+            # If not delivered and sprint_end_date provided, assume delivery after sprint end
+            if not delivery_time and sprint_end_date:
+                # Task not delivered: assume delivered UNDELIVERED_TASK_DELAY_DAYS after sprint end
+                delivery_time = sprint_end_date + timedelta(days=UNDELIVERED_TASK_DELAY_DAYS)
+                delivery_time = DeadlineService._normalize_datetime(delivery_time)
+            
             if not delivery_time:
+                # Skip if no delivery time and no sprint_end_date
                 continue
             
             due_date_normalized = DeadlineService._normalize_datetime(issue.due_date)
@@ -234,11 +257,11 @@ class DeadlineService:
             
             # Priority weight multiplier
             if issue.priority == "Highest":
-                priority_weight = 1.0
+                priority_weight = PRIORITY_WEIGHT_HIGHEST
             elif issue.priority == "High":
-                priority_weight = 0.6
+                priority_weight = PRIORITY_WEIGHT_HIGH
             else:
-                priority_weight = 0.2
+                priority_weight = PRIORITY_WEIGHT_OTHERS
             
             points_per_day = base_coefficient * priority_weight
             

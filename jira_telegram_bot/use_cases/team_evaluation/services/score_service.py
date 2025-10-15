@@ -7,14 +7,14 @@ from jira_telegram_bot.entities.team_evaluation import (
     IssueSnapshot
 )
 from jira_telegram_bot.entities.constants import (
-    DEADLINE_PENALTY_PER_DAY,
-    EARLY_DELIVERY_BONUS_PER_DAY,
-    MAX_EARLY_DELIVERY_BONUS,
     HIGH_PRIORITY_ZERO_COMPLETION_PENALTY,
     HIGH_PRIORITY_BELOW_MIN_SCORE,
-    MIN_HIGH_PRIORITY_TASKS_PER_WEEK,
     DONE_STATUSES,
-    EXTRA_TASK_COMPLETION_BONUS
+    EXTRA_TASK_COMPLETION_BONUS,
+    REQUIRED_TASKS_HOURS_RATIO,
+    TIME_REGISTRATION_THRESHOLD,
+    TIME_REGISTRATION_PENALTY_BASE,
+    TIME_REGISTRATION_PENALTY_MULTIPLIER
 )
 
 
@@ -35,7 +35,7 @@ class ScoreService:
         Returns:
             Tuple of (required_task_count, sorted_priority_issues)
         """
-        target_hours = expected_weekly_hours * 0.5
+        target_hours = expected_weekly_hours * REQUIRED_TASKS_HOURS_RATIO
         
         priority_order = {
             "Highest": 1,
@@ -148,20 +148,20 @@ class ScoreService:
         )
         
         # CRITICAL: Apply penalties for poor performance
-        # Rule 1: No time registered = -30 penalty
+        # Rule 1: No time registered = base penalty
         if registered_hours == 0:
-            composite_score -= 30
+            composite_score -= TIME_REGISTRATION_PENALTY_BASE
         else:
             # Rule 1b: Insufficient time registration penalty
-            # If registered hours < 65% of min(expected_hours, total_task_hours)
+            # If registered hours < threshold% of min(expected_hours, total_task_hours)
             total_task_hours = sum(issue.time_estimate_hours or 0.0 for issue in all_issues)
             min_threshold = min(expected_hours, total_task_hours)
-            required_min_hours = min_threshold * 0.65
+            required_min_hours = min_threshold * TIME_REGISTRATION_THRESHOLD
             
             if registered_hours < required_min_hours:
                 shortage = required_min_hours - registered_hours
                 shortage_percentage = shortage / required_min_hours
-                time_registration_penalty = shortage_percentage * 30
+                time_registration_penalty = shortage_percentage * TIME_REGISTRATION_PENALTY_MULTIPLIER
                 composite_score -= time_registration_penalty
         
         # Rule 2: No high priority tasks completed = severe penalty (already in s_high)

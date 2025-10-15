@@ -13,7 +13,11 @@ from jira_telegram_bot.entities.team_evaluation import (
     ChangeLogEvent,
     Department
 )
-from jira_telegram_bot.entities.constants import DONE_STATUSES, DEFAULT_WEEKLY_HOURS
+from jira_telegram_bot.entities.constants import (
+    DONE_STATUSES,
+    DEFAULT_WEEKLY_HOURS,
+    DEADLINE_GRACE_PERIOD_DAYS
+)
 from jira_telegram_bot.settings.team_evaluation_settings import TeamEvaluationSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
@@ -427,13 +431,17 @@ class SprintClosedTeamEvaluationUseCase:
         try:
             if not issues:
                 return None
-            if developer.lower() == 'sh_zanganeh':
+            if developer.lower() == 'm_mousavi':
                 x = 1
+            
+            # Normalize sprint dates to ensure timezone consistency
+            sprint_start_normalized = self.deadline_service._normalize_datetime(sprint_start_date)
+            sprint_end_normalized = self.deadline_service._normalize_datetime(sprint_end_date)
             
             # Filter worklogs to only include those within sprint date range
             sprint_worklogs = [
                 w for w in worklogs 
-                if sprint_start_date <= w.started_at <= sprint_end_date
+                if sprint_start_normalized <= self.deadline_service._normalize_datetime(w.started_at) <= sprint_end_normalized
             ]
             
             if len(sprint_worklogs) < len(worklogs):
@@ -505,15 +513,17 @@ class SprintClosedTeamEvaluationUseCase:
             )
             
             # Calculate deadline performance using per-task penalties
-            # Only evaluate selected tasks (fair when overloaded)
-            delivered_with_deadlines = [
-                i for i in delivered_issues 
-                if i.due_date and i in tasks_for_eval
+            # Include ALL tasks with deadlines (delivered AND undelivered)
+            # Undelivered tasks are assumed delivered 1 day after sprint end
+            tasks_with_deadlines = [
+                i for i in tasks_for_eval 
+                if i.due_date
             ]
             deadline_penalty_score = self.deadline_service.calculate_per_task_deadline_penalties(
-                issues=delivered_with_deadlines,
+                issues=tasks_with_deadlines,
                 changelogs=changelogs,
-                grace_period_days=2
+                grace_period_days=DEADLINE_GRACE_PERIOD_DAYS,
+                sprint_end_date=sprint_end_normalized
             )
             
             # Keep average for display purposes (all tasks)
