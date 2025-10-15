@@ -199,6 +199,7 @@ class SendDeadlineAlertsUseCase:
             issue_key=issue.key,
             summary=issue.fields.summary,
             assignee=self._extract_assignee(issue),
+            reporter=self._extract_reporter(issue),
             due_date=self._parse_date_field(getattr(issue.fields, "duedate", None)),
             target_end=self._parse_date_field(
                 getattr(issue.fields, self.task_manager_repository.jira_target_end_id, None),
@@ -235,6 +236,14 @@ class SendDeadlineAlertsUseCase:
         return (
             getattr(issue.fields.assignee, "name", None)
             if issue.fields.assignee
+            else None
+        )
+
+    def _extract_reporter(self, issue: Issue) -> Optional[str]:
+        """Extract the reporter username from the issue."""
+        return (
+            getattr(issue.fields.reporter, "name", None)
+            if issue.fields.reporter
             else None
         )
 
@@ -283,12 +292,19 @@ class SendDeadlineAlertsUseCase:
         self,
         alerts: List[DeadlineAlert],
     ) -> Dict[str, List[DeadlineAlert]]:
-        """Group alerts by assignee username."""
+        """Group alerts by assignee username, but use reporter for review-status tasks."""
         alerts_by_assignee = {}
         for alert in alerts:
-            if alert.assignee:
-                alerts_by_assignee.setdefault(alert.assignee, []).append(alert)
+            recipient = self._get_notification_recipient(alert)
+            if recipient:
+                alerts_by_assignee.setdefault(recipient, []).append(alert)
         return alerts_by_assignee
+
+    def _get_notification_recipient(self, alert: DeadlineAlert) -> Optional[str]:
+        """Get the recipient for a notification based on task status."""
+        if alert.is_in_review and alert.reporter:
+            return alert.reporter
+        return alert.assignee
 
     async def _send_notifications_to_assignee(
         self,

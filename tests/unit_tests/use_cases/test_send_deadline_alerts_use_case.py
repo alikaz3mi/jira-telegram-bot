@@ -22,6 +22,8 @@ class TestSendDeadlineAlertsUseCase(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.task_manager_repository = Mock()  # Sync methods
+        self.task_manager_repository.jira_sprint_id = "customfield_10020"
+        self.task_manager_repository.jira_target_end_id = "customfield_10110"
         self.user_config_repository = Mock()  # Sync methods
         self.telegram_notifier = AsyncMock()  # Async methods
         self.notification_log_repository = AsyncMock()  # Async methods
@@ -77,6 +79,11 @@ class TestSendDeadlineAlertsUseCase(unittest.IsolatedAsyncioTestCase):
             fields_mock.assignee = assignee_mock
         else:
             fields_mock.assignee = None
+
+        # Set up reporter (default to same as assignee if not specified)
+        reporter_mock = MagicMock()
+        reporter_mock.name = assignee if assignee else "default.reporter"
+        fields_mock.reporter = reporter_mock
 
         # Set up priority
         if priority:
@@ -391,6 +398,124 @@ class TestSendDeadlineAlertsUseCase(unittest.IsolatedAsyncioTestCase):
 
         # Assert
         self.assertIsNone(result)
+
+    async def test_review_status_sends_to_reporter(self):
+        """Test that review status tasks send notifications to reporter."""
+        self.calendar_repository.is_holiday_or_weekend.return_value = False
+        today = datetime.now()
+        tomorrow = today + timedelta(days=1)
+
+        mock_issue = self._create_mock_issue(
+            key="TEST-123",
+            summary="Test issue in review",
+            assignee="john.doe",
+            due_date=tomorrow.strftime("%Y-%m-%d"),
+            status="In Review",
+        )
+
+        reporter_mock = MagicMock()
+        reporter_mock.name = "jane.smith"
+        mock_issue.fields.reporter = reporter_mock
+
+        self.task_manager_repository.get_issues_with_approaching_deadlines.return_value = [
+            mock_issue,
+        ]
+
+        mock_reporter_config = self._create_mock_user_config(
+            telegram_username="janesmith",
+            jira_username="jane.smith",
+            chat_id=54321,
+        )
+
+        self.user_config_repository.get_user_config_by_jira_username.return_value = (
+            mock_reporter_config
+        )
+        self.user_config_repository.get_all_user_configs.return_value = {
+            "janesmith": mock_reporter_config,
+        }
+        self.user_config_repository.get_group_chat_ids.return_value = []
+
+        self.notification_log_repository.has_notification_been_sent.return_value = False
+        self.telegram_notifier.send_personal_notification.return_value = True
+
+        stats = await self.use_case.execute()
+
+        self.assertEqual(stats["issues_processed"], 1)
+        self.assertEqual(stats["personal_notifications_sent"], 1)
+
+        call_args = self.telegram_notifier.send_personal_notification.call_args
+        self.assertEqual(call_args[0][0], 54321)
+        alert = call_args[0][1]
+        self.assertEqual(alert.reporter, "jane.smith")
+        self.assertTrue(alert.is_in_review)
+
+    async def test_get_notification_recipient_for_review_status(self):
+        """Test that review status returns reporter as recipient."""
+        alert = DeadlineAlert(
+            issue_key="TEST-123",
+            summary="Test",
+            assignee="john.doe",
+            reporter="jane.smith",
+            due_date=datetime.now(),
+            days_remaining=1,
+            project_key="TEST",
+            status="In Review",
+            priority="High",
+            issue_url="http://test.com",
+            issue_type="Story",
+        )
+
+        recipient = self.use_case._get_notification_recipient(alert)
+
+        self.assertEqual(recipient, "jane.smith")
+
+    async def test_get_notification_recipient_for_normal_status(self):
+        """Test that normal status returns assignee as recipient."""
+        alert = DeadlineAlert(
+            issue_key="TEST-123",
+            summary="Test",
+            assignee="john.doe",
+            reporter="jane.smith",
+            due_date=datetime.now(),
+            days_remaining=1,
+            project_key="TEST",
+            status="In Progress",
+            priority="High",
+            issue_url="http://test.com",
+            issue_type="Story",
+        )
+
+        recipient = self.use_case._get_notification_recipient(alert)
+
+        self.assertEqual(recipient, "john.doe")
+
+    async def test_extract_reporter_from_issue(self):
+        """Test extracting reporter from issue."""
+        mock_issue = self._create_mock_issue(
+            key="TEST-123",
+            summary="Test issue",
+        )
+
+        reporter_mock = MagicMock()
+        reporter_mock.name = "jane.smith"
+        mock_issue.fields.reporter = reporter_mock
+
+        reporter = self.use_case._extract_reporter(mock_issue)
+
+        self.assertEqual(reporter, "jane.smith")
+
+    async def test_extract_reporter_none_when_no_reporter(self):
+        """Test extracting reporter returns None when no reporter."""
+        mock_issue = self._create_mock_issue(
+            key="TEST-123",
+            summary="Test issue",
+        )
+
+        mock_issue.fields.reporter = None
+
+        reporter = self.use_case._extract_reporter(mock_issue)
+
+        self.assertIsNone(reporter)
 
 
 if __name__ == "__main__":

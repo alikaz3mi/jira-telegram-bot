@@ -103,9 +103,14 @@ class TelegramNotifier(TelegramNotifierInterface):
             priority_emoji = self._get_priority_emoji(alert.priority)
             priority_text = f"\n<b>🔸 Priority:</b> <code>{alert.priority}</code> {priority_emoji}"
         
-        # Build assignee text
+        # Build assignee/reporter text based on review status
         assignee_text = ""
-        if alert.assignee:
+        if alert.is_in_review:
+            if alert.reporter:
+                assignee_text = f"\n<b>🔸 Reporter:</b> <code>{alert.reporter}</code>"
+            if alert.assignee:
+                assignee_text += f"\n<b>🔸 Assignee:</b> <code>{alert.assignee}</code>"
+        elif alert.assignee:
             assignee_text = f"\n<b>🔸 Assignee:</b> <code>{alert.assignee}</code>"
         
         message = f"""<b>{urgency_emoji} Deadline Alert{mention_text}</b>
@@ -180,16 +185,18 @@ class TelegramNotifier(TelegramNotifierInterface):
                 current_message_parts.append(group_header)
             
             for alert in group_alerts:
-                # Get telegram username for mention
+                # Get telegram username for mention (reporter for review status, assignee otherwise)
                 telegram_username = None
-                if mention_users and alert.assignee:
-                    telegram_username = await self._get_telegram_username(alert.assignee)
+                person_to_mention = alert.reporter if alert.is_in_review else alert.assignee
+                if mention_users and person_to_mention:
+                    telegram_username = await self._get_telegram_username(person_to_mention)
                 
                 mention_text = f" @{telegram_username}" if telegram_username else ""
+                review_indicator = " 🔍 (In Review)" if alert.is_in_review else ""
                 deadline_text = self._get_short_deadline_text(alert)
                 summary_text = alert.summary[:40] + ('...' if len(alert.summary) > 40 else '')
                 
-                issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>"
+                issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>{review_indicator}"
                 deadline_line = f"  {deadline_text}{mention_text}"
                 
                 # Check if adding this issue would exceed the limit
@@ -264,16 +271,18 @@ class TelegramNotifier(TelegramNotifierInterface):
                 if total_issues_added >= max_issues:
                     break
                     
-                # Get telegram username for mention
+                # Get telegram username for mention (reporter for review status, assignee otherwise)
                 telegram_username = None
-                if mention_users and alert.assignee:
-                    telegram_username = await self._get_telegram_username(alert.assignee)
+                person_to_mention = alert.reporter if alert.is_in_review else alert.assignee
+                if mention_users and person_to_mention:
+                    telegram_username = await self._get_telegram_username(person_to_mention)
                 
                 mention_text = f" @{telegram_username}" if telegram_username else ""
+                review_indicator = " 🔍 (In Review)" if alert.is_in_review else ""
                 deadline_text = self._get_short_deadline_text(alert)
                 summary_text = alert.summary[:40] + ('...' if len(alert.summary) > 40 else '')
                 
-                issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>"
+                issue_line = f"• <a href=\"{alert.issue_url}\">{alert.issue_key}</a>: <code>{summary_text}</code>{review_indicator}"
                 deadline_line = f"  {deadline_text}{mention_text}"
                 
                 message_parts.extend([issue_line, deadline_line, ""])

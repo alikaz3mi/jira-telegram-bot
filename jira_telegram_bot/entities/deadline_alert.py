@@ -13,6 +13,7 @@ class DeadlineAlert(BaseModel):
     issue_key: str = Field(description="Jira issue key")
     summary: str = Field(description="Issue summary")
     assignee: Optional[str] = Field(default=None, description="Issue assignee")
+    reporter: Optional[str] = Field(default=None, description="Issue reporter")
     due_date: Optional[datetime] = Field(default=None, description="Issue due date")
     target_end: Optional[datetime] = Field(
         default=None,
@@ -53,6 +54,14 @@ class DeadlineAlert(BaseModel):
     def is_in_active_sprint(self) -> bool:
         """Check if the issue is in an active sprint."""
         return bool(self.sprint_info)
+
+    @property
+    def is_in_review(self) -> bool:
+        """Check if the issue is in review status."""
+        if not self.status:
+            return False
+        status_lower = self.status.lower()
+        return "review" in status_lower or "بررسی" in status_lower
 
     @property
     def urgency_level(self) -> str:
