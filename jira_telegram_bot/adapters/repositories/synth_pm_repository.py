@@ -24,6 +24,9 @@ from jira_telegram_bot.entities.synth_pm.constants import (
     STATUS_DESCRIPTIONS,
     SynthPMStatus,
 )
+from jira_telegram_bot.entities.synth_pm.department_dependency_calculator import (
+    DepartmentDependencyCalculator,
+)
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
@@ -1390,6 +1393,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "deadline": ["ددلاین", "Deadline", "ددلاین"],
             "sprint": ["اسپرینت", "Sprint", "اسپرینت"],
             "dependencies": ["وابستگی ها", "Dependencies", "وابستگی ها"],
+            "department_deps": ["Department Deps", "Department Dependencies", "وابستگی های دپارتمان"],
             "initial_delivery_time": [
             "زمان تحویل اولیه",
             "Initial Delivery",
@@ -1580,6 +1584,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 dependencies=(
                     get_mapped_value("dependencies")
                     if get_mapped_value("dependencies") != "Select"
+                    else None
+                ),
+                department_deps=(
+                    get_mapped_value("department_deps")
+                    if get_mapped_value("department_deps") not in ["Select", ""]
                     else None
                 ),
                 initial_delivery_time=parse_date(
@@ -1897,7 +1906,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         sprint_info: SprintInfo,
         dates: Optional[Dict[str, str]] = None,
     ) -> List[str]:
-        """Create subtasks for each assignee.
+        """Create subtasks for each assignee with dependency handling.
 
         Args:
             parent_issue_key: Parent story issue key
@@ -1913,8 +1922,49 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             return []
 
         project_key = self.settings.developer_board_project_key
-        created_subtasks = []
+        created_subtasks = {}
 
+        # Parse department dependencies
+        dept_deps_dict = DepartmentDependencyCalculator.parse_department_deps(
+            feature.department_deps,
+        )
+
+        # Build department hours mapping from feature.times
+        department_hours = {}
+        component_to_dept = {}
+
+        for assignee in assignees:
+            component = self.user_config.get_user_component(
+                assignee,
+                self.settings.developer_board_project_key,
+            )
+            if component:
+                dept_name = DepartmentDependencyCalculator.get_department_from_component(component)
+                story_points = self._get_assignee_story_points(assignee, feature, component)
+                if story_points and story_points > 0:
+                    department_hours[dept_name] = story_points
+                    component_to_dept[component] = dept_name
+
+        # Get holidays for deadline calculation
+        current_year = datetime.now().year
+        try:
+            from jira_telegram_bot.adapters.repositories.calendar.json_calendar_repository import JsonCalendarRepository
+            calendar_repo = JsonCalendarRepository()
+            holidays = await calendar_repo.get_holidays(current_year)
+            holidays.update(await calendar_repo.get_holidays(current_year + 1))
+        except Exception as e:
+            LOGGER.warning(f"Could not load holidays: {e}, using empty set")
+            holidays = set()
+
+        # Calculate department deadlines considering dependencies
+        department_deadlines = DepartmentDependencyCalculator.calculate_department_deadlines(
+            feature.deadline,
+            dept_deps_dict,
+            department_hours,
+            holidays,
+        )
+
+        # Create subtasks with calculated deadlines
         for assignee in assignees:
             try:
                 component = self.user_config.get_user_component(
@@ -1925,12 +1975,38 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     LOGGER.warning(
                         f"No component found for user {assignee}, skipping component assignment",
                     )
+                    continue
 
                 story_points = self._get_assignee_story_points(
                     assignee,
                     feature,
                     component,
                 )
+
+                # Get reporter (component lead)
+                reporter = self.get_component_lead(project_key, component)
+
+                # Get department-specific deadlines
+                dept_name = component_to_dept.get(component)
+                dept_dates = department_deadlines.get(dept_name, {})
+
+                # Use calculated dates if available, otherwise use parent dates
+                subtask_due_date = dept_dates.get("end")
+                subtask_target_start = dept_dates.get("start")
+                subtask_target_end = dept_dates.get("end")
+
+                # Fallback to parent dates if no calculation available
+                if not subtask_due_date and dates:
+                    subtask_due_date = dates.get("due_date")
+                if not subtask_target_start and dates:
+                    subtask_target_start = dates.get("target_start")
+                if not subtask_target_end and dates:
+                    subtask_target_end = dates.get("target_end")
+
+                # Convert datetime to string format for Jira
+                due_date_str = subtask_due_date.strftime("%Y-%m-%d") if subtask_due_date else None
+                target_start_str = subtask_target_start.strftime("%Y-%m-%d") if subtask_target_start else None
+                target_end_str = subtask_target_end.strftime("%Y-%m-%d") if subtask_target_end else None
 
                 subtask_data = TaskData(
                     project_key=project_key,
@@ -1941,24 +2017,85 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     components=[component] if component else None,
                     assignee=assignee,
                     parent_issue_key=parent_issue_key,
-                    due_date=dates.get("due_date"),
-                    target_start=dates.get("target_start"),
-                    target_end=dates.get("target_end"),
+                    due_date=due_date_str,
+                    target_start=target_start_str,
+                    target_end=target_end_str,
                     story_points=story_points / 8 if story_points and story_points > 0 else None,
+                    reporter=reporter,
                 )
 
                 subtask_issue = self.jira_repository.create_task(subtask_data)
-                created_subtasks.append(subtask_issue.key)
+                created_subtasks[component] = subtask_issue.key
 
                 LOGGER.info(
-                    f"Created subtask {subtask_issue.key} for assignee {assignee} in component {component}",
+                    f"Created subtask {subtask_issue.key} for assignee {assignee} in component {component} "
+                    f"with dates: start={target_start_str}, end={target_end_str}",
                 )
 
             except Exception as e:
                 LOGGER.error(f"Error creating subtask for assignee {assignee}: {e}")
                 continue
 
-        return created_subtasks
+        # Create blocking relationships between subtasks
+        await self._create_subtask_blocking_links(
+            created_subtasks,
+            dept_deps_dict,
+            component_to_dept,
+        )
+
+        return list(created_subtasks.values())
+
+    async def _create_subtask_blocking_links(
+        self,
+        created_subtasks: Dict[str, str],
+        dept_deps_dict: Dict[str, List[str]],
+        component_to_dept: Dict[str, str],
+    ):
+        """Create blocking links between subtasks based on department dependencies.
+
+        Args:
+            created_subtasks: Dict mapping component to subtask key
+            dept_deps_dict: Dict mapping blocked department to list of blocking departments
+            component_to_dept: Dict mapping component to department name
+        """
+        try:
+            # Reverse the component_to_dept mapping
+            dept_to_component = {v: k for k, v in component_to_dept.items()}
+
+            for blocked_dept, blocking_depts in dept_deps_dict.items():
+                blocked_component = dept_to_component.get(blocked_dept)
+                if not blocked_component or blocked_component not in created_subtasks:
+                    continue
+
+                blocked_subtask_key = created_subtasks[blocked_component]
+
+                for blocking_dept in blocking_depts:
+                    blocking_component = dept_to_component.get(blocking_dept)
+                    if not blocking_component or blocking_component not in created_subtasks:
+                        continue
+
+                    blocking_subtask_key = created_subtasks[blocking_component]
+
+                    # Create "Blocks" link
+                    success = self.jira_repository.link_issues(
+                        dependent_issue_key=blocked_subtask_key,
+                        dependency_issue_key=blocking_subtask_key,
+                        link_type="Dependency",
+                    )
+
+                    if success:
+                        LOGGER.info(
+                            f"Created blocking link: {blocking_subtask_key} ({blocking_dept}) "
+                            f"blocks {blocked_subtask_key} ({blocked_dept})",
+                        )
+                    else:
+                        LOGGER.warning(
+                            f"Failed to create blocking link between "
+                            f"{blocking_subtask_key} and {blocked_subtask_key}",
+                        )
+
+        except Exception as e:
+            LOGGER.error(f"Error creating subtask blocking links: {e}")
 
     def _create_release_notes_column_mapping(
         self,
@@ -2213,7 +2350,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # If assignees haven't changed, update time estimates on existing subtasks
             feature_assignees = set(feature_assignees)
             if feature_assignees == current_assignees:
-                await self._update_subtask_time_estimates(
+                await self._update_subtask_time_estimates_and_dependencies(
                     subtasks,
                     feature_assignees,
                     feature,
@@ -2337,28 +2474,76 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error creating subtask for assignee {assignee}: {e}")
             return None
 
-    async def _update_subtask_time_estimates(
+    async def _update_subtask_time_estimates_and_dependencies(
         self,
         subtasks: List,
         feature_assignees: List[str],
         feature: SynthPMFeatureEntity,
     ):
-        """Update time estimates for all subtasks.
+        """Update time estimates and dependencies for all subtasks.
 
         Args:
             subtasks: List of subtask objects
             feature_assignees: List[str]: Feature assignees
-            feature: SynthPMFeatureEntity,
+            feature: SynthPMFeatureEntity
         """
         # Fetch all subtask issues in one batch to reduce API calls
         subtask_issues = {}
+        subtask_components = {}
+        
         for subtask in subtasks:
             try:
                 issue = self.jira_repository.get_issue(subtask.key)
                 subtask_issues[subtask.key] = issue
+                if issue and issue.fields.components:
+                    subtask_components[subtask.key] = issue.fields.components[0].name
             except Exception as e:
                 LOGGER.warning(f"Could not fetch subtask {subtask.key}: {e}")
+
+        # Parse department dependencies
+        dept_deps_dict = DepartmentDependencyCalculator.parse_department_deps(
+            feature.department_deps,
+        )
+
+        # Build department hours mapping
+        department_hours = {}
+        component_to_dept = {}
         
+        for subtask_key, component in subtask_components.items():
+            dept_name = DepartmentDependencyCalculator.get_department_from_component(component)
+            issue = subtask_issues.get(subtask_key)
+            if issue and issue.fields.assignee:
+                assignee = issue.fields.assignee.name
+                story_points = self._get_assignee_story_points(assignee, feature, component)
+                if story_points and story_points > 0:
+                    department_hours[dept_name] = story_points
+                    component_to_dept[component] = dept_name
+
+        # Get holidays for deadline calculation
+        current_year = datetime.now().year
+        try:
+            from jira_telegram_bot.adapters.repositories.calendar.json_calendar_repository import JsonCalendarRepository
+            calendar_repo = JsonCalendarRepository()
+            holidays = await calendar_repo.get_holidays(current_year)
+            holidays.update(await calendar_repo.get_holidays(current_year + 1))
+        except Exception as e:
+            LOGGER.warning(f"Could not load holidays: {e}, using empty set")
+            holidays = set()
+
+        # Calculate department deadlines
+        department_deadlines = DepartmentDependencyCalculator.calculate_department_deadlines(
+            feature.deadline,
+            dept_deps_dict,
+            department_hours,
+            holidays,
+        )
+
+        # Build mapping of subtask keys by component
+        subtask_by_component = {}
+        for subtask_key, component in subtask_components.items():
+            subtask_by_component[component] = subtask_key
+
+        # Update each subtask with calculated deadlines
         for subtask in subtasks:
             issue = subtask_issues.get(subtask.key)
             if not issue:
@@ -2366,27 +2551,118 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 
             subtask_assignee = issue.fields.assignee.name if issue.fields.assignee else None
             if subtask_assignee in feature_assignees:
+                component = subtask_components.get(subtask.key)
+                dept_name = component_to_dept.get(component) if component else None
+                dept_dates = department_deadlines.get(dept_name, {}) if dept_name else {}
+                
                 await self._update_subtask_time_estimate_and_dates(
                     subtask,
                     subtask_assignee,
                     feature,
-                    subtask_issue=issue,  # Pass the already fetched issue
+                    subtask_issue=issue,
+                    department_dates=dept_dates,
                 )
+
+        # Update blocking relationships
+        await self._update_subtask_blocking_links(
+            subtask_by_component,
+            dept_deps_dict,
+            component_to_dept,
+        )
+
+    async def _update_subtask_blocking_links(
+        self,
+        subtask_by_component: Dict[str, str],
+        dept_deps_dict: Dict[str, List[str]],
+        component_to_dept: Dict[str, str],
+    ):
+        """Update blocking links between subtasks based on department dependencies.
+
+        Args:
+            subtask_by_component: Dict mapping component to subtask key
+            dept_deps_dict: Dict mapping blocked department to list of blocking departments
+            component_to_dept: Dict mapping component to department name
+        """
+        try:
+            # Reverse the component_to_dept mapping
+            dept_to_component = {v: k for k, v in component_to_dept.items()}
+
+            # Get existing links for all subtasks
+            existing_links = {}
+            for component, subtask_key in subtask_by_component.items():
+                try:
+                    issue = self.jira_repository.get_issue_with_expand(subtask_key, "issuelinks")
+                    if issue and hasattr(issue.fields, 'issuelinks'):
+                        existing_links[subtask_key] = issue.fields.issuelinks
+                    else:
+                        existing_links[subtask_key] = []
+                except Exception as e:
+                    LOGGER.warning(f"Could not fetch links for {subtask_key}: {e}")
+                    existing_links[subtask_key] = []
+
+            # Process dependencies
+            for blocked_dept, blocking_depts in dept_deps_dict.items():
+                blocked_component = dept_to_component.get(blocked_dept)
+                if not blocked_component or blocked_component not in subtask_by_component:
+                    continue
+
+                blocked_subtask_key = subtask_by_component[blocked_component]
+
+                for blocking_dept in blocking_depts:
+                    blocking_component = dept_to_component.get(blocking_dept)
+                    if not blocking_component or blocking_component not in subtask_by_component:
+                        continue
+
+                    blocking_subtask_key = subtask_by_component[blocking_component]
+
+                    # Check if link already exists
+                    link_exists = False
+                    for link in existing_links.get(blocked_subtask_key, []):
+                        if hasattr(link, 'inwardIssue') and link.inwardIssue.key == blocking_subtask_key:
+                            link_exists = True
+                            break
+                        if hasattr(link, 'outwardIssue') and link.outwardIssue.key == blocking_subtask_key:
+                            link_exists = True
+                            break
+
+                    if not link_exists:
+                        # Create new link
+                        success = self.jira_repository.link_issues(
+                            dependent_issue_key=blocked_subtask_key,
+                            dependency_issue_key=blocking_subtask_key,
+                            link_type="Dependency",
+                        )
+
+                        if success:
+                            LOGGER.info(
+                                f"Created blocking link: {blocking_subtask_key} ({blocking_dept}) "
+                                f"blocks {blocked_subtask_key} ({blocked_dept})",
+                            )
+                        else:
+                            LOGGER.warning(
+                                f"Failed to create blocking link between "
+                                f"{blocking_subtask_key} and {blocked_subtask_key}",
+                            )
+
+        except Exception as e:
+            LOGGER.error(f"Error updating subtask blocking links: {e}")
 
     async def _update_subtask_time_estimate_and_dates(
         self,
         subtask,
         assignee: str,
         feature: SynthPMFeatureEntity,
-        subtask_issue=None,  # Optional: pass the already fetched issue to avoid redundant calls
+        subtask_issue=None,
+        department_dates: Optional[Dict[str, datetime]] = None,
     ):
-        """Update time estimate for a specific subtask.
+        """Update time estimate and dates for a specific subtask.
 
         Args:
             subtask: Subtask object
             assignee: Assignee username
             feature: Feature entity
             subtask_issue: Optional already-fetched issue object to avoid redundant API calls
+            department_dates: Optional dict with "start" and "end" datetime objects
         """
         try:
             component = self.user_config.get_user_component(
@@ -2412,15 +2688,25 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 / 3600
             )
             
-            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+            # Use department-specific dates if available, otherwise use feature dates
+            if department_dates:
+                due_date_str = department_dates.get("end").strftime("%Y-%m-%d") if department_dates.get("end") else None
+                target_start_str = department_dates.get("start").strftime("%Y-%m-%d") if department_dates.get("start") else None
+                target_end_str = department_dates.get("end").strftime("%Y-%m-%d") if department_dates.get("end") else None
+            else:
+                feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+                due_date_str = feature_dates_str.get("due_date")
+                target_start_str = feature_dates_str.get("target_start")
+                target_end_str = feature_dates_str.get("target_end")
+            
             update_fields = {}
             
-            if feature_dates_str.get("due_date") and issue.fields.duedate != feature_dates_str["due_date"]:
-                update_fields["duedate"] = feature_dates_str["due_date"]
-            if feature_dates_str.get("target_start") and issue.fields.__dict__.get(self.jira_repository.jira_target_start_id) != feature_dates_str["target_start"]:
-                update_fields[self.jira_repository.jira_target_start_id] = feature_dates_str["target_start"]
-            if feature_dates_str.get("target_end") and issue.fields.__dict__.get(self.jira_repository.jira_target_end_id) != feature_dates_str["target_end"]:
-                update_fields[self.jira_repository.jira_target_end_id] = feature_dates_str["target_end"]
+            if due_date_str and issue.fields.duedate != due_date_str:
+                update_fields["duedate"] = due_date_str
+            if target_start_str and issue.fields.__dict__.get(self.jira_repository.jira_target_start_id) != target_start_str:
+                update_fields[self.jira_repository.jira_target_start_id] = target_start_str
+            if target_end_str and issue.fields.__dict__.get(self.jira_repository.jira_target_end_id) != target_end_str:
+                update_fields[self.jira_repository.jira_target_end_id] = target_end_str
             
 
             if (
@@ -2479,6 +2765,38 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error loading project info for {project_key}: {e}")
             return {}
+
+    def get_component_lead(self, project_key: str, component_name: str) -> Optional[str]:
+        """Get the lead username for a component from projects_info.json.
+
+        Args:
+            project_key: Project key
+            component_name: Component name
+
+        Returns:
+            Lead username or None
+        """
+        try:
+            projects_info_path = Path(f"{DEFAULT_PATH}/jira_telegram_bot/settings/projects_info.json")
+            
+            if not projects_info_path.exists():
+                return None
+
+            with open(projects_info_path, "r", encoding="utf-8") as f:
+                projects_data = json.load(f)
+
+            project_data = projects_data.get(project_key, {})
+            components = project_data.get("components", [])
+
+            for component in components:
+                if component.get("name") == component_name:
+                    return component.get("lead")
+
+            return None
+
+        except Exception as e:
+            LOGGER.error(f"Error getting component lead for {component_name}: {e}")
+            return None
 
     async def update_jira_task_description(
         self,

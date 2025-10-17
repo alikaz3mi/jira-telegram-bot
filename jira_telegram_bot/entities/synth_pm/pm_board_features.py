@@ -58,6 +58,10 @@ class SynthPMFeatureEntity(BaseModel):
         default=None,
         description="Dependencies/وابستگی ها",
     )
+    department_deps: Optional[str] = Field(
+        default=None,
+        description="Department Dependencies (format: blocking_dept -> blocked_dept)",
+    )
     initial_delivery_time: Optional[datetime] = Field(
         default=None,
         description="Initial delivery time/زمان تحویل اولیه",

@@ -302,6 +302,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             issue_fields[self.jira_target_start_id] = task_data.target_start
         if task_data.target_end:
             issue_fields[self.jira_target_end_id] = task_data.target_end
+        if task_data.reporter:
+            issue_fields["reporter"] = {"name": task_data.reporter}
 
         return issue_fields
 

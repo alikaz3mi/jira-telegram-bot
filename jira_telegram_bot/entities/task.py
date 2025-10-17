@@ -79,5 +79,9 @@ class TaskData(BaseModel):
         default=None,
         description="The actual date for the task start_date in YYYY-MM-DD.",
     )
+    reporter: Optional[str] = Field(
+        default=None,
+        description="The username of the reporter for the task.",
+    )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
