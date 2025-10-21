@@ -261,12 +261,12 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             return True
 
         except APIError as e:
-            # FIXME: Handle APIError specifically to retry with worksheet update
-            sheet_name = range_name.split("!")[1] if "!" in range_name else "Sheet1"
+            # Handle APIError - retry with just the range part after the sheet name
+            sheet_range = range_name.split("!")[1] if "!" in range_name else range_name
             LOGGER.warning(
-                f"API error updating cells in {spreadsheet_id}, range {range_name} (sheet: {sheet_name}): {e}",
+                f"API error updating cells in {spreadsheet_id}, range {range_name} (retrying with: {sheet_range}): {e}",
             )
-            worksheet.update(sheet_name, values)
+            worksheet.update(sheet_range, values, value_input_option='USER_ENTERED')
             return True
 
         except Exception as e:
