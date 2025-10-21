@@ -219,6 +219,12 @@ from jira_telegram_bot.use_cases.scheduled_report_use_case import ScheduledRepor
 from jira_telegram_bot.use_cases.send_deadline_alerts_use_case import (
     SendDeadlineAlertsUseCase,
 )
+from jira_telegram_bot.use_cases.bugs_synchronization import (
+    FetchBugImprovementDataUseCase,
+)
+from jira_telegram_bot.use_cases.bugs_synchronization import (
+    SyncBugImprovementToSheetsUseCase,
+)
 from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
@@ -226,6 +232,7 @@ from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
 )
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase
 from jira_telegram_bot.use_cases.webhooks import TelegramWebhookUseCase
+from jira_telegram_bot.entities.bugs_synchronization import BugImprovementSyncConfig
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
     """Read user configuration from specified path.
@@ -236,14 +243,34 @@ def read_user_config(config_path: Path) -> Dict[str, Any]:
     Returns:
         Dictionary with user configuration data
     """
-    # This is a placeholder - implement actual config reading logic if needed
     try:
         LOGGER.info(f"Reading user configuration from {config_path}")
-        # Actual implementation would read from files here
         return {}
     except Exception as e:
         LOGGER.error(f"Error reading user configuration: {str(e)}")
         return {}
+
+
+def _load_bug_improvement_sync_config() -> BugImprovementSyncConfig:
+    """Load bug/improvement sync configuration.
+
+    Returns:
+        BugImprovementSyncConfig entity with board-to-sheet mappings.
+    """
+    import json
+    from jira_telegram_bot import DEFAULT_PATH
+
+    config_path = DEFAULT_PATH / "config" / "bug_improvement_sync_config.json"
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+        return BugImprovementSyncConfig(**config_data)
+    except Exception as e:
+        LOGGER.warning(
+            f"Failed to load bug improvement sync config from {config_path}: {e}",
+        )
+        return BugImprovementSyncConfig(mappings=[])
 
 
 def configure_container() -> Container:
@@ -568,6 +595,23 @@ def _configure_use_cases(container: Container) -> None:
             task_manager_repository=c[TaskManagerRepositoryInterface],
             current_stories_service=c[CurrentStoriesServiceInterface],
             xlsx_report_service=c[XlsxReportServiceInterface],
+        ),
+    )
+    
+    container[FetchBugImprovementDataUseCase] = Singleton(
+        lambda c: FetchBugImprovementDataUseCase(
+            task_manager=c[TaskManagerRepositoryInterface],
+            jira_base_url=f"{c[JiraConnectionSettings].domain.scheme}://{c[JiraConnectionSettings].domain.host}",
+            user_config=c[UserConfigInterface],
+        ),
+    )
+    
+    container[SyncBugImprovementToSheetsUseCase] = Singleton(
+        lambda c: SyncBugImprovementToSheetsUseCase(
+            fetch_data_use_case=c[FetchBugImprovementDataUseCase],
+            sheets_gateway=c[SpreadsheetGatewayInterface],
+            sync_config=_load_bug_improvement_sync_config(),
+            jira_base_url=f"{c[JiraConnectionSettings].domain.scheme}://{c[JiraConnectionSettings].domain.host}",
         ),
     )
 

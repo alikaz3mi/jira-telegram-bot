@@ -189,7 +189,7 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         range_name: str,
         values: List[List[Any]],
     ) -> bool:
-        """Append rows to a Google Sheet.
+        """Append rows to a Google Sheet with rate limiting.
 
         Args:
             spreadsheet_id: The Google Sheet ID
@@ -206,11 +206,23 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             sheet_name = range_name.split("!")[0] if "!" in range_name else "Sheet1"
             worksheet = spreadsheet.worksheet(sheet_name)
 
-            # Append each row
-            for row in values:
-                worksheet.append_row(row)
+            # Append rows one by one with rate limiting to avoid quota issues
+            # Google Sheets API limit: 60 writes per minute
+            # With 1.5 second delay: 40 writes per minute (safe margin)
+            total_rows = len(values)
+            
+            for idx, row in enumerate(values, start=1):
+                LOGGER.info(
+                    f"Appending row {idx}/{total_rows} to {spreadsheet_id}"
+                )
+                
+                worksheet.append_row(row, value_input_option='USER_ENTERED')
+                
+                # Rate limiting: wait 1.5 seconds between each append
+                if idx < total_rows:
+                    await asyncio.sleep(1.5)
 
-            LOGGER.info(f"Successfully appended {len(values)} rows to {spreadsheet_id}")
+            LOGGER.info(f"Successfully appended {total_rows} rows to {spreadsheet_id}")
             return True
 
         except Exception as e:
@@ -240,8 +252,8 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
             sheet_name = range_name.split("!")[0] if "!" in range_name else "Sheet1"
             worksheet = spreadsheet.worksheet(sheet_name)
 
-            # Update the range
-            worksheet.update(range_name, values)
+            # Update the range with USER_ENTERED to support formulas
+            worksheet.update(range_name, values, value_input_option='USER_ENTERED')
 
             LOGGER.info(
                 f"Successfully updated cells in {spreadsheet_id}, range {range_name}",
