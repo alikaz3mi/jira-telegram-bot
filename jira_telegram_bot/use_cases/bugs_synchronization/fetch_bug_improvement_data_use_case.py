@@ -99,11 +99,18 @@ class FetchBugImprovementDataUseCase:
         implementation_start = self._get_implementation_start_date(issue)
         initial_delivery_time = self._get_initial_delivery_time(issue)
         status = self._map_jira_status_to_sheet(issue.fields.status.name)
+        reporter = self._get_reporter_name(issue)
+        board_name = self._get_board_name(issue)
+        involved_user_from_label = self._get_user_id_from_labels(issue)
 
         return BugImprovementSheetRow(
             row_number=row_number,
             task_title=issue.fields.summary,
             description=issue.fields.description or "",
+            reporter=reporter,
+            board_name=board_name,
+            involved_people=involved_people,
+            sprint=self._get_sprint_name(issue),
             epic_name=epic_name,
             linked_story=linked_story,
             priority=getattr(issue.fields.priority, "name", None),
@@ -111,11 +118,10 @@ class FetchBugImprovementDataUseCase:
             departments=departments,
             release=self._get_release(issue),
             total_hours=total_hours,
-            involved_people=involved_people,
             created_date=self._parse_jira_datetime(issue.fields.created),
             implementation_start_date=implementation_start,
             deadline=self._parse_jira_datetime(getattr(issue.fields, "duedate", None)),
-            sprint=self._get_sprint_name(issue),
+            involved_user_from_label=involved_user_from_label,
             initial_delivery_time=initial_delivery_time,
             issue_key=issue.key,
         )
@@ -463,3 +469,56 @@ class FetchBugImprovementDataUseCase:
             return mapped_status
         LOGGER.warning(f"No status mapping found for '{jira_status}', using original")
         return jira_status
+
+    def _get_reporter_name(self, issue: Issue) -> Optional[str]:
+        """Get reporter name from user_config.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Reporter's Google Sheet name or Jira username.
+        """
+        try:
+            if hasattr(issue.fields, "reporter") and issue.fields.reporter:
+                return self._get_google_sheet_name(issue.fields.reporter.name)
+        except Exception as e:
+            LOGGER.error(f"Error getting reporter for {issue.key}: {e}")
+        return None
+
+    def _get_board_name(self, issue: Issue) -> Optional[str]:
+        """Get board name from issue project.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Board/Project name.
+        """
+        try:
+            if hasattr(issue.fields, "project") and issue.fields.project:
+                return issue.fields.project.name
+        except Exception as e:
+            LOGGER.error(f"Error getting board name for {issue.key}: {e}")
+        return None
+
+    def _get_user_id_from_labels(self, issue: Issue) -> Optional[str]:
+        """Extract user ID from labels that match #ID pattern.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            User ID if found in labels (e.g., "#123" -> "123"), None otherwise.
+        """
+        try:
+            if hasattr(issue.fields, "labels") and issue.fields.labels:
+                import re
+
+                for label in issue.fields.labels:
+                    match = re.match(r"#(\d+)", label)
+                    if match:
+                        return match.group(1)
+        except Exception as e:
+            LOGGER.error(f"Error extracting user ID from labels for {issue.key}: {e}")
+        return None

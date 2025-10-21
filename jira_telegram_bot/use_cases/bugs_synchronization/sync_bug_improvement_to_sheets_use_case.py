@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import List
 from typing import Optional
 
@@ -118,7 +119,11 @@ class SyncBugImprovementToSheetsUseCase:
         Returns:
             True if successful, False otherwise.
         """
-        range_name = f"{mapping.sheet_name}!A2:Q"
+        # Assign incremental row numbers
+        for idx, row in enumerate(rows, start=1):
+            row.row_number = idx
+            
+        range_name = f"{mapping.sheet_name}!A2:T"
         values = [self._convert_row_to_values(row) for row in rows]
         return await self.sheets_gateway.update_cells(
             mapping.spreadsheet_id,
@@ -140,7 +145,7 @@ class SyncBugImprovementToSheetsUseCase:
         Returns:
             True if successful, False otherwise.
         """
-        range_name = f"{mapping.sheet_name}!A2:Q"
+        range_name = f"{mapping.sheet_name}!A2:T"
         existing_data = await self.sheets_gateway.get_sheet_values(
             mapping.spreadsheet_id,
             range_name,
@@ -163,7 +168,13 @@ class SyncBugImprovementToSheetsUseCase:
             return False
 
         if new_rows:
-            append_range = f"{mapping.sheet_name}!A:Q"
+            # Assign row numbers starting from the last row in existing data
+            next_row_number = len(updated_data) + 1
+            for new_row in new_rows:
+                new_row.row_number = next_row_number
+                next_row_number += 1
+            
+            append_range = f"{mapping.sheet_name}!A:T"
             return await self._append_with_retry(
                 mapping.spreadsheet_id,
                 append_range,
@@ -183,11 +194,12 @@ class SyncBugImprovementToSheetsUseCase:
         """
         issue_keys = []
         for row in data:
-            if len(row) >= 17:
-                issue_key = row[16]
-                if '", "' in issue_key:
-                    issue_key = issue_key.split('", "')[1].replace('")', "")
-                issue_keys.append(issue_key)
+            if len(row) >= 20:
+                issue_key_value = row[19]
+                if issue_key_value:
+                    match = re.search(r"PARSCHAT-\d+", str(issue_key_value))
+                    if match:
+                        issue_keys.append(match.group(0))
         return issue_keys
 
     def _merge_data(
@@ -200,26 +212,45 @@ class SyncBugImprovementToSheetsUseCase:
 
         Args:
             existing_data: Current data from the sheet.
-            update_rows: Rows with updates.
-            all_rows: All fetched rows.
+            update_rows: Rows with updates (issues that exist and were updated).
+            all_rows: All fetched rows from Jira (within days_back filter).
 
         Returns:
-            Merged list of rows.
+            Merged list of rows - updates existing issues, preserves old issues.
         """
         update_map = {row.issue_key: row for row in update_rows}
         all_map = {row.issue_key: row for row in all_rows}
 
         merged_rows = []
+        row_counter = 1
+        
         for row_data in existing_data:
-            if len(row_data) >= 17:
-                issue_key = row_data[16]
-                if '", "' in issue_key:
-                    issue_key = issue_key.split('", "')[1].replace('")', "")
+            # Extract issue key using the fixed method
+            extracted_keys = self._extract_issue_keys([row_data])
+            if not extracted_keys:
+                continue
+                
+            issue_key = extracted_keys[0]
 
-                if issue_key in update_map:
-                    merged_rows.append(update_map[issue_key])
-                elif issue_key in all_map:
-                    merged_rows.append(all_map[issue_key])
+            if issue_key in update_map:
+                # Issue was updated - use new data with proper row number
+                updated_row = update_map[issue_key]
+                updated_row.row_number = row_counter
+                merged_rows.append(updated_row)
+            elif issue_key in all_map:
+                # Issue exists but wasn't updated - use new data anyway with proper row number
+                existing_row = all_map[issue_key]
+                existing_row.row_number = row_counter
+                merged_rows.append(existing_row)
+            else:
+                # Issue not in current fetch (older than days_back) - keep existing row
+                # Convert existing row data back to entity
+                existing_row = self._convert_sheet_row_to_entity(row_data)
+                if existing_row:
+                    existing_row.row_number = row_counter
+                    merged_rows.append(existing_row)
+            
+            row_counter += 1
 
         return merged_rows
 
@@ -230,12 +261,20 @@ class SyncBugImprovementToSheetsUseCase:
             row: Row entity to convert.
 
         Returns:
-            List of cell values.
+            List of cell values matching the new column order.
+            Order: ردیف، وظیفه، توضیحات، گزارش دهنده، برد، افراد درگیر، اسپرینت، 
+                   Epic، Story، اولویت، وضعیت، Departments، ریلیز، Total (h)، 
+                   تاریخ ایجاد، تاریخ شروع پیاده سازی، ددلاین، یوزر درگیر، 
+                   زمان تحویل اولیه، issue_key
         """
         return [
             row.row_number,
             row.task_title,
             row.description or "",
+            row.reporter or "",
+            row.board_name or "",
+            ", ".join(row.involved_people) if row.involved_people else "",
+            row.sprint or "",
             row.epic_name or "",
             row.linked_story or "",
             row.priority or "",
@@ -243,14 +282,74 @@ class SyncBugImprovementToSheetsUseCase:
             ", ".join(row.departments) if row.departments else "",
             row.release or "",
             row.total_hours,
-            ", ".join(row.involved_people) if row.involved_people else "",
             self._format_date(row.created_date),
             self._format_date(row.implementation_start_date),
             self._format_date(row.deadline),
-            row.sprint or "",
+            row.involved_user_from_label or "",
             self._format_date(row.initial_delivery_time),
             f'=HYPERLINK("https://jira.parstechai.com/browse/{row.issue_key}";"{row.issue_key}")',
         ]
+
+    def _convert_sheet_row_to_entity(self, row_data: List) -> Optional[BugImprovementSheetRow]:
+        """Convert raw sheet row data back to BugImprovementSheetRow entity.
+
+        Args:
+            row_data: Raw row data from sheet.
+
+        Returns:
+            BugImprovementSheetRow entity or None if conversion fails.
+        """
+        try:
+            if len(row_data) < 20:
+                return None
+
+            # Extract issue_key from HYPERLINK formula
+            issue_key_cell = row_data[19] if len(row_data) > 19 else ""
+            issue_key = issue_key_cell
+            if '", "' in issue_key_cell:
+                issue_key = issue_key_cell.split('", "')[1].replace('")', "")
+            elif "HYPERLINK" in issue_key_cell:
+                # Extract from formula
+                import re
+                match = re.search(r'PARSCHAT-\d+', issue_key_cell)
+                if match:
+                    issue_key = match.group(0)
+
+            # Parse dates
+            from datetime import datetime
+            def parse_date(date_str):
+                if not date_str or date_str == "":
+                    return None
+                try:
+                    return datetime.strptime(date_str, "%Y-%m-%d")
+                except:
+                    return None
+
+            return BugImprovementSheetRow(
+                row_number=int(row_data[0]) if row_data[0] else 0,
+                task_title=row_data[1] if len(row_data) > 1 else "",
+                description=row_data[2] if len(row_data) > 2 else None,
+                reporter=row_data[3] if len(row_data) > 3 else None,
+                board_name=row_data[4] if len(row_data) > 4 else None,
+                involved_people=row_data[5].split(", ") if len(row_data) > 5 and row_data[5] else [],
+                sprint=row_data[6] if len(row_data) > 6 else None,
+                epic_name=row_data[7] if len(row_data) > 7 else None,
+                linked_story=row_data[8] if len(row_data) > 8 else None,
+                priority=row_data[9] if len(row_data) > 9 else None,
+                status=row_data[10] if len(row_data) > 10 else "",
+                departments=row_data[11].split(", ") if len(row_data) > 11 and row_data[11] else [],
+                release=row_data[12] if len(row_data) > 12 else None,
+                total_hours=float(row_data[13]) if len(row_data) > 13 and row_data[13] else 0.0,
+                created_date=parse_date(row_data[14]) if len(row_data) > 14 else None,
+                implementation_start_date=parse_date(row_data[15]) if len(row_data) > 15 else None,
+                deadline=parse_date(row_data[16]) if len(row_data) > 16 else None,
+                involved_user_from_label=row_data[17] if len(row_data) > 17 else None,
+                initial_delivery_time=parse_date(row_data[18]) if len(row_data) > 18 else None,
+                issue_key=issue_key,
+            )
+        except Exception as e:
+            LOGGER.error(f"Error converting sheet row to entity: {e}")
+            return None
 
     def _format_date(self, date) -> str:
         """Format datetime to date string (YYYY-MM-DD only).
