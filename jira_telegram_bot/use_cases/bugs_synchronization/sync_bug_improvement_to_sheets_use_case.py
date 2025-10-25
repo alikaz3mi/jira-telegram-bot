@@ -97,12 +97,80 @@ class SyncBugImprovementToSheetsUseCase:
         board_keys = self.sync_config.get_all_board_keys()
         LOGGER.info(f"Syncing {len(board_keys)} boards")
 
+        # For full sync (days_back=None), collect all boards' data first
+        if days_back is None:
+            return await self._execute_full_sync_all_boards(board_keys)
+        
+        # For incremental sync, process boards one by one
         all_successful = True
         for board_key in board_keys:
             success = await self.execute_for_board(board_key, days_back)
             if not success:
                 all_successful = False
 
+        return all_successful
+    
+    async def _execute_full_sync_all_boards(
+        self,
+        board_keys: List[str],
+    ) -> bool:
+        """Execute full sync for multiple boards to the same sheet.
+        
+        Collects data from all boards first, then writes once to avoid overwriting.
+
+        Args:
+            board_keys: List of board keys to sync.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        # Group boards by their target sheet
+        sheet_to_boards = {}
+        for board_key in board_keys:
+            mapping = self.sync_config.get_mapping_by_board(board_key)
+            sheet_id = f"{mapping.spreadsheet_id}:{mapping.sheet_name}"
+            if sheet_id not in sheet_to_boards:
+                sheet_to_boards[sheet_id] = {
+                    'mapping': mapping,
+                    'boards': []
+                }
+            sheet_to_boards[sheet_id]['boards'].append(board_key)
+        
+        # Process each sheet
+        all_successful = True
+        for sheet_id, data in sheet_to_boards.items():
+            mapping = data['mapping']
+            boards = data['boards']
+            
+            LOGGER.info(f"Full sync: collecting data from {len(boards)} boards for sheet {mapping.sheet_name}")
+            
+            # Collect all rows from all boards
+            all_rows = []
+            for board_key in boards:
+                LOGGER.info(f"Fetching data for board {board_key}")
+                rows = self.fetch_data_use_case.execute(board_key, days_back=None)
+                if rows:
+                    all_rows.extend(rows)
+                    LOGGER.info(f"Collected {len(rows)} rows from {board_key}")
+            
+            if not all_rows:
+                LOGGER.info(f"No data to sync for sheet {mapping.sheet_name}")
+                continue
+            
+            # Assign incremental row numbers across all boards
+            for idx, row in enumerate(all_rows, start=1):
+                row.row_number = idx
+            
+            LOGGER.info(f"Writing {len(all_rows)} total rows to sheet {mapping.sheet_name}")
+            
+            # Write all data at once
+            success = await self._full_sync(mapping, all_rows)
+            if success:
+                LOGGER.info(f"Successfully synced {len(all_rows)} rows to {mapping.sheet_name}")
+            else:
+                LOGGER.error(f"Failed to sync data to {mapping.sheet_name}")
+                all_successful = False
+        
         return all_successful
 
     async def _full_sync(

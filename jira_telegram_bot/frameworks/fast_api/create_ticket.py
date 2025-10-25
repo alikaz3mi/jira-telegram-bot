@@ -630,6 +630,7 @@ def create_task_data(username: str, parsed_fields: Dict[str, str]) -> TaskData:
     """Create TaskData object from parsed fields."""
     user_cfg = user_config.get_user_config(username)
     assignee = user_cfg.jira_username if user_cfg else None
+    reporter = user_cfg.jira_username if user_cfg else None
     
     return TaskData(
         project_key=JIRA_PROJECT_KEY,
@@ -638,6 +639,7 @@ def create_task_data(username: str, parsed_fields: Dict[str, str]) -> TaskData:
         task_type=parsed_fields["task_type"],
         labels=[parsed_fields.get("labels", "")],
         assignee=assignee,
+        reporter=reporter,
     )
 
 
@@ -744,6 +746,7 @@ async def finalize_media_groups():
 
                 user_cfg = user_config.get_user_config(username)
                 assignee = user_cfg.jira_username if user_cfg else None
+                reporter = user_cfg.jira_username if user_cfg else None
 
                 task_data = TaskData(
                     project_key=JIRA_PROJECT_KEY,
@@ -751,6 +754,7 @@ async def finalize_media_groups():
                     description=parsed_fields["description"],
                     task_type=parsed_fields["task_type"],
                     assignee=assignee,
+                    reporter=reporter,
                 )
 
                 await process_media_group(messages, task_data)

@@ -62,12 +62,17 @@ async def run_sync_once(
             success = await use_case.execute_for_all_boards(days_back=days_back)
         else:
             LOGGER.info(f"Syncing specified boards: {board_keys}")
-            all_successful = True
-            for board_key in board_keys:
-                success = await use_case.execute_for_board(board_key, days_back)
-                if not success:
-                    all_successful = False
-            success = all_successful
+            # For full sync with multiple boards, use the multi-board handler
+            if full_sync and len(board_keys) > 1:
+                success = await use_case._execute_full_sync_all_boards(board_keys)
+            else:
+                # For incremental sync or single board, process one by one
+                all_successful = True
+                for board_key in board_keys:
+                    success = await use_case.execute_for_board(board_key, days_back)
+                    if not success:
+                        all_successful = False
+                success = all_successful
 
         if success:
             LOGGER.info("✅ Sync completed successfully!")
