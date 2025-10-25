@@ -84,7 +84,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # TODO: get the range of headers dynamically.
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.developer_board_worksheet_name}!A:AV",
+                f"{self.settings.developer_board_worksheet_name}!A:AW",
             )
 
             if not values or len(values) < 2:

@@ -226,6 +226,12 @@ from jira_telegram_bot.use_cases.bugs_synchronization import (
     SyncBugImprovementToSheetsUseCase,
 )
 from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
+from jira_telegram_bot.use_cases.story_synchronization import (
+    FetchStoryDataUseCase,
+)
+from jira_telegram_bot.use_cases.story_synchronization import (
+    SyncStoryToSheetsUseCase,
+)
 
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
     GetCurrentStoriesUseCase,
@@ -233,6 +239,7 @@ from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase
 from jira_telegram_bot.use_cases.webhooks import TelegramWebhookUseCase
 from jira_telegram_bot.entities.bugs_synchronization import BugImprovementSyncConfig
+from jira_telegram_bot.entities.story_synchronization import StorySyncConfig
 
 def read_user_config(config_path: Path) -> Dict[str, Any]:
     """Read user configuration from specified path.
@@ -271,6 +278,28 @@ def _load_bug_improvement_sync_config() -> BugImprovementSyncConfig:
             f"Failed to load bug improvement sync config from {config_path}: {e}",
         )
         return BugImprovementSyncConfig(mappings=[])
+
+
+def _load_story_sync_config() -> StorySyncConfig:
+    """Load story sync configuration.
+
+    Returns:
+        StorySyncConfig entity with board-to-sheet mappings.
+    """
+    import json
+    from jira_telegram_bot import DEFAULT_PATH
+
+    config_path = DEFAULT_PATH / "config" / "story_sync_config.json"
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+        return StorySyncConfig(**config_data)
+    except Exception as e:
+        LOGGER.warning(
+            f"Failed to load story sync config from {config_path}: {e}",
+        )
+        return StorySyncConfig(mappings=[])
 
 
 def configure_container() -> Container:
@@ -611,6 +640,23 @@ def _configure_use_cases(container: Container) -> None:
             fetch_data_use_case=c[FetchBugImprovementDataUseCase],
             sheets_gateway=c[SpreadsheetGatewayInterface],
             sync_config=_load_bug_improvement_sync_config(),
+            jira_base_url=f"{c[JiraConnectionSettings].domain.scheme}://{c[JiraConnectionSettings].domain.host}",
+        ),
+    )
+
+    container[FetchStoryDataUseCase] = Singleton(
+        lambda c: FetchStoryDataUseCase(
+            task_manager=c[TaskManagerRepositoryInterface],
+            jira_base_url=f"{c[JiraConnectionSettings].domain.scheme}://{c[JiraConnectionSettings].domain.host}",
+            user_config=c[UserConfigInterface],
+        ),
+    )
+
+    container[SyncStoryToSheetsUseCase] = Singleton(
+        lambda c: SyncStoryToSheetsUseCase(
+            fetch_data_use_case=c[FetchStoryDataUseCase],
+            sheets_gateway=c[SpreadsheetGatewayInterface],
+            sync_config=_load_story_sync_config(),
             jira_base_url=f"{c[JiraConnectionSettings].domain.scheme}://{c[JiraConnectionSettings].domain.host}",
         ),
     )
