@@ -468,3 +468,9 @@ class SynthPMUseCase2:
         return self.sync_developer_board_use_case._extract_assignees_from_feature(
             feature,
         )
+
+
+# Backward compatibility alias
+SynthPMUseCase = SynthPMUseCase2
+
+__all__ = ["SynthPMUseCase", "SynthPMUseCase2"]

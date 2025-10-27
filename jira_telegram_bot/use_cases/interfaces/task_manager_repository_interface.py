@@ -704,3 +704,37 @@ class TaskManagerRepositoryInterface(ABC):
             Epic name if found, None otherwise
         """
         pass
+
+    @abstractmethod
+    def get_worklog_data(
+        self,
+        issue: Issue,
+    ) -> tuple[float, List[str], Dict[str, float], Dict[str, float]]:
+        """Get worklog data including progress hours and individual hours.
+
+        Note: This method uses UserConfig internally to map Jira usernames
+        to Google Sheet names and departments.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Tuple of (progress_hours, involved_people, department_hours, individual_hours).
+            - progress_hours: Total hours logged across all worklogs
+            - involved_people: Sorted list of Google Sheet display names
+            - department_hours: Dict mapping department field names (ai_hours, backend_hours, etc.) to hours
+            - individual_hours: Dict mapping person names to their logged hours
+        """
+        pass
+
+    @abstractmethod
+    def get_time_tracking(self, issue: Issue) -> tuple[float, float]:
+        """Get ETA and total hours from time tracking.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Tuple of (eta_hours, total_hours).
+        """
+        pass

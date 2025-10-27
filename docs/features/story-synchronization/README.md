@@ -27,16 +27,31 @@ This feature automatically syncs Jira story data to Google Sheets, tracking prog
 ### Components
 
 1. **Entities**
-   - `StorySheetRow`: Represents a single row in the Google Sheet
+   - `SynthPMFeatureEntity`: Unified entity representing a feature/story row (shared with SynthPM)
    - `StorySyncConfig`: Configuration for board-to-sheet mappings
    - `SheetBoardMapping`: Individual mapping between a sheet and a board
+   - `DEPARTMENT_MAPPING`: Constant mapping department names to field names
+   - `JIRA_TO_STORY_SYNC_STATUS`: Maps Jira statuses to Google Sheet workflow statuses
+   - `STORY_SYNC_PRESERVE_STATUSES`: Statuses that should not be overwritten during sync
 
 2. **Use Cases**
    - `FetchStoryDataUseCase`: Fetches story data from Jira with worklog aggregation
    - `SyncStoryToSheetsUseCase`: Syncs data to Google Sheets
 
-3. **Script**
+3. **Repositories**
+   - `TaskStoryRepository`: Handles Google Sheets operations (read/write features)
+   - `JiraServerRepository`: Enhanced with worklog and time tracking methods
+
+4. **Script**
    - `scripts/sync_stories.py`: CLI tool for running sync operations
+
+### Architecture Highlights
+
+- **Clean Architecture**: All dependencies flow inward (frameworks → adapters → use cases → entities)
+- **Shared Entities**: Uses `SynthPMFeatureEntity` from synth_pm module for consistency
+- **Repository Pattern**: Worklog and time tracking logic moved to JiraServerRepository
+- **No Hardcoded Constants**: All constants defined in entities layer
+- **Dependency Injection**: Uses Lagom for proper DI throughout
 
 ## Setup
 
@@ -184,10 +199,23 @@ The system aggregates worklog data by:
 
 ### Department Hours Calculation
 
-Department hours are calculated based on:
+Department hours are calculated by the repository layer using:
 - User's department from `user_config.json`
 - Time logged in worklogs
-- Department mapping:
+- `DEPARTMENT_MAPPING` constant from `entities/story_synchronization/constants.py`:
+  ```python
+  DEPARTMENT_MAPPING = {
+      "AI": "ai_hours",
+      "Backend": "backend_hours",
+      "Front-end": "frontend_hours",
+      "Frontend": "frontend_hours",
+      "DevOps": "devops_hours",
+      "UI / UX": "ui_ux_hours",
+      "UI/UX": "ui_ux_hours",
+  }
+  ```
+  
+This mapping is used by `JiraServerRepository.get_worklog_data()` to attribute logged time to the correct department field:
   - AI → AI hours (Column O)
   - Backend → Backend hours (Column P)
   - Frontend/Front-end → Front-end hours (Column Q)
@@ -222,14 +250,28 @@ Each developer has a dedicated column (AD-AU) showing their total logged hours o
 
 ### Worklog Data Extraction
 
+The worklog extraction logic is now centralized in `JiraServerRepository`:
+
 ```python
-# For each story:
-1. Fetch issue with worklog expansion
-2. Iterate through all worklogs
-3. Sum timeSpentSeconds → Progress (h)
-4. Track author and department
-5. Build individual hours mapping
+# Repository method handles all worklog logic:
+eta_hours, total_hours = task_manager.get_time_tracking(issue)
+progress_hours, involved_people, dept_hours, individual_hours = task_manager.get_worklog_data(issue)
+
+# The repository:
+# 1. Fetches issue with worklog expansion
+# 2. Iterates through all worklogs
+# 3. Sums timeSpentSeconds → progress_hours
+# 4. Maps Jira usernames to Google Sheet names via UserConfig
+# 5. Attributes hours to departments using DEPARTMENT_MAPPING constant
+# 6. Builds individual_hours mapping (person → hours)
 ```
+
+**Benefits of repository-based approach:**
+- Reusable across different features
+- No duplication of worklog logic
+- Consistent user name mapping
+- Centralized department attribution
+- Easier to test and maintain
 
 ### Performance Considerations
 
@@ -261,16 +303,26 @@ python scripts/sync_stories.py scheduled --interval 5 --days-back-scheduled 7
 
 ## Integration with Existing System
 
-Clean Architecture implementation:
+Clean Architecture implementation with repository pattern:
 
 ```
 jira_telegram_bot/
 ├── entities/
+│   ├── synth_pm/
+│   │   └── pm_board_features.py (SynthPMFeatureEntity - shared entity)
 │   └── story_synchronization/
 │       ├── __init__.py
-│       ├── story_sheet_row.py
+│       ├── constants.py (DEPARTMENT_MAPPING, status mappings)
 │       └── story_sync_config.py
+├── adapters/
+│   └── repositories/
+│       ├── task_story_repository.py (Google Sheets operations)
+│       └── jira/
+│           └── jira_server_repository.py (worklog methods added)
 ├── use_cases/
+│   ├── interfaces/
+│   │   ├── task_story_repository_interface.py
+│   │   └── task_manager_repository_interface.py (worklog methods added)
 │   └── story_synchronization/
 │       ├── __init__.py
 │       ├── fetch_story_data_use_case.py
@@ -279,6 +331,17 @@ jira_telegram_bot/
 └── scripts/
     └── sync_stories.py
 ```
+
+### Key Integration Points
+
+1. **Shared Entity**: Uses `SynthPMFeatureEntity` from synth_pm module (no duplication)
+2. **Repository Methods**: 
+   - `JiraServerRepository.get_worklog_data()`: Worklog aggregation
+   - `JiraServerRepository.get_time_tracking()`: Time estimate extraction
+   - `TaskStoryRepository.get_sheet_features()`: Read from Google Sheets
+   - `TaskStoryRepository.update_sheet_feature()`: Write to Google Sheets
+3. **Constants**: All in `entities/story_synchronization/constants.py`
+4. **User Config**: Leverages existing `UserConfigInterface` for name/department mapping
 
 ## Environment Variables
 

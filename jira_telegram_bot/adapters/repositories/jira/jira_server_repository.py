@@ -1330,3 +1330,166 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.warning(f"Error parsing date '{date_str}': {e}")
             return None
+
+    def get_time_tracking(self, issue: Issue) -> tuple[float, float]:
+        """Get ETA and total hours from time tracking.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Tuple of (eta_hours, total_hours).
+        """
+        eta_hours = 0.0
+        total_hours = 0.0
+
+        try:
+            if hasattr(issue.fields, "timetracking"):
+                time_tracking = issue.fields.timetracking
+                if time_tracking:
+                    original_estimate_seconds = getattr(
+                        time_tracking,
+                        "originalEstimateSeconds",
+                        0,
+                    ) or 0
+                    eta_hours = original_estimate_seconds / 3600.0
+                    total_hours = original_estimate_seconds / 3600.0
+
+            original_estimate = getattr(
+                issue.fields,
+                "timeoriginalestimate",
+                0,
+            ) or 0
+            if original_estimate > 0:
+                eta_hours = original_estimate / 3600.0
+                total_hours = original_estimate / 3600.0
+
+        except Exception as e:
+            LOGGER.error(f"Error getting time tracking for {issue.key}: {e}")
+
+        return eta_hours, total_hours
+
+    def get_worklog_data(
+        self,
+        issue: Issue,
+    ) -> tuple[float, List[str], Dict[str, float], Dict[str, float]]:
+        """Get worklog data including progress hours and individual hours.
+
+        This method requires user_config to be available. It will attempt to import
+        and use UserConfig directly if not provided via dependency injection.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Tuple of (progress_hours, involved_people, department_hours, individual_hours).
+        """
+        from jira_telegram_bot.adapters.user_config import UserConfig
+        from jira_telegram_bot.entities.story_synchronization.constants import (
+            DEPARTMENT_MAPPING,
+        )
+
+        user_config = UserConfig()
+
+        progress_hours = 0.0
+        involved_people = set()
+        department_hours = {
+            "ai_hours": 0.0,
+            "backend_hours": 0.0,
+            "frontend_hours": 0.0,
+            "devops_hours": 0.0,
+            "ui_ux_hours": 0.0,
+        }
+        individual_hours = {}
+
+        try:
+            issue_with_worklog = self.get_issue_with_expand(issue.key, "worklog")
+            if issue_with_worklog and hasattr(issue_with_worklog.fields, "worklog"):
+                worklogs = issue_with_worklog.fields.worklog.worklogs
+                for worklog in worklogs:
+                    time_spent_seconds = getattr(worklog, "timeSpentSeconds", 0) or 0
+                    hours = time_spent_seconds / 3600.0
+                    progress_hours += hours
+
+                    author = getattr(worklog, "author", None)
+                    if author:
+                        author_name = getattr(author, "name", None)
+                        if author_name:
+                            display_name = self._get_google_sheet_name(
+                                author_name,
+                                user_config,
+                            )
+                            if display_name:
+                                involved_people.add(display_name)
+
+                                if display_name not in individual_hours:
+                                    individual_hours[display_name] = 0.0
+                                individual_hours[display_name] += hours
+
+                                user_dept = self._get_user_department(
+                                    author_name,
+                                    user_config,
+                                    DEPARTMENT_MAPPING,
+                                )
+                                if user_dept:
+                                    department_hours[user_dept] = (
+                                        department_hours.get(user_dept, 0.0) + hours
+                                    )
+
+        except Exception as e:
+            LOGGER.error(f"Error getting worklog data for {issue.key}: {e}")
+
+        return (
+            progress_hours,
+            sorted(list(involved_people)),
+            department_hours,
+            individual_hours,
+        )
+
+    def _get_google_sheet_name(
+        self,
+        jira_username: str,
+        user_config,
+    ) -> Optional[str]:
+        """Get Google Sheet display name for a Jira username.
+
+        Args:
+            jira_username: Jira username.
+            user_config: UserConfigInterface instance.
+
+        Returns:
+            Google Sheet display name or jira_username as fallback.
+        """
+        try:
+            user = user_config.get_user_config_by_jira_username(jira_username)
+            if user and user.google_sheet_name:
+                return user.google_sheet_name
+            return jira_username
+        except Exception as e:
+            LOGGER.debug(f"Error getting Google Sheet name for {jira_username}: {e}")
+            return jira_username
+
+    def _get_user_department(
+        self,
+        jira_username: str,
+        user_config,
+        department_mapping: Dict[str, str],
+    ) -> Optional[str]:
+        """Get department field name for a user.
+
+        Args:
+            jira_username: Jira username.
+            user_config: UserConfigInterface instance.
+            department_mapping: Mapping from department names to field names.
+
+        Returns:
+            Department field name (e.g., 'ai_hours', 'backend_hours') or None.
+        """
+        try:
+            user = user_config.get_user_config_by_jira_username(jira_username)
+            if user and hasattr(user, "department"):
+                dept = user.department
+                return department_mapping.get(dept)
+        except Exception as e:
+            LOGGER.debug(f"Error getting department for {jira_username}: {e}")
+        return None

@@ -113,9 +113,9 @@ class SynthPMUseCase:
             new_features = features
             for feature in new_features: #  + modified_features: TODO. Find issue of task creation duplication and modified hash
                 # Skip test rows
-                if feature.row_number not in [215]:
-                    continue
-                if feature.version not in ["04.07.25", "04.08.09", "04.07.11"]:
+                #if feature.row_number not in [215]:
+                #    continue
+                if feature.version not in [ "04.08.09"]:
                     continue
                     
                 try:
@@ -123,7 +123,7 @@ class SynthPMUseCase:
                     processed_features.append(feature)
 
                     # Generate documentation for new features
-                    if feature in new_features and await self._generate_and_update_documentation(feature):
+                    if False and feature in new_features and await self._generate_and_update_documentation(feature):
                         sync_results["generated_documentation"] += 1
                         doc_generated_rows.append(feature.sheet_row_number)
 
@@ -134,7 +134,7 @@ class SynthPMUseCase:
 
             # Generate documentation for existing features that need it
             for feature in []:
-                if feature not in new_features: # and feature.row_number in [225]:
+                if feature not in new_features and feature.row_number in [225]:
                     try:
                         if await self._generate_and_update_documentation(feature):
                             sync_results["generated_documentation"] += 1

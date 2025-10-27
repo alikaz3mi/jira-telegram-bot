@@ -37,3 +37,14 @@ STORY_SYNC_PRESERVE_STATUSES = [
     "۱۰",
     "۱۰. تکمیل شده",
 ]
+
+# Department mapping for converting department names to field names
+DEPARTMENT_MAPPING = {
+    "AI": "ai_hours",
+    "Backend": "backend_hours",
+    "Front-end": "frontend_hours",
+    "Frontend": "frontend_hours",
+    "DevOps": "devops_hours",
+    "UI / UX": "ui_ux_hours",
+    "UI/UX": "ui_ux_hours",
+}

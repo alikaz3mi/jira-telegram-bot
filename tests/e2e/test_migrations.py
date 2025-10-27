@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.adapters.database.migration_runner import MigrationRunner
+from jira_telegram_bot.adapters.repositories.postgres.database.migration_runner import (
+    MigrationRunner,
+)
 from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import (
     JiraReportRepository,
 )

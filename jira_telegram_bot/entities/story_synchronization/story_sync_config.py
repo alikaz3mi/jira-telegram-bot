@@ -13,6 +13,10 @@ class SheetBoardMapping(BaseModel):
     sheet_name: str = Field(description="Name of the specific sheet/tab")
     board_key: str = Field(description="Jira board/project key")
     gid: int = Field(description="Google Sheet tab GID")
+    data_range: str = Field(
+        default="A2:AW",
+        description="Data range for sync operations (e.g., 'A2:AW' for columns A-AW starting at row 2)",
+    )
 
     class Config:
         frozen = True

@@ -232,6 +232,12 @@ from jira_telegram_bot.use_cases.story_synchronization import (
 from jira_telegram_bot.use_cases.story_synchronization import (
     SyncStoryToSheetsUseCase,
 )
+from jira_telegram_bot.use_cases.interfaces.task_story_repository_interface import (
+    TaskStoryRepositoryInterface,
+)
+from jira_telegram_bot.adapters.repositories.task_story_repository import (
+    TaskStoryRepository,
+)
 
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
     GetCurrentStoriesUseCase,
@@ -652,12 +658,21 @@ def _configure_use_cases(container: Container) -> None:
         ),
     )
 
+    container[TaskStoryRepositoryInterface] = Singleton(
+        lambda c: TaskStoryRepository(
+            sheets_gateway=c[SpreadsheetGatewayInterface],
+            user_config=c[UserConfigInterface],
+        ),
+    )
+
     container[SyncStoryToSheetsUseCase] = Singleton(
         lambda c: SyncStoryToSheetsUseCase(
             fetch_data_use_case=c[FetchStoryDataUseCase],
             sheets_gateway=c[SpreadsheetGatewayInterface],
             sync_config=_load_story_sync_config(),
             jira_base_url=f"{c[JiraConnectionSettings].domain.scheme}://{c[JiraConnectionSettings].domain.host}",
+            user_config=c[UserConfigInterface],
+            task_story_repository=c[TaskStoryRepositoryInterface],
         ),
     )
 

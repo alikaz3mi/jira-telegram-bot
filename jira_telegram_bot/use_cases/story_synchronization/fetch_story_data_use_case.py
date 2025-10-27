@@ -8,7 +8,7 @@ from typing import Optional
 from jira import Issue
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.entities.story_synchronization import StorySheetRow
+from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.story_synchronization.constants import (
     JIRA_TO_STORY_SYNC_STATUS,
 )
@@ -23,22 +23,19 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
 class FetchStoryDataUseCase:
     """Use case for fetching story data from Jira."""
 
-    DEPARTMENT_MAPPING = {
-        "AI": "ai_hours",
-        "Backend": "backend_hours",
-        "Front-end": "frontend_hours",
-        "Frontend": "frontend_hours",
-        "DevOps": "devops_hours",
-        "UI / UX": "ui_ux_hours",
-        "UI/UX": "ui_ux_hours",
-    }
-
     def __init__(
         self,
         task_manager: TaskManagerRepositoryInterface,
         jira_base_url: str,
         user_config: UserConfigInterface,
     ):
+        """Initialize the use case.
+
+        Args:
+            task_manager: Task manager repository interface.
+            jira_base_url: Base URL for Jira.
+            user_config: User configuration interface.
+        """
         self.task_manager = task_manager
         self.jira_base_url = jira_base_url
         self.user_config = user_config
@@ -47,7 +44,7 @@ class FetchStoryDataUseCase:
         self,
         board_key: str,
         days_back: Optional[int] = None,
-    ) -> List[StorySheetRow]:
+    ) -> List[SynthPMFeatureEntity]:
         """Fetch story issues from Jira.
 
         Args:
@@ -55,7 +52,7 @@ class FetchStoryDataUseCase:
             days_back: Number of days to look back for updated issues.
 
         Returns:
-            List of StorySheetRow entities.
+            List of SynthPMFeatureEntity entities.
         """
         jql = self._build_jql(board_key, days_back)
         LOGGER.info(f"Fetching stories with JQL: {jql}")
@@ -65,7 +62,7 @@ class FetchStoryDataUseCase:
 
         rows = []
         for idx, issue in enumerate(issues, start=1):
-            row = self._convert_issue_to_row(issue, idx)
+            row = self._convert_issue_to_feature(issue, idx)
             rows.append(row)
 
         return rows
@@ -90,64 +87,74 @@ class FetchStoryDataUseCase:
         jql += " ORDER BY created DESC"
         return jql
 
-    def _convert_issue_to_row(
+    def _convert_issue_to_feature(
         self,
         issue: Issue,
         row_number: int,
-    ) -> StorySheetRow:
-        """Convert Jira issue to StorySheetRow.
+    ) -> SynthPMFeatureEntity:
+        """Convert Jira issue to SynthPMFeatureEntity.
 
         Args:
             issue: Jira issue object.
             row_number: Row number for the sheet.
 
         Returns:
-            StorySheetRow entity.
+            SynthPMFeatureEntity entity.
         """
         epic_name = self._get_epic_name(issue)
-        departments = self._get_departments(issue)
+        departments_list = self._get_departments(issue)
+        departments = ", ".join(departments_list) if departments_list else None
         status = self._map_jira_status_to_sheet(issue.fields.status.name)
         implementation_start = self._get_implementation_start_date(issue)
         initial_delivery_time = self._get_initial_delivery_time(issue)
-        eta_hours, total_hours = self._get_time_tracking(issue)
-        progress_hours, involved_people, dept_hours, individual_hours = (
-            self._get_worklog_data(issue)
+        
+        eta_hours, total_hours = self.task_manager.get_time_tracking(issue)
+        progress_hours, involved_people_list, dept_hours, individual_hours = (
+            self.task_manager.get_worklog_data(issue)
         )
+        
         pm_board_issue_key = self._get_linked_pm_issue(issue)
 
-        return StorySheetRow(
+        involved_people = ", ".join(involved_people_list) if involved_people_list else None
+
+        times = {}
+        for person, hours in individual_hours.items():
+            if hours > 0:
+                times[person] = int(hours * 8)
+
+        return SynthPMFeatureEntity(
             row_number=row_number,
+            sheet_row_number=row_number,
             task_title=issue.fields.summary,
             epic=epic_name,
-            necessity=None,
             release=self._get_release(issue),
-            departments=departments,
-            status=status,
+            necessity=None,
             priority=getattr(issue.fields.priority, "name", None),
-            department_deps=None,
-            main_release=None,
-            eta_hours=eta_hours,
-            total_hours=total_hours,
-            progress_hours=progress_hours,
+            status=status,
+            eta_hours=int(eta_hours) if eta_hours else None,
+            total_hours=int(total_hours) if total_hours else None,
+            departments=departments,
             involved_people=involved_people,
-            ai_hours=dept_hours.get("ai_hours", 0.0),
-            backend_hours=dept_hours.get("backend_hours", 0.0),
-            frontend_hours=dept_hours.get("frontend_hours", 0.0),
-            devops_hours=dept_hours.get("devops_hours", 0.0),
-            ui_ux_hours=dept_hours.get("ui_ux_hours", 0.0),
-            created_date=self._parse_jira_datetime(issue.fields.created),
+            ai=str(int(dept_hours.get("ai_hours", 0))) if dept_hours.get("ai_hours") else None,
+            backend=str(int(dept_hours.get("backend_hours", 0))) if dept_hours.get("backend_hours") else None,
+            frontend=str(int(dept_hours.get("frontend_hours", 0))) if dept_hours.get("frontend_hours") else None,
+            devops=str(int(dept_hours.get("devops_hours", 0))) if dept_hours.get("devops_hours") else None,
+            ui_ux=str(int(dept_hours.get("ui_ux_hours", 0))) if dept_hours.get("ui_ux_hours") else None,
+            creation_date=self._parse_jira_datetime(issue.fields.created),
             implementation_start_date=implementation_start,
             deadline=self._parse_jira_datetime(getattr(issue.fields, "duedate", None)),
             sprint=self._get_sprint_name(issue),
             dependencies=None,
+            department_deps=None,
             initial_delivery_time=initial_delivery_time,
             description=issue.fields.description or "",
             acceptance_criteria=None,
-            tests=None,
-            change_reasons=None,
-            individual_hours=individual_hours,
-            jira_issue_key=pm_board_issue_key or "",
+            test_cases=None,
+            po_notes=None,
+            jira_issue_key=pm_board_issue_key,
             developer_board_issue_key=issue.key,
+            version=None,
+            times=times,
         )
 
     def _get_epic_name(self, issue: Issue) -> Optional[str]:
@@ -311,127 +318,6 @@ class FetchStoryDataUseCase:
             LOGGER.error(f"Error getting initial delivery time for {issue.key}: {e}")
         return None
 
-    def _get_time_tracking(self, issue: Issue) -> tuple[float, float]:
-        """Get ETA and total hours from time tracking.
-
-        Args:
-            issue: Jira issue object.
-
-        Returns:
-            Tuple of (eta_hours, total_hours).
-        """
-        eta_hours = 0.0
-        total_hours = 0.0
-
-        try:
-            if hasattr(issue.fields, "timetracking"):
-                time_tracking = issue.fields.timetracking
-                if time_tracking:
-                    original_estimate_seconds = getattr(
-                        time_tracking,
-                        "originalEstimateSeconds",
-                        0,
-                    ) or 0
-                    eta_hours = original_estimate_seconds / 3600.0
-                    total_hours = original_estimate_seconds / 3600.0
-
-            original_estimate = getattr(
-                issue.fields,
-                "timeoriginalestimate",
-                0,
-            ) or 0
-            if original_estimate > 0:
-                eta_hours = original_estimate / 3600.0
-                total_hours = original_estimate / 3600.0
-
-        except Exception as e:
-            LOGGER.error(f"Error getting time tracking for {issue.key}: {e}")
-
-        return eta_hours, total_hours
-
-    def _get_worklog_data(
-        self,
-        issue: Issue,
-    ) -> tuple[float, List[str], Dict[str, float], Dict[str, float]]:
-        """Get worklog data including progress hours and individual hours.
-
-        Args:
-            issue: Jira issue object.
-
-        Returns:
-            Tuple of (progress_hours, involved_people, department_hours, individual_hours).
-        """
-        progress_hours = 0.0
-        involved_people = set()
-        department_hours = {
-            "ai_hours": 0.0,
-            "backend_hours": 0.0,
-            "frontend_hours": 0.0,
-            "devops_hours": 0.0,
-            "ui_ux_hours": 0.0,
-        }
-        individual_hours = {}
-
-        try:
-            issue_with_worklog = self.task_manager.get_issue_with_expand(
-                issue.key,
-                "worklog",
-            )
-            if issue_with_worklog and hasattr(issue_with_worklog.fields, "worklog"):
-                worklogs = issue_with_worklog.fields.worklog.worklogs
-                for worklog in worklogs:
-                    time_spent_seconds = getattr(worklog, "timeSpentSeconds", 0) or 0
-                    hours = time_spent_seconds / 3600.0
-                    progress_hours += hours
-
-                    author = getattr(worklog, "author", None)
-                    if author:
-                        author_name = getattr(author, "name", None)
-                        if author_name:
-                            display_name = self._get_google_sheet_name(author_name)
-                            if display_name:
-                                involved_people.add(display_name)
-
-                                if display_name not in individual_hours:
-                                    individual_hours[display_name] = 0.0
-                                individual_hours[display_name] += hours
-
-                                user_dept = self._get_user_department(author_name)
-                                if user_dept:
-                                    department_hours[user_dept] = (
-                                        department_hours.get(user_dept, 0.0) + hours
-                                    )
-
-        except Exception as e:
-            LOGGER.error(f"Error getting worklog data for {issue.key}: {e}")
-
-        return (
-            progress_hours,
-            sorted(list(involved_people)),
-            department_hours,
-            individual_hours,
-        )
-
-    def _get_user_department(self, jira_username: str) -> Optional[str]:
-        """Get department field name for a user.
-
-        Args:
-            jira_username: Jira username.
-
-        Returns:
-            Department field name (e.g., 'ai_hours', 'backend_hours') or None.
-        """
-        try:
-            user_config = self.user_config.get_user_config_by_jira_username(
-                jira_username,
-            )
-            if user_config and hasattr(user_config, "department"):
-                dept = user_config.department
-                return self.DEPARTMENT_MAPPING.get(dept)
-        except Exception as e:
-            LOGGER.debug(f"Error getting department for {jira_username}: {e}")
-        return None
-
     def _get_linked_pm_issue(self, issue: Issue) -> Optional[str]:
         """Get linked PM board issue key from issue links.
 
@@ -472,19 +358,6 @@ class FetchStoryDataUseCase:
         except Exception as e:
             LOGGER.error(f"Error parsing datetime {date_str}: {e}")
             return None
-
-    def _get_google_sheet_name(self, jira_username: str) -> Optional[str]:
-        """Get Google Sheet display name for a Jira username."""
-        try:
-            user_config = self.user_config.get_user_config_by_jira_username(
-                jira_username,
-            )
-            if user_config and user_config.google_sheet_name:
-                return user_config.google_sheet_name
-            return jira_username
-        except Exception as e:
-            LOGGER.debug(f"Error getting Google Sheet name for {jira_username}: {e}")
-            return jira_username
 
     def _map_jira_status_to_sheet(self, jira_status: str) -> str:
         """Map Jira status to Google Sheet Persian workflow status."""
