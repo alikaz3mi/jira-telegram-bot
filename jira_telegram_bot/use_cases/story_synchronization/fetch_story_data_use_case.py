@@ -120,7 +120,7 @@ class FetchStoryDataUseCase:
         times = {}
         for person, hours in individual_hours.items():
             if hours > 0:
-                times[person] = int(hours * 8)
+                times[person] = int(round(hours))
 
         return SynthPMFeatureEntity(
             row_number=row_number,
@@ -361,9 +361,13 @@ class FetchStoryDataUseCase:
 
     def _map_jira_status_to_sheet(self, jira_status: str) -> str:
         """Map Jira status to Google Sheet Persian workflow status."""
-        status_upper = jira_status.upper().replace(" ", " ")
+        status_upper = jira_status.upper().strip()
         mapped_status = JIRA_TO_STORY_SYNC_STATUS.get(status_upper)
         if mapped_status:
+            LOGGER.debug(f"Mapped Jira status '{jira_status}' -> '{mapped_status}'")
             return mapped_status
-        LOGGER.warning(f"No status mapping found for '{jira_status}', using original")
+        LOGGER.warning(
+            f"No status mapping found for Jira status '{jira_status}' (normalized: '{status_upper}'), "
+            f"using original. Available mappings: {list(JIRA_TO_STORY_SYNC_STATUS.keys())}"
+        )
         return jira_status

@@ -301,16 +301,16 @@ class SyncStoryToSheetsUseCase:
             
             has_changes = False
             
-            # Check implementation_start_date
-            if update_row.implementation_start_date != existing_row.implementation_start_date:
+            # Check implementation_start_date (compare dates only, ignore time/timezone)
+            if not self._dates_equal(update_row.implementation_start_date, existing_row.implementation_start_date):
                 LOGGER.debug(
                     f"{issue_key}: implementation_start_date changed from "
                     f"{existing_row.implementation_start_date} to {update_row.implementation_start_date}"
                 )
                 has_changes = True
             
-            # Check deadline
-            if update_row.deadline != existing_row.deadline:
+            # Check deadline (compare dates only, ignore time/timezone)
+            if not self._dates_equal(update_row.deadline, existing_row.deadline):
                 LOGGER.debug(
                     f"{issue_key}: deadline changed from "
                     f"{existing_row.deadline} to {update_row.deadline}"
@@ -326,10 +326,11 @@ class SyncStoryToSheetsUseCase:
                     )
                     has_changes = True
             
-            # Check progress (times dict)
-            if update_row.times != existing_row.times:
+            # Check progress (times dict) - compare rounded hours to avoid float precision issues
+            if not self._times_equal(update_row.times, existing_row.times):
                 LOGGER.debug(
-                    f"{issue_key}: progress (times) changed"
+                    f"{issue_key}: progress (times) changed from "
+                    f"{existing_row.times} to {update_row.times}"
                 )
                 has_changes = True
             
@@ -343,6 +344,58 @@ class SyncStoryToSheetsUseCase:
                 rows_with_changes.append(update_row)
         
         return rows_with_changes
+
+    def _dates_equal(self, date1, date2) -> bool:
+        """Compare two dates ignoring time and timezone.
+
+        Args:
+            date1: First datetime object (can be None).
+            date2: Second datetime object (can be None).
+
+        Returns:
+            True if dates are equal (day-level), False otherwise.
+        """
+        if date1 is None and date2 is None:
+            return True
+        if date1 is None or date2 is None:
+            return False
+        
+        # Compare only year, month, day (ignore time and timezone)
+        return (
+            date1.year == date2.year
+            and date1.month == date2.month
+            and date1.day == date2.day
+        )
+
+    def _times_equal(self, times1: dict, times2: dict) -> bool:
+        """Compare two times dictionaries with rounding for precision.
+
+        Both Jira and sheets store hours directly.
+        Need to round to avoid float precision issues.
+
+        Args:
+            times1: First times dictionary {dev_name: hours}.
+            times2: Second times dictionary {dev_name: hours}.
+
+        Returns:
+            True if times are equal (within rounding), False otherwise.
+        """
+        if not times1 and not times2:
+            return True
+        
+        # Get all developer names from both dicts
+        all_devs = set(times1.keys()) | set(times2.keys())
+        
+        for dev in all_devs:
+            hours1 = times1.get(dev, 0)
+            hours2 = times2.get(dev, 0)
+            
+            # Round to 2 decimal places to avoid float precision issues
+            # (8.0 vs 8.000001, etc.)
+            if round(hours1, 2) != round(hours2, 2):
+                return False
+        
+        return True
 
     async def _update_changed_cells(
         self,
@@ -393,7 +446,7 @@ class SyncStoryToSheetsUseCase:
                 })
             
             # Update implementation_start_date (column U)
-            if changed_row.implementation_start_date != existing_row.implementation_start_date:
+            if not self._dates_equal(changed_row.implementation_start_date, existing_row.implementation_start_date):
                 cell_range = f"{mapping.sheet_name}!U{sheet_row}"
                 update_requests.append({
                     "range": cell_range,
@@ -401,7 +454,7 @@ class SyncStoryToSheetsUseCase:
                 })
             
             # Update deadline (column V)
-            if changed_row.deadline != existing_row.deadline:
+            if not self._dates_equal(changed_row.deadline, existing_row.deadline):
                 cell_range = f"{mapping.sheet_name}!V{sheet_row}"
                 update_requests.append({
                     "range": cell_range,
@@ -409,20 +462,20 @@ class SyncStoryToSheetsUseCase:
                 })
             
             # Update progress columns (developer times)
-            if changed_row.times != existing_row.times:
+            if not self._times_equal(changed_row.times, existing_row.times):
                 for idx, dev_name in enumerate(self.developer_names):
                     old_hours = existing_row.times.get(dev_name, 0)
                     new_hours = changed_row.times.get(dev_name, 0)
                     
-                    if old_hours != new_hours:
+                    # Only update if this specific developer's hours changed
+                    if round(old_hours, 2) != round(new_hours, 2):
                         # Convert column index to letter
                         col_idx = DEVELOPER_COLS_START + idx
                         col_letter = self._column_index_to_letter(col_idx)
                         cell_range = f"{mapping.sheet_name}!{col_letter}{sheet_row}"
-                        days = new_hours / 8 if new_hours else 0.0
                         update_requests.append({
                             "range": cell_range,
-                            "values": [[days]],
+                            "values": [[new_hours if new_hours else 0]],
                         })
         
         if not update_requests:
@@ -594,7 +647,7 @@ class SyncStoryToSheetsUseCase:
 
         for dev_name in self.developer_names:
             hours = row.times.get(dev_name, 0)
-            values.append(hours / 8 if hours else 0.0)
+            values.append(hours if hours else 0)
 
         pm_key_formula = ""
         if row.jira_issue_key:
