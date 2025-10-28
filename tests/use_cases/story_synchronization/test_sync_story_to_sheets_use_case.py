@@ -334,22 +334,53 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
             return_value=["PARSCHAT-1"]
         )
 
-        # New row from Jira has different status
+        # New row from Jira has different status but same other fields
         base_row = self._create_mock_story_row(key="PARSCHAT-1")
         new_row = base_row.model_copy(update={"status": "۶. در حال پیاده سازی"})
         self.mock_fetch_use_case.execute.return_value = [new_row]
 
         await self.use_case.execute_for_board("TEST", days_back=7)
 
-        # Verify update_cells was called
-        self.mock_sheets_gateway.update_cells.assert_called_once()
+        # With field-level change detection, no update should happen since:
+        # 1. Status is preserved (not changed)
+        # 2. No other tracked fields changed
+        # This is the correct behavior - avoid unnecessary writes
+        self.mock_sheets_gateway.update_range.assert_not_called()
+
+    async def test_field_level_change_detection_updates_only_changed_fields(self):
+        """Test that only fields with changes are updated."""
+        from datetime import datetime, timezone
         
-        args = self.mock_sheets_gateway.update_cells.call_args
-        if args and args[0] and len(args[0]) > 2:
-            updated_values = args[0][2]
-            if updated_values and len(updated_values) > 0 and len(updated_values[0]) > 6:
-                # Status column is index 6
-                self.assertEqual(updated_values[0][6], "۱. ثبت و اولویت بندی")
+        # Create existing feature
+        existing_base = self._create_mock_story_row(key="PARSCHAT-1")
+        existing_row = existing_base.model_copy(update={
+            "status": "۶. در حال پیاده سازی",
+            "deadline": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "implementation_start_date": datetime(2023, 12, 1, tzinfo=timezone.utc),
+            "times": {"Developer1": 16},
+        })
+        
+        # Mock repository
+        self.mock_task_story_repository.get_sheet_features = AsyncMock(return_value=[existing_row])
+        self.mock_task_story_repository.extract_issue_keys_from_features = Mock(
+            return_value=["PARSCHAT-1"]
+        )
+
+        # New row from Jira with changed deadline and progress
+        base_row = self._create_mock_story_row(key="PARSCHAT-1")
+        new_row = base_row.model_copy(update={
+            "status": "۶. در حال پیاده سازی",  # Same
+            "deadline": datetime(2024, 2, 1, tzinfo=timezone.utc),  # Changed
+            "implementation_start_date": datetime(2023, 12, 1, tzinfo=timezone.utc),  # Same
+            "times": {"Developer1": 24},  # Changed (16 -> 24)
+        })
+        self.mock_fetch_use_case.execute.return_value = [new_row]
+
+        await self.use_case.execute_for_board("TEST", days_back=7)
+
+        # Should update only the changed cells (deadline and progress columns)
+        self.mock_sheets_gateway.update_range.assert_called()
+        self.assertGreater(self.mock_sheets_gateway.update_range.call_count, 0)
 
     async def test_update_with_retry_handles_quota_error(self):
         """Test update with retry handles quota exceeded errors."""

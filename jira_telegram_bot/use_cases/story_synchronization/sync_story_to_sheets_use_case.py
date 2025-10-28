@@ -205,22 +205,51 @@ class SyncStoryToSheetsUseCase:
         ]
 
         LOGGER.info(
-            f"Incremental sync: {len(new_rows)} new, {len(update_rows)} updates",
+            f"Incremental sync: {len(new_rows)} new, {len(update_rows)} updates (before filtering)",
         )
 
-        updated_data = self._merge_data(existing_rows, update_rows, rows)
-        range_name = self._get_range_name(mapping, include_row_start=True)
-        write_success = await self._update_with_retry(
-            mapping.spreadsheet_id,
-            range_name,
-            [self._convert_row_to_values(row) for row in updated_data],
+        # Filter to only rows with actual changes in tracked fields
+        rows_with_changes = self._filter_rows_with_field_changes(
+            existing_rows,
+            update_rows,
         )
 
-        if not write_success:
-            return False
+        LOGGER.info(
+            f"After field-level filtering: {len(rows_with_changes)} rows have actual changes",
+        )
 
+        if not rows_with_changes and not new_rows:
+            LOGGER.info("No changes detected, skipping sync")
+            return True
+
+        # Update only the changed cells
+        if rows_with_changes:
+            await self._update_changed_cells(
+                mapping,
+                existing_rows,
+                rows_with_changes,
+            )
+
+        # Add new rows
         if new_rows:
-            next_row_number = len(updated_data) + 1
+            existing_map = {
+                row.developer_board_issue_key: row for row in existing_rows
+            }
+            all_rows_map = {row.developer_board_issue_key: row for row in rows}
+            
+            # Preserve existing rows that aren't being updated
+            final_rows = []
+            for existing_row in existing_rows:
+                key = existing_row.developer_board_issue_key
+                if key in [r.developer_board_issue_key for r in rows_with_changes]:
+                    # Use updated version
+                    updated = next(r for r in rows_with_changes if r.developer_board_issue_key == key)
+                    final_rows.append(updated)
+                else:
+                    final_rows.append(existing_row)
+            
+            # Add new rows at the end
+            next_row_number = len(final_rows) + 1
             renumbered_new_rows = []
             for new_row in new_rows:
                 renumbered_new_rows.append(
@@ -236,6 +265,201 @@ class SyncStoryToSheetsUseCase:
             )
 
         return True
+
+    def _filter_rows_with_field_changes(
+        self,
+        existing_rows: List[SynthPMFeatureEntity],
+        update_rows: List[SynthPMFeatureEntity],
+    ) -> List[SynthPMFeatureEntity]:
+        """Filter update rows to only those with changes in tracked fields.
+
+        Tracked fields:
+        - implementation_start_date
+        - deadline
+        - status
+        - progress (times dict - developer work hours)
+
+        Args:
+            existing_rows: Current rows from the sheet.
+            update_rows: Rows with potential updates.
+
+        Returns:
+            List of rows that have actual changes in tracked fields.
+        """
+        existing_map = {
+            row.developer_board_issue_key: row for row in existing_rows
+        }
+        
+        rows_with_changes = []
+        
+        for update_row in update_rows:
+            issue_key = update_row.developer_board_issue_key
+            existing_row = existing_map.get(issue_key)
+            
+            if not existing_row:
+                continue
+            
+            has_changes = False
+            
+            # Check implementation_start_date
+            if update_row.implementation_start_date != existing_row.implementation_start_date:
+                LOGGER.debug(
+                    f"{issue_key}: implementation_start_date changed from "
+                    f"{existing_row.implementation_start_date} to {update_row.implementation_start_date}"
+                )
+                has_changes = True
+            
+            # Check deadline
+            if update_row.deadline != existing_row.deadline:
+                LOGGER.debug(
+                    f"{issue_key}: deadline changed from "
+                    f"{existing_row.deadline} to {update_row.deadline}"
+                )
+                has_changes = True
+            
+            # Check status (with preservation logic)
+            if not self._should_preserve_status(existing_row.status):
+                if update_row.status != existing_row.status:
+                    LOGGER.debug(
+                        f"{issue_key}: status changed from "
+                        f"{existing_row.status} to {update_row.status}"
+                    )
+                    has_changes = True
+            
+            # Check progress (times dict)
+            if update_row.times != existing_row.times:
+                LOGGER.debug(
+                    f"{issue_key}: progress (times) changed"
+                )
+                has_changes = True
+            
+            if has_changes:
+                # Preserve status if needed
+                if self._should_preserve_status(existing_row.status):
+                    update_row = update_row.model_copy(
+                        update={"status": existing_row.status},
+                    )
+                
+                rows_with_changes.append(update_row)
+        
+        return rows_with_changes
+
+    async def _update_changed_cells(
+        self,
+        mapping: SheetBoardMapping,
+        existing_rows: List[SynthPMFeatureEntity],
+        changed_rows: List[SynthPMFeatureEntity],
+    ) -> bool:
+        """Update only the cells that have changed.
+
+        Args:
+            mapping: Sheet-to-board mapping configuration.
+            existing_rows: Current rows from the sheet.
+            changed_rows: Rows with field changes.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        # Build a map of existing rows for quick lookup
+        existing_map = {
+            row.developer_board_issue_key: row for row in existing_rows
+        }
+        
+        # Column indices for tracked fields (0-based)
+        STATUS_COL = 6  # Column G
+        IMPLEMENTATION_START_COL = 20  # Column U
+        DEADLINE_COL = 21  # Column V
+        DEVELOPER_COLS_START = 29  # Column AD onwards
+        
+        # Prepare batch update requests
+        update_requests = []
+        
+        for changed_row in changed_rows:
+            issue_key = changed_row.developer_board_issue_key
+            existing_row = existing_map.get(issue_key)
+            
+            if not existing_row:
+                continue
+            
+            # Find the sheet row number (1-indexed, includes header)
+            sheet_row = existing_row.sheet_row_number
+            
+            # Update status (column G)
+            if changed_row.status != existing_row.status:
+                cell_range = f"{mapping.sheet_name}!G{sheet_row}"
+                update_requests.append({
+                    "range": cell_range,
+                    "values": [[changed_row.status or ""]],
+                })
+            
+            # Update implementation_start_date (column U)
+            if changed_row.implementation_start_date != existing_row.implementation_start_date:
+                cell_range = f"{mapping.sheet_name}!U{sheet_row}"
+                update_requests.append({
+                    "range": cell_range,
+                    "values": [[self._format_date(changed_row.implementation_start_date)]],
+                })
+            
+            # Update deadline (column V)
+            if changed_row.deadline != existing_row.deadline:
+                cell_range = f"{mapping.sheet_name}!V{sheet_row}"
+                update_requests.append({
+                    "range": cell_range,
+                    "values": [[self._format_date(changed_row.deadline)]],
+                })
+            
+            # Update progress columns (developer times)
+            if changed_row.times != existing_row.times:
+                for idx, dev_name in enumerate(self.developer_names):
+                    old_hours = existing_row.times.get(dev_name, 0)
+                    new_hours = changed_row.times.get(dev_name, 0)
+                    
+                    if old_hours != new_hours:
+                        # Convert column index to letter
+                        col_idx = DEVELOPER_COLS_START + idx
+                        col_letter = self._column_index_to_letter(col_idx)
+                        cell_range = f"{mapping.sheet_name}!{col_letter}{sheet_row}"
+                        days = new_hours / 8 if new_hours else 0.0
+                        update_requests.append({
+                            "range": cell_range,
+                            "values": [[days]],
+                        })
+        
+        if not update_requests:
+            LOGGER.info("No cell updates needed")
+            return True
+        
+        LOGGER.info(f"Updating {len(update_requests)} cells")
+        
+        # Batch update all changed cells
+        try:
+            for request in update_requests:
+                await self.sheets_gateway.update_range(
+                    mapping.spreadsheet_id,
+                    request["range"],
+                    request["values"],
+                )
+            return True
+        except Exception as e:
+            LOGGER.error(f"Failed to update cells: {e}")
+            return False
+
+    def _column_index_to_letter(self, index: int) -> str:
+        """Convert 0-based column index to letter (0->A, 25->Z, 26->AA).
+
+        Args:
+            index: 0-based column index.
+
+        Returns:
+            Column letter(s).
+        """
+        result = ""
+        index += 1  # Convert to 1-based
+        while index > 0:
+            index -= 1
+            result = chr(65 + (index % 26)) + result
+            index //= 26
+        return result
 
     def _merge_data(
         self,
