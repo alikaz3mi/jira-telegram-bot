@@ -222,38 +222,25 @@ class SyncStoryToSheetsUseCase:
             LOGGER.info("No changes detected, skipping sync")
             return True
 
-        # Update only the changed cells
+        # Update only the changed cells for existing rows
         if rows_with_changes:
-            await self._update_changed_cells(
+            success = await self._update_changed_cells(
                 mapping,
                 existing_rows,
                 rows_with_changes,
             )
+            if not success:
+                return False
 
-        # Add new rows
+        # Append new rows (these get all columns since they're new)
         if new_rows:
-            existing_map = {
-                row.developer_board_issue_key: row for row in existing_rows
-            }
-            all_rows_map = {row.developer_board_issue_key: row for row in rows}
+            # Calculate the next row number based on existing sheet rows
+            next_row_number = len(existing_rows) + 2  # +2 for header row and 1-based indexing
             
-            # Preserve existing rows that aren't being updated
-            final_rows = []
-            for existing_row in existing_rows:
-                key = existing_row.developer_board_issue_key
-                if key in [r.developer_board_issue_key for r in rows_with_changes]:
-                    # Use updated version
-                    updated = next(r for r in rows_with_changes if r.developer_board_issue_key == key)
-                    final_rows.append(updated)
-                else:
-                    final_rows.append(existing_row)
-            
-            # Add new rows at the end
-            next_row_number = len(final_rows) + 1
             renumbered_new_rows = []
             for new_row in new_rows:
                 renumbered_new_rows.append(
-                    new_row.model_copy(update={"row_number": next_row_number})
+                    new_row.model_copy(update={"row_number": next_row_number - 1})
                 )
                 next_row_number += 1
 

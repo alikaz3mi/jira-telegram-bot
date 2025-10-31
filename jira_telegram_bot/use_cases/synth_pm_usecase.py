@@ -115,7 +115,7 @@ class SynthPMUseCase:
                 # Skip test rows
                 #if feature.row_number not in [215]:
                 #    continue
-                if feature.version not in [ "04.08.09"]:
+                if feature.version not in [ "04.08.09", "04.08.23"]:
                     continue
                     
                 try:
@@ -293,6 +293,9 @@ class SynthPMUseCase:
                     return
 
             elif feature.jira_issue_key and feature.developer_board_issue_key:
+                if feature.status in [StatusDescriptions.INITIATION_AND_PRIORITIZATION.value, StatusDescriptions.ANALYSIS_AND_RFP.value,
+                                StatusDescriptions.USER_STORY_PREPARATION.value, StatusDescriptions.COMPLETED.value]:
+                    return # TODO: update sync_result status
                 success = await self.repository.update_jira_task_from_feature(feature)
                 if success:
                     sync_results["updated_jira_tasks"] += 1
