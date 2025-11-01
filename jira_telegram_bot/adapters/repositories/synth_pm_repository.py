@@ -2146,6 +2146,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "checklist_completion": ["Checklist Completion (0-1)", "Checklist Completion"],
             "readiness_score": ["Readiness Score (0-100)", "Readiness Score"],
             "notes_risks": ["Notes / Risks", "Notes", "Risks"],
+            "documentation_link": ["لینک Documentation", "Documentation Link", "Link Documentation"],
             "telegram_message_id": ["Telegram Message ID", "Message ID"],
             "last_updated": ["Last Updated", "Updated"],
         }
@@ -2238,6 +2239,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 checklist_completion=get_mapped_value("checklist_completion") if get_mapped_value("checklist_completion") else None,
                 readiness_score=get_mapped_value("readiness_score") if get_mapped_value("readiness_score") else None,
                 notes_risks=get_mapped_value("notes_risks") if get_mapped_value("notes_risks") else None,
+                documentation_link=get_mapped_value("documentation_link") if get_mapped_value("documentation_link") else None,
                 telegram_message_id=get_mapped_value("telegram_message_id") if get_mapped_value("telegram_message_id") else None,
                 last_updated=parse_date(get_mapped_value("last_updated")),
             )
@@ -3054,8 +3056,169 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error forcing documentation regeneration: {e}")
             return False
 
-    async def update_google_sheet_custom_fields(self,
+    async def update_google_sheet_custom_fields(
+        self,
         issue_key: str,
-        custom_fields: Dict[str, Any]
-        ):
+        custom_fields: Dict[str, Any],
+    ):
+        """Update custom fields in Google Sheet for an issue.
+        
+        Args:
+            issue_key: Jira issue key
+            custom_fields: Dictionary of custom fields to update
+        """
         pass
+    
+    async def _create_documentation_subtask(
+        self,
+        parent_issue_key: str,
+        department: str,
+        assignee_email: str,
+        feature: SynthPMFeatureEntity,
+    ) -> Optional[str]:
+        """Create documentation subtask for a department.
+        
+        Args:
+            parent_issue_key: Parent feature issue key
+            department: Department name
+            assignee_email: Assignee email from user_config
+            feature: Feature entity
+            
+        Returns:
+            Created subtask issue key if successful, None otherwise
+        """
+        try:
+            from jira_telegram_bot.entities.task import TaskData
+            from jira_telegram_bot.use_cases.helpers.documentation_helpers import (
+                DocumentationSubtaskHelper,
+            )
+            
+            task_info = DocumentationSubtaskHelper.create_documentation_task_info(
+                parent_issue_key,
+                department,
+                assignee_email,
+                feature,
+            )
+            
+            description = DocumentationSubtaskHelper.build_documentation_subtask_description(
+                feature,
+                department,
+            )
+            
+            assignee_username = self._get_jira_username_by_email(assignee_email)
+            
+            subtask_data = TaskData(
+                summary=task_info.task_title,
+                description=description,
+                project_key=self.settings.developer_project_key,
+                assignee=assignee_username,
+            )
+            
+            fields = {
+                "project": {"key": subtask_data.project_key},
+                "parent": {"key": parent_issue_key},
+                "summary": subtask_data.summary,
+                "description": subtask_data.description,
+                "issuetype": {"name": "Sub-task"},
+            }
+            
+            if assignee_username:
+                fields["assignee"] = {"name": assignee_username}
+            
+            if task_info.estimated_hours:
+                fields["timetracking"] = {
+                    "originalEstimate": f"{task_info.estimated_hours}h",
+                }
+            
+            new_issue = self.jira_repository.create_issue(fields=fields)
+            
+            if new_issue:
+                LOGGER.info(
+                    f"Created documentation subtask {new_issue.key} for {department}",
+                )
+                return new_issue.key
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.error(
+                f"Failed to create documentation subtask for {department}: {e}",
+            )
+            return None
+    
+    def _get_jira_username_by_email(self, email: str) -> Optional[str]:
+        """Get Jira username by email from user config.
+        
+        Args:
+            email: User email address
+            
+        Returns:
+            Jira username if found, None otherwise
+        """
+        all_configs = self.user_config.get_all_user_configs()
+        
+        for user_id, config in all_configs.items():
+            if hasattr(config, "email") and config.email == email:
+                return user_id
+        
+        return None
+    
+    async def create_release_in_pm_board(
+        self,
+        release_note: ReleaseNoteEntity,
+    ) -> Optional[str]:
+        """Create release version in PM board.
+        
+        Args:
+            release_note: Release note entity from Google Sheets
+            
+        Returns:
+            Release version ID if successful, None otherwise
+        """
+        try:
+            from jira_telegram_bot.use_cases.helpers.documentation_helpers import (
+                ReleaseCreationHelper,
+            )
+            
+            existing_versions = self.jira_repository.get_project_versions(
+                self.settings.pm_project_key,
+            )
+            existing_release_names = [v.name for v in existing_versions]
+            
+            if not ReleaseCreationHelper.should_create_release(
+                release_note,
+                existing_release_names,
+            ):
+                LOGGER.info(
+                    f"Release {release_note.release_version} already exists in PM board",
+                )
+                for version in existing_versions:
+                    if version.name == release_note.release_version:
+                        return str(version.id)
+                return None
+            
+            release_info = ReleaseCreationHelper.extract_release_info(release_note)
+            
+            new_version = self.jira_repository.create_version(
+                name=release_info["name"],
+                project=self.settings.pm_project_key,
+                description=release_info.get("description"),
+                startDate=release_info.get("startDate"),
+                releaseDate=release_info.get("releaseDate"),
+                archived=release_info.get("archived", False),
+                released=release_info.get("released", False),
+            )
+            
+            if new_version:
+                LOGGER.info(
+                    f"Created release {release_note.release_version} in PM board",
+                )
+                return str(new_version.id)
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.error(
+                f"Failed to create release {release_note.release_version}: {e}",
+            )
+            return None

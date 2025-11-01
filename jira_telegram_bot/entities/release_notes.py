@@ -48,6 +48,7 @@ class ReleaseNoteEntity(BaseModel):
     checklist_completion: Optional[str] = Field(default=None, description="Checklist Completion (0-1)")
     readiness_score: Optional[str] = Field(default=None, description="Readiness Score (0-100)")
     notes_risks: Optional[str] = Field(default=None, description="Notes / Risks")
+    documentation_link: Optional[str] = Field(default=None, description="لینک Documentation")
     telegram_message_id: Optional[str] = Field(default=None, description="Telegram message ID for tracking edits")
     last_updated: Optional[datetime] = Field(default=None, description="Last update timestamp")
     

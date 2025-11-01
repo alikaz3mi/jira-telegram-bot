@@ -798,6 +798,41 @@ def _configure_synth_pm_board(container: Container) -> None:
         )
     )
 
+    # Google Docs Repository
+    from jira_telegram_bot.adapters.repositories.google_docs_repository import (
+        GoogleDocsRepository,
+    )
+    from jira_telegram_bot.use_cases.interfaces.google_docs_repository_interface import (
+        GoogleDocsRepositoryInterface,
+    )
+    
+    container[GoogleDocsRepositoryInterface] = Singleton(
+        lambda c: GoogleDocsRepository(
+            settings=c[GoogleSheetsConnectionSettings],
+        ),
+    )
+    
+    # Documentation Generation Use Case
+    from jira_telegram_bot.use_cases.documentation_generation_usecase import (
+        DocumentationGenerationUseCase,
+    )
+    
+    container[DocumentationGenerationUseCase] = Singleton(
+        lambda c: DocumentationGenerationUseCase(
+            google_docs_repository=c[GoogleDocsRepositoryInterface],
+            user_config=c[UserConfigInterface],
+        ),
+    )
+    
+    # Project Config Settings
+    from jira_telegram_bot.settings.project_config_settings import (
+        ProjectConfigSettings,
+    )
+    
+    container[ProjectConfigSettings] = Singleton(
+        lambda: ProjectConfigSettings(),
+    )
+    
     # Endpoint (will be imported when needed)
     container[SynthPMEndpoint] = Singleton(
         lambda c: SynthPMEndpoint(c[SynthPMUseCase]),

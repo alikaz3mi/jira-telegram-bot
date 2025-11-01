@@ -324,6 +324,17 @@ class SynthPMUseCase:
                 raise ValueError(
                     f"Feature {feature.task_title} has no Jira or Developer Board issue key",
                 )
+            
+            if feature.developer_board_issue_key:
+                created_doc_subtasks = await self._create_documentation_subtasks(
+                    feature,
+                )
+                
+                if created_doc_subtasks:
+                    sync_results["created_documentation_subtasks"] = (
+                        sync_results.get("created_documentation_subtasks", 0) 
+                        + len(created_doc_subtasks)
+                    )
 
             # NO DIRECT TELEGRAM POSTING - Only for releases
             # Telegram notifications are now handled via sync_release_notes method
@@ -1394,3 +1405,200 @@ class SynthPMUseCase:
                 f"• {scenario['test_number']}: {scenario['description']} ({scenario['responsible']})"
             )
         return "\n".join(lines)
+    
+    def _extract_departments_from_feature(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> List[str]:
+        """Extract list of involved departments from feature.
+        
+        Args:
+            feature: Feature entity
+            
+        Returns:
+            List of department names
+        """
+        from jira_telegram_bot.use_cases.helpers.documentation_helpers import (
+            DocumentationSubtaskHelper,
+        )
+        
+        departments_with_times = DocumentationSubtaskHelper.extract_departments_with_times(
+            feature,
+        )
+        
+        return list(departments_with_times.keys())
+    
+    def _get_department_assignee_email(
+        self,
+        feature: SynthPMFeatureEntity,
+        department: str,
+    ) -> Optional[str]:
+        """Get assignee email for a specific department.
+        
+        Args:
+            feature: Feature entity
+            department: Department name
+            
+        Returns:
+            Assignee email if found, None otherwise
+        """
+        from jira_telegram_bot.use_cases.helpers.documentation_helpers import (
+            EmailMappingHelper,
+        )
+        
+        return EmailMappingHelper.get_department_assignee_from_feature(
+            self.user_config,
+            feature,
+            department,
+        )
+    
+    async def _create_documentation_subtasks(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> List[str]:
+        """Create documentation subtasks for each involved department.
+        
+        Args:
+            feature: Feature entity
+            
+        Returns:
+            List of created subtask keys
+        """
+        if not feature.developer_board_issue_key:
+            LOGGER.warning(
+                f"No developer board issue key for feature: {feature.task_title}",
+            )
+            return []
+        
+        departments = self._extract_departments_from_feature(feature)
+        created_subtasks = []
+        
+        for dept in departments:
+            assignee_email = self._get_department_assignee_email(feature, dept)
+            
+            if not assignee_email:
+                LOGGER.warning(
+                    f"No assignee email found for department {dept} in feature {feature.task_title}",
+                )
+                continue
+            
+            subtask_key = await self.repository._create_documentation_subtask(
+                parent_issue_key=feature.developer_board_issue_key,
+                department=dept,
+                assignee_email=assignee_email,
+                feature=feature,
+            )
+            
+            if subtask_key:
+                created_subtasks.append(subtask_key)
+        
+        LOGGER.info(
+            f"Created {len(created_subtasks)} documentation subtasks for {feature.task_title}",
+        )
+        return created_subtasks
+    
+    async def _get_release_note_for_feature(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> Optional[ReleaseNoteEntity]:
+        """Get release note entity for a feature.
+        
+        Args:
+            feature: Feature entity
+            
+        Returns:
+            ReleaseNoteEntity if found, None otherwise
+        """
+        if not feature.release:
+            return None
+        
+        try:
+            release_notes = await self.repository.get_release_notes()
+            
+            for release_note in release_notes:
+                if release_note.release_version == feature.release:
+                    return release_note
+            
+            return None
+            
+        except Exception as e:
+            LOGGER.error(f"Error getting release note for feature: {e}")
+            return None
+    
+    async def _get_feature_subtasks(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> List[Dict]:
+        """Get subtasks for a feature from Jira.
+        
+        Args:
+            feature: Feature entity
+            
+        Returns:
+            List of subtask dictionaries
+        """
+        if not feature.developer_board_issue_key:
+            return []
+        
+        try:
+            issue = self.repository.jira_repository.get_issue(
+                feature.developer_board_issue_key,
+            )
+            
+            if not issue:
+                return []
+            
+            subtasks = []
+            for subtask in getattr(issue.fields, "subtasks", []):
+                subtask_dict = {
+                    "key": subtask.key,
+                    "title": subtask.fields.summary,
+                    "acceptance_criteria": [],
+                }
+                
+                if hasattr(subtask.fields, "description"):
+                    description = subtask.fields.description or ""
+                    criteria = self._parse_acceptance_criteria_from_description(
+                        description,
+                    )
+                    subtask_dict["acceptance_criteria"] = criteria
+                
+                subtasks.append(subtask_dict)
+            
+            return subtasks
+            
+        except Exception as e:
+            LOGGER.error(f"Error getting feature subtasks: {e}")
+            return []
+    
+    def _parse_acceptance_criteria_from_description(
+        self,
+        description: str,
+    ) -> List[str]:
+        """Parse acceptance criteria from issue description.
+        
+        Args:
+            description: Issue description text
+            
+        Returns:
+            List of acceptance criteria
+        """
+        criteria = []
+        
+        lines = description.split("\n")
+        in_criteria_section = False
+        
+        for line in lines:
+            line = line.strip()
+            
+            if "معیارهای پذیرش" in line or "acceptance criteria" in line.lower():
+                in_criteria_section = True
+                continue
+            
+            if in_criteria_section:
+                if line.startswith("-") or line.startswith("•") or line.startswith("*"):
+                    criteria.append(line[1:].strip())
+                elif line.startswith("#") or line == "":
+                    in_criteria_section = False
+        
+        return criteria
