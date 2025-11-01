@@ -12,11 +12,12 @@ class FieldConfig(BaseModel):
 
 
 class UserConfig(BaseModel):
-    telegram_username: str
+    telegram_username: Optional[str] = None
     telegram_user_chat_id: int
     jira_username: str
     gitlab_username: Optional[str] = None
     google_sheet_name: Optional[str] = None
+    email: Optional[str] = None
     user_components: Optional[dict] = None  
     project: FieldConfig = FieldConfig()
     component: FieldConfig = FieldConfig()

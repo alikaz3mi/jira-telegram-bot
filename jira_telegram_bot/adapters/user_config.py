@@ -157,7 +157,41 @@ class UserConfig(UserConfigInterface):
             List of Telegram user IDs
         """
         return [
-            user_cfg.telegram_user_id
+            user_cfg.telegram_user_chat_id
             for user_cfg in self.user_config.values()
-            if user_cfg.telegram_user_id
+            if user_cfg.telegram_user_chat_id
+        ]
+
+    def get_user_config_by_email(self, email: str) -> Optional[UserConfigEntity]:
+        """
+        Retrieve configuration for a specific user by email.
+
+        Args:
+            email: The email address to look up
+
+        Returns:
+            UserConfigEntity if found, None otherwise
+        """
+        if not email:
+            return None
+        
+        email_lower = email.lower().strip()
+        for user_config in self.user_config.values():
+            if user_config.email and user_config.email.lower().strip() == email_lower:
+                return user_config
+        
+        LOGGER.debug(f"User config not found for email: {email}")
+        return None
+
+    def list_user_emails(self):
+        """
+        List all user email addresses from the user configurations.
+
+        Returns:
+            List of email addresses (excluding None values)
+        """
+        return [
+            user_cfg.email
+            for user_cfg in self.user_config.values()
+            if user_cfg.email
         ]

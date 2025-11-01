@@ -1962,6 +1962,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             dept_deps_dict,
             department_hours,
             holidays,
+            feature.implementation_start_date,
         )
 
         # Create subtasks with calculated deadlines
@@ -2536,6 +2537,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             dept_deps_dict,
             department_hours,
             holidays,
+            feature.implementation_start_date,
         )
 
         # Build mapping of subtask keys by component

@@ -117,7 +117,11 @@ class SynthPMUseCase:
                 #    continue
                 if feature.version not in [ "04.08.09", "04.08.23"]:
                     continue
-                    
+                
+                if feature.department_deps == None:
+                    continue
+                
+                
                 try:
                     await self._process_feature(feature, sync_results)
                     processed_features.append(feature)

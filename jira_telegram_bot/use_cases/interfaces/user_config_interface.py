@@ -142,3 +142,26 @@ class UserConfigInterface(ABC):
             List of Telegram user IDs
         """
         pass
+
+    @abstractmethod
+    def get_user_config_by_email(self, email: str) -> Optional[UserConfigEntity]:
+        """
+        Retrieve configuration for a specific user by email.
+
+        Args:
+            email: The email address to look up
+
+        Returns:
+            UserConfigEntity if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    def list_user_emails(self) -> List[str]:
+        """
+        List all user email addresses in the configuration.
+
+        Returns:
+            List of email addresses (excluding None values)
+        """
+        pass
