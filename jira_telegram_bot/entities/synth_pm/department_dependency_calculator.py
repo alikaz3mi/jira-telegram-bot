@@ -20,6 +20,50 @@ class DepartmentDependencyCalculator:
     FRIDAY_WEEKDAY = 4
 
     @staticmethod
+    def calculate_daily_capacity(
+        weekly_capacity: float,
+        start_date: datetime,
+        end_date: datetime,
+        holidays: set,
+    ) -> float:
+        """Calculate daily capacity based on weekly capacity and workdays in the period.
+
+        Args:
+            weekly_capacity: Total hours available per week
+            start_date: Start date of the period
+            end_date: End date of the period
+            holidays: Set of holiday dates
+
+        Returns:
+            Daily capacity in hours (weekly_capacity / workdays_per_week)
+        """
+        if weekly_capacity <= 0:
+            return 0.0
+
+        # Count workdays in a typical week to calculate daily capacity
+        # We'll check one full week to get the pattern
+        sample_start = start_date
+        workdays_in_week = 0
+        
+        for i in range(7):
+            check_date = sample_start + timedelta(days=i)
+            if not DepartmentDependencyCalculator._is_non_working_day(check_date, holidays):
+                workdays_in_week += 1
+        
+        if workdays_in_week == 0:
+            LOGGER.warning("No workdays found in sample week, defaulting to 6 workdays")
+            workdays_in_week = 6
+        
+        daily_capacity = weekly_capacity / workdays_in_week
+        
+        LOGGER.debug(
+            f"Calculated daily capacity: {daily_capacity:.2f}h/day "
+            f"(weekly: {weekly_capacity}h, workdays: {workdays_in_week})"
+        )
+        
+        return daily_capacity
+
+    @staticmethod
     def parse_department_deps(department_deps_str: Optional[str]) -> Dict[str, List[str]]:
         """Parse department dependencies string into a dictionary.
 
@@ -90,6 +134,7 @@ class DepartmentDependencyCalculator:
         hours: int,
         start_date: datetime,
         holidays: set,
+        hours_per_day: float = None,
     ) -> Tuple[datetime, datetime]:
         """Calculate start and end dates based on story points (hours) and working days.
 
@@ -97,6 +142,7 @@ class DepartmentDependencyCalculator:
             hours: Number of hours (story points)
             start_date: Start date for calculation
             holidays: Set of holiday dates
+            hours_per_day: Hours available per day (defaults to HOURS_PER_DAY if not provided)
 
         Returns:
             Tuple of (calculated_start_date, calculated_end_date)
@@ -104,8 +150,11 @@ class DepartmentDependencyCalculator:
         if hours <= 0:
             return start_date, start_date
 
+        if hours_per_day is None:
+            hours_per_day = DepartmentDependencyCalculator.HOURS_PER_DAY
+
         # Calculate number of working days needed
-        days_needed = (hours + DepartmentDependencyCalculator.HOURS_PER_DAY - 1) // DepartmentDependencyCalculator.HOURS_PER_DAY
+        days_needed = int((hours + hours_per_day - 0.01) // hours_per_day)
 
         current_date = start_date
         working_days_counted = 0
@@ -157,6 +206,7 @@ class DepartmentDependencyCalculator:
         department_hours: Dict[str, int],
         holidays: set,
         implementation_start_date: Optional[datetime] = None,
+        department_daily_capacity: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Dict[str, datetime]]:
         """Calculate start and end dates for each department considering dependencies.
         
@@ -169,6 +219,7 @@ class DepartmentDependencyCalculator:
             department_hours: Dictionary of hours per department
             holidays: Set of holiday dates
             implementation_start_date: Earliest date any department can start (optional)
+            department_daily_capacity: Dictionary of daily capacity (hours/day) per department (optional)
 
         Returns:
             Dictionary mapping department to {"start": datetime, "end": datetime}
@@ -256,11 +307,17 @@ class DepartmentDependencyCalculator:
                     # No blockers, start from earliest_start
                     start_date = earliest_start
                 
+                # Get department-specific daily capacity if available
+                dept_daily_capacity = None
+                if department_daily_capacity:
+                    dept_daily_capacity = department_daily_capacity.get(dept)
+                
                 # Calculate end date forward from start
                 end_date = DepartmentDependencyCalculator._calculate_end_date_forward(
                     start_date,
                     dept_hours,
                     holidays,
+                    dept_daily_capacity,
                 )
                 
                 forward_schedule[dept] = {
@@ -319,6 +376,7 @@ class DepartmentDependencyCalculator:
         end_date: datetime,
         hours: int,
         holidays: set,
+        hours_per_day: float = None,
     ) -> datetime:
         """Calculate start date by working backwards from end date.
 
@@ -326,6 +384,7 @@ class DepartmentDependencyCalculator:
             end_date: End date to work backwards from
             hours: Number of hours needed
             holidays: Set of holiday dates
+            hours_per_day: Hours available per day (defaults to HOURS_PER_DAY if not provided)
 
         Returns:
             Calculated start date
@@ -333,7 +392,10 @@ class DepartmentDependencyCalculator:
         if hours <= 0:
             return end_date
 
-        days_needed = (hours + DepartmentDependencyCalculator.HOURS_PER_DAY - 1) // DepartmentDependencyCalculator.HOURS_PER_DAY
+        if hours_per_day is None:
+            hours_per_day = DepartmentDependencyCalculator.HOURS_PER_DAY
+
+        days_needed = int((hours + hours_per_day - 0.01) // hours_per_day)
 
         current_date = end_date
         working_days_counted = 0
@@ -355,6 +417,7 @@ class DepartmentDependencyCalculator:
         start_date: datetime,
         hours: int,
         holidays: set,
+        hours_per_day: float = None,
     ) -> datetime:
         """Calculate end date by working forward from start date.
 
@@ -362,6 +425,7 @@ class DepartmentDependencyCalculator:
             start_date: Start date to work forward from
             hours: Number of hours needed
             holidays: Set of holiday dates
+            hours_per_day: Hours available per day (defaults to HOURS_PER_DAY if not provided)
 
         Returns:
             Calculated end date
@@ -369,7 +433,10 @@ class DepartmentDependencyCalculator:
         if hours <= 0:
             return start_date
 
-        days_needed = (hours + DepartmentDependencyCalculator.HOURS_PER_DAY - 1) // DepartmentDependencyCalculator.HOURS_PER_DAY
+        if hours_per_day is None:
+            hours_per_day = DepartmentDependencyCalculator.HOURS_PER_DAY
+
+        days_needed = int((hours + hours_per_day - 0.01) // hours_per_day)
 
         current_date = start_date
         working_days_counted = 0

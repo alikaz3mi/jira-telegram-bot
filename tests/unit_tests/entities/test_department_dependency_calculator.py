@@ -574,6 +574,108 @@ class TestDepartmentDependencyCalculator(unittest.TestCase):
             "DevOps"
         )
 
+    def test_calculate_daily_capacity_6_workdays(self):
+        """Test daily capacity calculation with 6 workdays per week (Friday holiday)."""
+        # Week starting Sunday with Friday as holiday
+        start_date = datetime(2025, 11, 2)  # Sunday
+        end_date = datetime(2025, 11, 8)    # Saturday
+        holidays = set()
+        weekly_capacity = 28.0
+        
+        # Calculate daily capacity
+        daily_capacity = DepartmentDependencyCalculator.calculate_daily_capacity(
+            weekly_capacity, start_date, end_date, holidays
+        )
+        
+        # Should be 28/6 = 4.666... hours per day
+        self.assertAlmostEqual(daily_capacity, 4.666666666666667, places=5)
+
+    def test_calculate_daily_capacity_5_workdays(self):
+        """Test daily capacity calculation with 5 workdays (Thursday and Friday holidays)."""
+        # Week with Thursday and Friday as holidays
+        start_date = datetime(2025, 11, 2)  # Sunday
+        end_date = datetime(2025, 11, 8)    # Saturday
+        # Add Thursday Nov 6 as additional holiday
+        holidays = {datetime(2025, 11, 6).date()}
+        weekly_capacity = 40.0
+        
+        daily_capacity = DepartmentDependencyCalculator.calculate_daily_capacity(
+            weekly_capacity, start_date, end_date, holidays
+        )
+        
+        # Should be 40/5 = 8.0 hours per day
+        self.assertAlmostEqual(daily_capacity, 8.0, places=5)
+
+    def test_calculate_department_deadlines_with_daily_capacity(self):
+        """Test department deadlines with custom daily capacity per department."""
+        # Scenario: Mousavi has only 28 hours per week for AI department
+        # With 6 workdays per week, that's 28/6 = 4.67 hours per day
+        # 16 hours of work should take 16/4.67 = 3.43 days, so 4 workdays
+        
+        feature_deadline = datetime(2025, 11, 10)  # Monday
+        implementation_start = datetime(2025, 11, 3)  # Monday
+        
+        department_deps = {}  # No dependencies
+        department_hours = {"AI": 16}  # 16 hours of work
+        holidays = set()
+        
+        # AI department has 28h/week = 4.67h/day capacity
+        department_daily_capacity = {"AI": 4.666666666666667}
+        
+        result = DepartmentDependencyCalculator.calculate_department_deadlines(
+            feature_deadline=feature_deadline,
+            department_deps=department_deps,
+            department_hours=department_hours,
+            holidays=holidays,
+            implementation_start_date=implementation_start,
+            department_daily_capacity=department_daily_capacity,
+        )
+        
+        # With 4.67h/day, 16 hours needs ceil(16/4.67) = 4 workdays
+        # Start: Mon Nov 3, End: Thu Nov 6 (skipping Friday Nov 7)
+        self.assertIn("AI", result)
+        self.assertEqual(result["AI"]["start"].date(), datetime(2025, 11, 3).date())
+        # 16 hours / 4.67 hours per day = 3.43 days -> need 4 workdays (Mon, Tue, Wed, Thu)
+        self.assertEqual(result["AI"]["end"].date(), datetime(2025, 11, 6).date())
+
+    def test_calculate_department_deadlines_mixed_daily_capacity(self):
+        """Test with multiple departments having different daily capacities."""
+        feature_deadline = datetime(2025, 11, 15)  # Saturday
+        implementation_start = datetime(2025, 11, 3)  # Monday
+        
+        # UI/UX blocks Frontend
+        department_deps = {"Frontend": ["UI/UX"]}
+        department_hours = {
+            "UI/UX": 42,    # 42 hours
+            "Frontend": 36,  # 36 hours
+        }
+        holidays = set()
+        
+        # Different daily capacities
+        department_daily_capacity = {
+            "UI/UX": 7.0,      # 42h/week, 6 workdays = 7h/day
+            "Frontend": 6.0,   # 36h/week, 6 workdays = 6h/day
+        }
+        
+        result = DepartmentDependencyCalculator.calculate_department_deadlines(
+            feature_deadline=feature_deadline,
+            department_deps=department_deps,
+            department_hours=department_hours,
+            holidays=holidays,
+            implementation_start_date=implementation_start,
+            department_daily_capacity=department_daily_capacity,
+        )
+        
+        # UI/UX: 42h / 7h/day = 6 workdays (Mon Nov 3 to Mon Nov 10, skipping Fridays)
+        # Frontend: starts after UI/UX ends, 36h / 6h/day = 6 workdays
+        self.assertIn("UI/UX", result)
+        self.assertIn("Frontend", result)
+        
+        # Verify Frontend starts after UI/UX ends
+        uiux_end = result["UI/UX"]["end"]
+        frontend_start = result["Frontend"]["start"]
+        self.assertGreater(frontend_start, uiux_end)
+
 
 if __name__ == "__main__":
     unittest.main()

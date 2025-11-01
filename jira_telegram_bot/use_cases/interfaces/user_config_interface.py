@@ -104,6 +104,25 @@ class UserConfigInterface(ABC):
         pass
 
     @abstractmethod
+    def get_user_weekly_capacity(
+        self,
+        username: str,
+        project_key: str,
+        component: str,
+    ) -> Optional[int]:
+        """Get user's weekly capacity for a specific project and component.
+
+        Args:
+            username: Jira username
+            project_key: Project key (e.g., "PARSCHAT")
+            component: Component name (e.g., "AI", "Backend", "Frontend", "UI/UX", "DevOps")
+
+        Returns:
+            Weekly capacity in hours, or None if not set
+        """
+        pass
+
+    @abstractmethod
     def list_all_users(self) -> List[str]:
         """
         List all users in the configuration.

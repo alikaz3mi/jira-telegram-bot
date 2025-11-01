@@ -127,6 +127,28 @@ class UserConfig(UserConfigInterface):
             return user_config.user_components.get(project_key)
         return None
 
+    def get_user_weekly_capacity(
+        self,
+        username: str,
+        project_key: str,
+        component: str,
+    ) -> Optional[int]:
+        """Get user's weekly capacity for a specific project and component.
+
+        Args:
+            username: Jira username
+            project_key: Project key (e.g., "PARSCHAT")
+            component: Component name (e.g., "AI", "Backend", "Frontend", "UI/UX", "DevOps")
+
+        Returns:
+            Weekly capacity in hours, or None if not set
+        """
+        user_config = self.get_user_config_by_jira_username(username)
+        if user_config and user_config.weekly_capacity:
+            project_capacity = user_config.weekly_capacity.get(project_key, {})
+            return project_capacity.get(component)
+        return None
+
     def list_telegram_usernames(self):
         """
         List all Telegram usernames from the user configurations.
