@@ -80,7 +80,7 @@ class DocumentationGenerationUseCase:
         feature: SynthPMFeatureEntity,
         release_note: ReleaseNoteEntity,
         subtasks: List[Dict],
-    ) -> bool:
+    ) -> tuple[bool, Optional[str]]:
         """Create complete feature documentation in Google Docs.
         
         Args:
@@ -91,7 +91,9 @@ class DocumentationGenerationUseCase:
             subtasks: List of subtasks for this feature
             
         Returns:
-            True if successful, False otherwise
+            Tuple of (success_status, document_link)
+            - success_status: True if successful, False otherwise
+            - document_link: Google Docs URL if successful, None otherwise
         """
         try:
             epic_tab_id = await self.google_docs_repository.get_or_create_epic_tab(
@@ -122,13 +124,15 @@ class DocumentationGenerationUseCase:
                     epic_tab_id,
                     feature,
                 )
-                return True
+                
+                doc_link = f"https://docs.google.com/document/d/{document_id}/edit#heading=h.{subtab_id}"
+                return (True, doc_link)
             
-            return False
+            return (False, None)
             
         except Exception as e:
             LOGGER.error(f"Failed to create feature documentation: {e}")
-            return False
+            return (False, None)
     
     async def _build_feature_documentation(
         self,

@@ -28,7 +28,9 @@ from jira_telegram_bot.entities.synth_pm.department_dependency_calculator import
     DepartmentDependencyCalculator,
 )
 from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.entities.synth_pm.project_config import ProjectConfig
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
+from jira_telegram_bot.settings.project_config_settings import ProjectConfigSettings
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
     SynthPMRepositoryInterface,
 )
@@ -49,6 +51,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         jira_repository: TaskManagerRepositoryInterface,
         settings: SynthPMSettings,
         user_config: UserConfigInterface,
+        project_config_settings: ProjectConfigSettings,
     ):
         """Initialize the repository.
 
@@ -56,23 +59,55 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             google_sheet_client: Google Sheets client
             jira_repository: Jira repository interface
             settings: SynthPM settings
+            user_config: User configuration interface
+            project_config_settings: Project configuration settings
         """
         self.google_sheet_client = google_sheet_client
         self.jira_repository = jira_repository
         self.settings = settings
+        self.user_config = user_config
+        self.project_config_settings = project_config_settings
         self.sync_status_file = Path(
             f"{DEFAULT_PATH}/data/synth_developer_board_sync_status.json",
         )
         self.change_tracker_file = Path(
             f"{DEFAULT_PATH}/data/synth_pm_change_tracker.json",
         )
-        self.user_config = user_config
         self.developer_board_id = self.jira_repository.get_board_id(
             self.settings.developer_board_project_key,
         )
         self.pm_board_id = self.jira_repository.get_board_id(
             self.settings.pm_project_key,
         )
+        
+        # Get project configuration
+        self.project_config = self._get_project_config()
+    
+    def _get_project_config(self) -> ProjectConfig:
+        """Get project configuration from settings.
+        
+        Returns:
+            ProjectConfig entity
+            
+        Raises:
+            ValueError: If project configuration not found
+        """
+        project_config = self.project_config_settings.get_project_by_board_key(
+            self.settings.pm_project_key,
+        )
+        
+        if not project_config:
+            project_config = self.project_config_settings.get_project_by_spreadsheet_id(
+                self.settings.google_sheets_id,
+            )
+        
+        if not project_config:
+            raise ValueError(
+                f"No project configuration found for board key: {self.settings.pm_project_key} "
+                f"or spreadsheet_id: {self.settings.google_sheets_id}",
+            )
+        
+        return project_config
 
     async def get_developer_board_features(self) -> List[SynthPMFeatureEntity]:
         """Get all eatures from Google Sheets.
@@ -81,10 +116,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             List of eature entities
         """
         try:
-            # TODO: get the range of headers dynamically.
+            # Get data range from project configuration
+            data_range = self.project_config.google_sheets.tasks.data_range
+            sheet_name = self.project_config.google_sheets.tasks.sheet_name
+            
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.developer_board_worksheet_name}!A:AW",
+                f"{sheet_name}!{data_range}",
             )
 
             if not values or len(values) < 2:
@@ -134,7 +172,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            headers_range = f"{self.settings.developer_board_worksheet_name}!1:1"
+            # Get sheet name from project configuration
+            sheet_name = self.project_config.google_sheets.tasks.sheet_name
+            headers_range = f"{sheet_name}!1:1"
             headers_values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
                 headers_range,
@@ -153,7 +193,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     col_letter = self._number_to_column_letter(
                         col_idx + 1,
                     )
-                    range_name = f"{self.settings.developer_board_worksheet_name}!{col_letter}{row_number}"
+                    # Use sheet name from project configuration
+                    sheet_name = self.project_config.google_sheets.tasks.sheet_name
+                    range_name = f"{sheet_name}!{col_letter}{row_number}"
 
                     success = await self.google_sheet_client.update_cells(
                         self.settings.google_sheets_id,
@@ -530,9 +572,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             List of release note entities
         """
         try:
+            # Get data range from project configuration
+            data_range = self.project_config.google_sheets.releases.data_range
+            sheet_name = self.project_config.google_sheets.releases.sheet_name
+            
             values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
-                f"{self.settings.release_notes_worksheet_name}!A:AG",
+                f"{sheet_name}!{data_range}",
             )
 
             if not values or len(values) < 2:
@@ -602,7 +648,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            headers_range = f"{self.settings.release_notes_worksheet_name}!1:1"
+            # Get sheet name from project configuration
+            sheet_name = self.project_config.google_sheets.releases.sheet_name
+            headers_range = f"{sheet_name}!1:1"
             headers_values = await self.google_sheet_client.get_values(
                 self.settings.google_sheets_id,
                 headers_range,
@@ -621,7 +669,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if field in column_mapping:
                     col_idx = column_mapping[field]
                     col_letter = self._number_to_column_letter(col_idx + 1)
-                    range_name = f"{self.settings.release_notes_worksheet_name}!{col_letter}{row_number}"
+                    # Use sheet name from project configuration
+                    sheet_name = self.project_config.google_sheets.releases.sheet_name
+                    range_name = f"{sheet_name}!{col_letter}{row_number}"
 
                     success = await self.google_sheet_client.update_cells(
                         self.settings.google_sheets_id,

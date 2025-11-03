@@ -11,7 +11,118 @@ from jira_telegram_bot.entities.synth_pm.sync_filter_criteria import (
     SynthPMSyncFilterCriteria,
 )
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
+from jira_telegram_bot.settings.project_config_settings import ProjectConfigSettings
 from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
+
+
+def get_all_projects() -> list[str]:
+    """Get all available project keys from configuration.
+    
+    Returns:
+        List of project keys from projects_config.json
+    """
+    try:
+        container = get_container()
+        project_config_settings = container[ProjectConfigSettings]
+        return list(project_config_settings.projects.keys())
+    except Exception as e:
+        LOGGER.error(f"Error getting projects from configuration: {e}")
+        return []
+
+
+def get_boards_for_project(project_key: str) -> list[str]:
+    """Get all board keys for a specific project.
+    
+    Args:
+        project_key: Project key (e.g., 'PARSCHAT')
+        
+    Returns:
+        List of board keys for the project
+    """
+    try:
+        container = get_container()
+        project_config_settings = container[ProjectConfigSettings]
+        
+        if project_key not in project_config_settings.projects:
+            LOGGER.warning(f"Project '{project_key}' not found in configuration")
+            return []
+        
+        project = project_config_settings.projects[project_key]
+        board_keys = []
+        
+        # Add PM board key
+        if project.jira.pm_board and project.jira.pm_board.enabled:
+            board_keys.append(project.jira.pm_board.board_key)
+        # Add development board key
+        if project.jira.development_board and project.jira.development_board.enabled:
+            board_keys.append(project.jira.development_board.board_key)
+        # Add support board key if exists
+        if project.jira.support_board and project.jira.support_board.enabled:
+            board_keys.append(project.jira.support_board.board_key)
+        
+        return board_keys
+    except Exception as e:
+        LOGGER.error(f"Error getting boards for project '{project_key}': {e}")
+        return []
+
+
+def get_all_board_keys() -> list[str]:
+    """Get all available board keys from all projects.
+    
+    Returns:
+        List of all board keys from all projects in projects_config.json
+    """
+    try:
+        container = get_container()
+        project_config_settings = container[ProjectConfigSettings]
+        
+        board_keys = []
+        for project_key in project_config_settings.projects.keys():
+            board_keys.extend(get_boards_for_project(project_key))
+        
+        return list(set(board_keys))  # Remove duplicates
+    except Exception as e:
+        LOGGER.error(f"Error getting board keys from configuration: {e}")
+        return []
+
+
+def resolve_board_keys(identifiers: list[str]) -> list[str]:
+    """Resolve project keys or board keys to actual board keys.
+    
+    Args:
+        identifiers: List that can contain:
+            - 'all': All boards from all projects
+            - Project keys (e.g., 'PARSCHAT'): Expands to all boards in that project
+            - Board keys (e.g., 'PCD', 'PARSCHAT'): Used directly
+            
+    Returns:
+        List of resolved board keys
+    """
+    if not identifiers:
+        return None
+    
+    # Check if "all" is requested
+    if len(identifiers) == 1 and identifiers[0].lower() == "all":
+        return get_all_board_keys()
+    
+    all_projects = get_all_projects()
+    all_boards = get_all_board_keys()
+    resolved_boards = []
+    
+    for identifier in identifiers:
+        # Check if it's a project key
+        if identifier in all_projects:
+            # Expand project to its boards
+            project_boards = get_boards_for_project(identifier)
+            LOGGER.info(f"Project '{identifier}' expands to boards: {', '.join(project_boards)}")
+            resolved_boards.extend(project_boards)
+        # Check if it's a board key
+        elif identifier in all_boards:
+            resolved_boards.append(identifier)
+        else:
+            LOGGER.warning(f"'{identifier}' not recognized as project or board. Available projects: {', '.join(all_projects)}, Available boards: {', '.join(all_boards)}")
+    
+    return list(set(resolved_boards)) if resolved_boards else None
 
 
 async def setup_components():
@@ -28,50 +139,77 @@ async def setup_components():
         raise
 
 
-async def run_sync_once(use_case: SynthPMUseCase, filter_criteria=None):
+async def run_sync_once(use_case: SynthPMUseCase, filter_criteria=None, board_keys=None):
     """Run synchronization once and exit.
 
     Args:
         use_case: SynthPM use case instance
         filter_criteria: Optional filter criteria for sync
+        board_keys: Optional list of project board keys to sync, or None for default
     """
     try:
-        LOGGER.info("Starting one-time SynthPM synchronization...")
+        # Determine which boards to sync
+        if board_keys:
+            boards_to_sync = board_keys
+            LOGGER.info(f"Starting one-time SynthPM synchronization for boards: {', '.join(boards_to_sync)}")
+        else:
+            boards_to_sync = [None]  # Use default from settings
+            LOGGER.info("Starting one-time SynthPM synchronization...")
 
         if filter_criteria:
             LOGGER.info(
                 f"Applying filter: sprints={filter_criteria.sprints}, "
                 f"releases={filter_criteria.releases}, versions={filter_criteria.release_versions}",
             )
-        # TODO: add filter criteria
-        result = await use_case.sync_developer_board_features()
 
-        if result["status"] == "success":
-            LOGGER.info("✅  Features synchronization completed successfully!")
-            LOGGER.info(f" Features Results: {result.get('results', {})}")
-        else:
-            LOGGER.error(f"❌  Features synchronization failed: {result.get('message')}")
+        # Sync each board
+        all_success = True
+        for board_key in boards_to_sync:
+            if board_key:
+                LOGGER.info(f"\n{'='*60}")
+                LOGGER.info(f"Syncing board: {board_key}")
+                LOGGER.info(f"{'='*60}")
+            
+            # TODO: add filter criteria
+            result = await use_case.sync_developer_board_features(project_board_key=board_key)
+
+            if result["status"] == "success":
+                LOGGER.info(f"✅  Features synchronization completed for {board_key or 'default board'}!")
+                LOGGER.info(f" Features Results: {result.get('results', {})}")
+            else:
+                LOGGER.error(f"❌  Features synchronization failed for {board_key or 'default board'}: {result.get('message')}")
+                all_success = False
+
+            LOGGER.info(f"Starting Release Notes synchronization for {board_key or 'default board'}...")
+            release_result = await use_case.sync_release_notes()
+
+            if release_result["status"] == "success":
+                LOGGER.info(f"✅ Release Notes synchronization completed for {board_key or 'default board'}!")
+                LOGGER.info(f"Release Notes Results: {release_result.get('results', {})}")
+            else:
+                LOGGER.error(
+                    f"❌ Release Notes synchronization failed for {board_key or 'default board'}: {release_result.get('message')}",
+                )
+                LOGGER.warning("Continuing despite Release Notes sync failure...")
+        
+        if not all_success:
+            LOGGER.error("\n❌ Some board synchronizations failed")
             sys.exit(1)
-
-        LOGGER.info("Starting Release Notes synchronization...")
-        release_result = await use_case.sync_release_notes()
-
-        if release_result["status"] == "success":
-            LOGGER.info("✅ Release Notes synchronization completed successfully!")
-            LOGGER.info(f"Release Notes Results: {release_result.get('results', {})}")
         else:
-            LOGGER.error(
-                f"❌ Release Notes synchronization failed: {release_result.get('message')}",
-            )
-            LOGGER.warning("Continuing despite Release Notes sync failure...")
+            LOGGER.info(f"\n🎉 All board synchronizations completed successfully!")
 
     except Exception as e:
         LOGGER.error(f"❌ Error during synchronization: {e}")
         sys.exit(1)
 
 
-async def run_background_service(use_case: SynthPMUseCase):
-    """Run as a background service with periodic synchronization."""
+async def run_background_service(use_case: SynthPMUseCase, board_key=None):
+    """Run as a background service with periodic synchronization.
+    
+    Args:
+        use_case: SynthPM use case instance
+        board_key: Optional project board key to sync
+    """
     try:
         LOGGER.info("Starting SynthPM background service...")
 
@@ -98,8 +236,13 @@ async def run_background_service(use_case: SynthPMUseCase):
         sys.exit(1)
 
 
-async def test_connection(use_case: SynthPMUseCase):
-    """Test connections to Google Sheets, Jira, and Telegram."""
+async def test_connection(use_case: SynthPMUseCase, board_key=None):
+    """Test connections to Google Sheets, Jira, and Telegram.
+    
+    Args:
+        use_case: SynthPM use case instance
+        board_key: Optional project board key to test
+    """
     try:
         LOGGER.info("Testing connections...")
 
@@ -137,14 +280,54 @@ async def test_connection(use_case: SynthPMUseCase):
 
 def main():
     """Main entry point."""
+    # Get available projects and boards for help text
+    available_projects = get_all_projects()
+    available_boards = get_all_board_keys()
+    
+    help_text_parts = []
+    if available_projects:
+        help_text_parts.append(f"Available PROJECTS: {', '.join(available_projects)}")
+        for proj in available_projects:
+            boards = get_boards_for_project(proj)
+            help_text_parts.append(f"  {proj} → boards: {', '.join(boards)}")
+    
+    boards_help_text = (
+        "Project key(s) or board key(s) to sync.\n"
+        f"{chr(10).join(help_text_parts)}\n\n"
+        "Options:\n"
+        "  --projects PARSCHAT          Sync all boards in PARSCHAT project\n"
+        "  --projects PARSCHAT PROJECT2 Sync all boards in multiple projects\n"
+        "  --boards PCD                 Sync specific board\n"
+        "  --boards PCD PARSCHAT        Sync multiple specific boards\n"
+        "  --projects all               Sync all projects (all boards)\n"
+        "If not provided, uses default from settings."
+    )
+    
     parser = argparse.ArgumentParser(
-        description="SynthPM synchronization tool with filtering support",
+        description="SynthPM synchronization tool with multi-project and multi-board support",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "command",
         choices=["sync", "service", "test"],
         default="service",
         help="Command to run: sync (one-time), service (background), or test (connections)",
+    )
+    
+    # Project configuration
+    parser.add_argument(
+        "--projects",
+        nargs="+",
+        dest="projects",
+        metavar="PROJECT",
+        help="Project key(s) to sync all boards for (e.g., PARSCHAT). Use 'all' for all projects.",
+    )
+    parser.add_argument(
+        "--boards",
+        nargs="+",
+        dest="boards",
+        metavar="BOARD",
+        help="Specific board key(s) to sync (e.g., PCD PARSCHAT).",
     )
 
     # Filtering options
@@ -176,6 +359,47 @@ def main():
 
     args = parser.parse_args()
 
+    # Process projects and boards
+    board_keys = None
+    
+    # Check if both --projects and --boards are specified
+    if args.projects and args.boards:
+        LOGGER.error("Cannot specify both --projects and --boards. Choose one.")
+        sys.exit(1)
+    
+    # Process --projects argument
+    if args.projects:
+        if len(args.projects) == 1 and args.projects[0].lower() == "all":
+            # Get all boards from all projects
+            board_keys = get_all_board_keys()
+            if not board_keys:
+                LOGGER.error("No boards found in projects configuration")
+                sys.exit(1)
+            LOGGER.info(f"Syncing ALL projects - found {len(board_keys)} boards: {', '.join(board_keys)}")
+        else:
+            # Expand project keys to their board keys
+            board_keys = []
+            for project_key in args.projects:
+                project_boards = get_boards_for_project(project_key)
+                if not project_boards:
+                    LOGGER.warning(f"No boards found for project '{project_key}'")
+                else:
+                    LOGGER.info(f"Project '{project_key}' → boards: {', '.join(project_boards)}")
+                    board_keys.extend(project_boards)
+            
+            if not board_keys:
+                LOGGER.error(f"No valid boards found for projects: {', '.join(args.projects)}")
+                sys.exit(1)
+            board_keys = list(set(board_keys))  # Remove duplicates
+    
+    # Process --boards argument
+    elif args.boards:
+        board_keys = resolve_board_keys(args.boards)
+        if not board_keys:
+            LOGGER.error(f"No valid boards found for: {', '.join(args.boards)}")
+            sys.exit(1)
+        LOGGER.info(f"Using specified boards: {', '.join(board_keys)}")
+
     # Create filter criteria from arguments
     filter_criteria = None
     if args.sprints or args.releases or args.versions:
@@ -189,11 +413,11 @@ def main():
 
     try:
         if args.command == "sync":
-            asyncio.run(async_main_sync(filter_criteria))
+            asyncio.run(async_main_sync(filter_criteria, board_keys))
         elif args.command == "service":
-            asyncio.run(async_main_service())
+            asyncio.run(async_main_service(board_keys))
         elif args.command == "test":
-            asyncio.run(async_main_test())
+            asyncio.run(async_main_test(board_keys))
     except KeyboardInterrupt:
         LOGGER.info("Operation cancelled by user")
         sys.exit(0)
@@ -202,26 +426,39 @@ def main():
         sys.exit(1)
 
 
-async def async_main_sync(filter_criteria=None):
+async def async_main_sync(filter_criteria=None, board_keys=None):
     """Async main for sync command.
 
     Args:
         filter_criteria: Optional filter criteria for sync
+        board_keys: Optional list of project board keys to sync
     """
     use_case = await setup_components()
-    await run_sync_once(use_case, filter_criteria)
+    await run_sync_once(use_case, filter_criteria, board_keys)
 
 
-async def async_main_service():
-    """Async main for service command."""
+async def async_main_service(board_keys=None):
+    """Async main for service command.
+    
+    Args:
+        board_keys: Optional list of project board keys to sync
+    """
     use_case = await setup_components()
-    await run_background_service(use_case)
+    # For service mode, use first board or default
+    board_key = board_keys[0] if board_keys else None
+    await run_background_service(use_case, board_key)
 
 
-async def async_main_test():
-    """Async main for test command."""
+async def async_main_test(board_keys=None):
+    """Async main for test command.
+    
+    Args:
+        board_keys: Optional list of project board keys to test
+    """
     use_case = await setup_components()
-    await test_connection(use_case)
+    # For test mode, use first board or default
+    board_key = board_keys[0] if board_keys else None
+    await test_connection(use_case, board_key)
 
 
 if __name__ == "__main__":

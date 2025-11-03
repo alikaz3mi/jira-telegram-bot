@@ -18,6 +18,7 @@ from jira_telegram_bot.entities.release_notes import ReleaseNoteEntity
 from jira_telegram_bot.entities.release_notes import SprintInfo
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSyncStatus
+from jira_telegram_bot.entities.synth_pm.project_config import ProjectConfig
 from jira_telegram_bot.entities.synth_pm.constants import StatusDescriptions
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.ai_agents.generate_acceptance_criteria import (
@@ -26,12 +27,16 @@ from jira_telegram_bot.use_cases.ai_agents.generate_acceptance_criteria import (
 from jira_telegram_bot.use_cases.ai_agents.generate_test_scenarios import (
     GenerateTestScenariosUseCase,
 )
+from jira_telegram_bot.use_cases.documentation_generation_usecase import (
+    DocumentationGenerationUseCase,
+)
 from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
     NotificationGatewayInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
     SynthPMRepositoryInterface,
 )
+
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
@@ -48,6 +53,7 @@ class SynthPMUseCase:
         notification_gateway: NotificationGatewayInterface,
         generate_acceptance_criteria_use_case: GenerateAcceptanceCriteriaUseCase,
         generate_test_scenarios_use_case: GenerateTestScenariosUseCase,
+        documentation_generation_usecase: DocumentationGenerationUseCase,
     ):
         """Initialize the use case.
 
@@ -58,6 +64,7 @@ class SynthPMUseCase:
             notification_gateway: Notification gateway interface
             generate_acceptance_criteria_use_case: Use case for generating acceptance criteria
             generate_test_scenarios_use_case: Use case for generating test scenarios
+            documentation_generation_usecase: Use case for generating Google Docs documentation
         """
         self.repository = repository
         self.settings = settings
@@ -65,13 +72,23 @@ class SynthPMUseCase:
         self.notification_gateway = notification_gateway
         self.generate_acceptance_criteria_use_case = generate_acceptance_criteria_use_case
         self.generate_test_scenarios_use_case = generate_test_scenarios_use_case
+        self.documentation_generation_usecase = documentation_generation_usecase
 
-    async def sync_developer_board_features(self) -> Dict[str, Any]:
+    async def sync_developer_board_features(
+        self,
+        project_board_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Synchronize features between Google Sheets, Jira, and Telegram using intelligent change detection.
+
+        Args:
+            project_board_key: Optional project/board key to sync (defaults to settings if not provided)
 
         Returns:
             Sync result summary
         """
+        # Use provided board key or fall back to settings
+        board_key = project_board_key or self.settings.pm_project_key
+        LOGGER.info(f"Syncing features for project board: {board_key}")
         try:
             LOGGER.info("Starting intelligent SynthPM synchronization")
 
@@ -105,6 +122,9 @@ class SynthPMUseCase:
             # Handle task cleanup - check for tasks that no longer exist in sheet
             await self._cleanup_deleted_tasks(features, sync_results)
 
+            # Fetch release notes once for all features (optimization)
+            release_notes = await self.repository.get_release_notes()
+            
             # Process features efficiently based on change detection
             processed_features = []
             doc_generated_rows = []
@@ -123,7 +143,7 @@ class SynthPMUseCase:
                 
                 
                 try:
-                    await self._process_feature(feature, sync_results)
+                    await self._process_feature(feature, sync_results, release_notes)
                     processed_features.append(feature)
 
                     # Generate documentation for new features
@@ -246,12 +266,14 @@ class SynthPMUseCase:
         self,
         feature: SynthPMFeatureEntity,
         sync_results: Dict[str, Any],
+        release_notes: Optional[List[ReleaseNoteEntity]] = None,
     ):
         """Process a single feature.
 
         Args:
             feature: feature entity
             sync_results: Dictionary to track sync results
+            release_notes: Optional cached list of release notes (optimization)
         """  # TODO: creation of jira task in pm, in developer board conditional checking must become separated. 
         try:
             if not (
@@ -325,16 +347,29 @@ class SynthPMUseCase:
                     f"Feature {feature.task_title} has no Jira or Developer Board issue key",
                 )
             
-            if feature.developer_board_issue_key:
-                created_doc_subtasks = await self._create_documentation_subtasks(
-                    feature,
-                )
-                
-                if created_doc_subtasks:
-                    sync_results["created_documentation_subtasks"] = (
-                        sync_results.get("created_documentation_subtasks", 0) 
-                        + len(created_doc_subtasks)
+            # Create Google Docs documentation and save link to Release Notes
+            if (
+                feature.developer_board_issue_key 
+                and (feature.release or feature.version)
+            ):
+                try:
+                    project_config = self._get_project_config()
+                    
+                    doc_created = await self._create_and_save_feature_documentation(
+                        feature,
+                        project_config,
+                        release_notes,
                     )
+                    
+                    if doc_created:
+                        sync_results["created_feature_documentation"] = (
+                            sync_results.get("created_feature_documentation", 0) + 1
+                        )
+                except Exception as doc_error:
+                    LOGGER.error(
+                        f"Error creating documentation for {feature.task_title}: {doc_error}",
+                    )
+                    # Don't fail the entire sync if documentation creation fails
 
             # NO DIRECT TELEGRAM POSTING - Only for releases
             # Telegram notifications are now handled via sync_release_notes method
@@ -1452,59 +1487,128 @@ class SynthPMUseCase:
             department,
         )
     
-    async def _create_documentation_subtasks(
+    def _get_project_config(self) -> ProjectConfig:
+        """Get project configuration from projects_config.json.
+        
+        Returns:
+            ProjectConfig entity
+            
+        Raises:
+            ValueError: If project configuration not found
+        """
+        from jira_telegram_bot.settings.project_config_settings import (
+            ProjectConfigSettings,
+        )
+        
+        config_settings = ProjectConfigSettings()
+        
+        # Try to find by board key
+        project_config = config_settings.get_project_by_board_key(
+            self.settings.pm_project_key,
+        )
+        
+        if not project_config:
+            # Fallback: try to find by spreadsheet_id
+            project_config = config_settings.get_project_by_spreadsheet_id(
+                self.settings.google_sheets_id,
+            )
+        
+        if not project_config:
+            raise ValueError(
+                f"No project configuration found for board key: {self.settings.pm_project_key} "
+                f"or spreadsheet_id: {self.settings.google_sheets_id}",
+            )
+        
+        return project_config
+    
+    async def _create_and_save_feature_documentation(
         self,
         feature: SynthPMFeatureEntity,
-    ) -> List[str]:
-        """Create documentation subtasks for each involved department.
+        project_config: ProjectConfig,
+        release_notes: Optional[List[ReleaseNoteEntity]] = None,
+    ) -> bool:
+        """Create feature documentation in Google Docs and save link to release notes.
+        
+        This method:
+        1. Gets the release note for the feature
+        2. Gets existing subtasks (that were already created)
+        3. Creates documentation in Google Docs
+        4. Saves the documentation link to Release Notes sheet
         
         Args:
             feature: Feature entity
+            project_config: Project configuration
+            release_notes: Optional cached list of release notes (optimization)
             
         Returns:
-            List of created subtask keys
+            True if successful, False otherwise
         """
-        if not feature.developer_board_issue_key:
-            LOGGER.warning(
-                f"No developer board issue key for feature: {feature.task_title}",
-            )
-            return []
-        
-        departments = self._extract_departments_from_feature(feature)
-        created_subtasks = []
-        
-        for dept in departments:
-            assignee_email = self._get_department_assignee_email(feature, dept)
+        try:
+            # 1. Get release note from Release Notes sheet
+            release_note = await self._get_release_note_for_feature(feature, release_notes)
             
-            if not assignee_email:
+            if not release_note:
                 LOGGER.warning(
-                    f"No assignee email found for department {dept} in feature {feature.task_title}",
+                    f"No release note found for feature {feature.task_title} "
+                    f"(release: {feature.release or feature.version})",
                 )
-                continue
+                return False
             
-            subtask_key = await self.repository._create_documentation_subtask(
-                parent_issue_key=feature.developer_board_issue_key,
-                department=dept,
-                assignee_email=assignee_email,
+            # 2. Get subtasks that were already created in previous steps
+            subtasks = await self._get_feature_subtasks(feature)
+            
+            # 3. Create documentation in Google Docs
+            doc_id = project_config.google_docs.document_id
+            epic_name = feature.epic or "Unnamed Epic"
+            
+            # Note: create_feature_documentation will be updated to return (bool, Optional[str])
+            # For now, we'll handle the case where it still returns bool
+            doc_result = await self.documentation_generation_usecase.create_feature_documentation(
+                document_id=doc_id,
+                epic_name=epic_name,
                 feature=feature,
+                release_note=release_note,
+                subtasks=subtasks,
             )
             
-            if subtask_key:
-                created_subtasks.append(subtask_key)
-        
-        LOGGER.info(
-            f"Created {len(created_subtasks)} documentation subtasks for {feature.task_title}",
-        )
-        return created_subtasks
+            # Handle both old (bool) and new (tuple) return types
+            if isinstance(doc_result, tuple):
+                success, doc_link = doc_result
+            else:
+                success = doc_result
+                # Fallback: generate link manually if not returned
+                doc_link = f"https://docs.google.com/document/d/{doc_id}/edit" if success else None
+            
+            if not success:
+                LOGGER.error(f"Failed to create documentation for: {feature.task_title}")
+                return False
+            
+            # 4. Save documentation link to release notes
+            if doc_link:
+                await self.repository.update_release_note(
+                    row_number=release_note.row_number,
+                    updates={"documentation_link": doc_link},
+                )
+                LOGGER.info(
+                    f"✅ Saved documentation link for {release_note.release_version}: {doc_link}",
+                )
+            
+            return True
+            
+        except Exception as e:
+            LOGGER.error(f"Error creating feature documentation: {e}")
+            return False
     
     async def _get_release_note_for_feature(
         self,
         feature: SynthPMFeatureEntity,
+        release_notes: Optional[List[ReleaseNoteEntity]] = None,
     ) -> Optional[ReleaseNoteEntity]:
         """Get release note entity for a feature.
         
         Args:
             feature: Feature entity
+            release_notes: Optional cached list of release notes (optimization to avoid repeated fetches)
             
         Returns:
             ReleaseNoteEntity if found, None otherwise
@@ -1513,7 +1617,9 @@ class SynthPMUseCase:
             return None
         
         try:
-            release_notes = await self.repository.get_release_notes()
+            # Use cached release notes if provided, otherwise fetch
+            if release_notes is None:
+                release_notes = await self.repository.get_release_notes()
             
             for release_note in release_notes:
                 if release_note.release_version == feature.release:

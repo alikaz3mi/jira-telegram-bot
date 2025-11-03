@@ -55,6 +55,9 @@ from jira_telegram_bot.adapters.repositories.postgres.database.postgresql_connec
 from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import (
     JiraReportRepository,
 )
+from jira_telegram_bot.adapters.repositories.google_docs_repository import (
+    GoogleDocsRepository,
+)
 from jira_telegram_bot.adapters.repositories.synth_pm_repository import (
     SynthPMRepository,
 )
@@ -104,6 +107,9 @@ from jira_telegram_bot.settings.jira_settings import JiraConnectionType
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
+from jira_telegram_bot.settings.project_config_settings import (
+    ProjectConfigSettings,
+)
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
 from jira_telegram_bot.settings.telegram_settings import (
     TelegramWebhookConnectionSettings,
@@ -135,6 +141,9 @@ from jira_telegram_bot.use_cases.create_task_usecase import CreateTaskUseCase
 from jira_telegram_bot.use_cases.generate_jira_report_use_case import (
     GenerateJiraReportUseCase,
 )
+from jira_telegram_bot.use_cases.documentation_generation_usecase import (
+    DocumentationGenerationUseCase,
+)
 from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUseCase
 from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
     HandleJiraWebhookUseCase,
@@ -147,6 +156,9 @@ from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
 )
 from jira_telegram_bot.use_cases.interfaces.calendar_repository_interface import (
     CalendarRepositoryInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.google_docs_repository_interface import (
+    GoogleDocsRepositoryInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.current_stories_service_interface import (
     CurrentStoriesServiceInterface,
@@ -764,7 +776,8 @@ def _configure_synth_pm_board(container: Container) -> None:
             google_sheet_client=c[GoogleSheetClient],
             jira_repository=c[TaskManagerRepositoryInterface],
             settings=c[SynthPMSettings],
-            user_config=c[UserConfigInterface]
+            user_config=c[UserConfigInterface],
+            project_config_settings=c[ProjectConfigSettings],
         )
     )
 
@@ -783,9 +796,22 @@ def _configure_synth_pm_board(container: Container) -> None:
             settings=c[SynthPMSettings],
         ),
     )
+
+    # Google Docs Repository (must be before SynthPMUseCase and DocumentationGenerationUseCase)
+    container[GoogleDocsRepositoryInterface] = Singleton(
+        lambda c: GoogleDocsRepository(
+            settings=c[GoogleSheetsConnectionSettings],
+        ),
+    )
     
-
-
+    # Documentation Generation Use Case (must be before SynthPMUseCase)
+    container[DocumentationGenerationUseCase] = Singleton(
+        lambda c: DocumentationGenerationUseCase(
+            google_docs_repository=c[GoogleDocsRepositoryInterface],
+            user_config=c[UserConfigInterface],
+        ),
+    )
+    
     # Use case
     container[SynthPMUseCase] = Singleton(
         lambda c: SynthPMUseCase(
@@ -795,40 +821,11 @@ def _configure_synth_pm_board(container: Container) -> None:
             notification_gateway=NotificationGateway(token=c[SynthPMSettings].telegram_bot_token),
             generate_acceptance_criteria_use_case=c[GenerateAcceptanceCriteriaUseCase],
             generate_test_scenarios_use_case=c[GenerateTestScenariosUseCase],
+            documentation_generation_usecase=c[DocumentationGenerationUseCase],
         )
     )
 
-    # Google Docs Repository
-    from jira_telegram_bot.adapters.repositories.google_docs_repository import (
-        GoogleDocsRepository,
-    )
-    from jira_telegram_bot.use_cases.interfaces.google_docs_repository_interface import (
-        GoogleDocsRepositoryInterface,
-    )
-    
-    container[GoogleDocsRepositoryInterface] = Singleton(
-        lambda c: GoogleDocsRepository(
-            settings=c[GoogleSheetsConnectionSettings],
-        ),
-    )
-    
-    # Documentation Generation Use Case
-    from jira_telegram_bot.use_cases.documentation_generation_usecase import (
-        DocumentationGenerationUseCase,
-    )
-    
-    container[DocumentationGenerationUseCase] = Singleton(
-        lambda c: DocumentationGenerationUseCase(
-            google_docs_repository=c[GoogleDocsRepositoryInterface],
-            user_config=c[UserConfigInterface],
-        ),
-    )
-    
     # Project Config Settings
-    from jira_telegram_bot.settings.project_config_settings import (
-        ProjectConfigSettings,
-    )
-    
     container[ProjectConfigSettings] = Singleton(
         lambda: ProjectConfigSettings(),
     )
