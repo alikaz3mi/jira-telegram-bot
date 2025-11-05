@@ -812,6 +812,11 @@ def _configure_synth_pm_board(container: Container) -> None:
         ),
     )
     
+    # Project Config Settings (must be before SynthPMUseCase)
+    container[ProjectConfigSettings] = Singleton(
+        lambda: ProjectConfigSettings(),
+    )
+    
     # Use case
     container[SynthPMUseCase] = Singleton(
         lambda c: SynthPMUseCase(
@@ -822,12 +827,8 @@ def _configure_synth_pm_board(container: Container) -> None:
             generate_acceptance_criteria_use_case=c[GenerateAcceptanceCriteriaUseCase],
             generate_test_scenarios_use_case=c[GenerateTestScenariosUseCase],
             documentation_generation_usecase=c[DocumentationGenerationUseCase],
+            project_config_settings=c[ProjectConfigSettings],
         )
-    )
-
-    # Project Config Settings
-    container[ProjectConfigSettings] = Singleton(
-        lambda: ProjectConfigSettings(),
     )
     
     # Endpoint (will be imported when needed)

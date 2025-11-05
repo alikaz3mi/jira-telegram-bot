@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from typing import Optional
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.services.synth_pm_sync_task import SynthPMSyncTask
@@ -24,7 +25,8 @@ def get_all_projects() -> list[str]:
     try:
         container = get_container()
         project_config_settings = container[ProjectConfigSettings]
-        return list(project_config_settings.projects.keys())
+        projects_config = project_config_settings.load_config()
+        return list(projects_config.projects.keys())
     except Exception as e:
         LOGGER.error(f"Error getting projects from configuration: {e}")
         return []
@@ -42,12 +44,13 @@ def get_boards_for_project(project_key: str) -> list[str]:
     try:
         container = get_container()
         project_config_settings = container[ProjectConfigSettings]
+        projects_config = project_config_settings.load_config()
         
-        if project_key not in project_config_settings.projects:
+        if project_key not in projects_config.projects:
             LOGGER.warning(f"Project '{project_key}' not found in configuration")
             return []
         
-        project = project_config_settings.projects[project_key]
+        project = projects_config.projects[project_key]
         board_keys = []
         
         # Add PM board key
@@ -66,6 +69,36 @@ def get_boards_for_project(project_key: str) -> list[str]:
         return []
 
 
+def get_project_key_for_board(board_key: str) -> Optional[str]:
+    """Get the project key that contains the given board key.
+    
+    Args:
+        board_key: Board key to search for
+        
+    Returns:
+        Project key if found, None otherwise
+    """
+    try:
+        container = get_container()
+        project_config_settings = container[ProjectConfigSettings]
+        projects_config = project_config_settings.load_config()
+        
+        for project_key, project in projects_config.projects.items():
+            # Check all board types
+            if project.jira.pm_board and project.jira.pm_board.board_key == board_key:
+                return project_key
+            if project.jira.development_board and project.jira.development_board.board_key == board_key:
+                return project_key
+            if project.jira.support_board and project.jira.support_board.board_key == board_key:
+                return project_key
+        
+        LOGGER.warning(f"No project found for board key: {board_key}")
+        return None
+    except Exception as e:
+        LOGGER.error(f"Error getting project key for board '{board_key}': {e}")
+        return None
+
+
 def get_all_board_keys() -> list[str]:
     """Get all available board keys from all projects.
     
@@ -73,11 +106,10 @@ def get_all_board_keys() -> list[str]:
         List of all board keys from all projects in projects_config.json
     """
     try:
-        container = get_container()
-        project_config_settings = container[ProjectConfigSettings]
-        
+        all_projects = get_all_projects()
         board_keys = []
-        for project_key in project_config_settings.projects.keys():
+        
+        for project_key in all_projects:
             board_keys.extend(get_boards_for_project(project_key))
         
         return list(set(board_keys))  # Remove duplicates
@@ -165,13 +197,19 @@ async def run_sync_once(use_case: SynthPMUseCase, filter_criteria=None, board_ke
         # Sync each board
         all_success = True
         for board_key in boards_to_sync:
+            # Get project key for this board
+            project_key = get_project_key_for_board(board_key) if board_key else None
+            
             if board_key:
                 LOGGER.info(f"\n{'='*60}")
-                LOGGER.info(f"Syncing board: {board_key}")
+                LOGGER.info(f"Syncing board: {board_key} (Project: {project_key})")
                 LOGGER.info(f"{'='*60}")
             
             # TODO: add filter criteria
-            result = await use_case.sync_developer_board_features(project_board_key=board_key)
+            result = await use_case.sync_developer_board_features(
+                project_key=project_key,
+                project_board_key=board_key,
+            )
 
             if result["status"] == "success":
                 LOGGER.info(f"✅  Features synchronization completed for {board_key or 'default board'}!")

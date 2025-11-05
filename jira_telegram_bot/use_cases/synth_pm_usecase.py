@@ -21,6 +21,7 @@ from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMSheetSy
 from jira_telegram_bot.entities.synth_pm.project_config import ProjectConfig
 from jira_telegram_bot.entities.synth_pm.constants import StatusDescriptions
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
+from jira_telegram_bot.settings.project_config_settings import ProjectConfigSettings
 from jira_telegram_bot.use_cases.ai_agents.generate_acceptance_criteria import (
     GenerateAcceptanceCriteriaUseCase,
 )
@@ -54,6 +55,7 @@ class SynthPMUseCase:
         generate_acceptance_criteria_use_case: GenerateAcceptanceCriteriaUseCase,
         generate_test_scenarios_use_case: GenerateTestScenariosUseCase,
         documentation_generation_usecase: DocumentationGenerationUseCase,
+        project_config_settings: ProjectConfigSettings,
     ):
         """Initialize the use case.
 
@@ -65,6 +67,7 @@ class SynthPMUseCase:
             generate_acceptance_criteria_use_case: Use case for generating acceptance criteria
             generate_test_scenarios_use_case: Use case for generating test scenarios
             documentation_generation_usecase: Use case for generating Google Docs documentation
+            project_config_settings: Project configuration settings
         """
         self.repository = repository
         self.settings = settings
@@ -73,14 +76,17 @@ class SynthPMUseCase:
         self.generate_acceptance_criteria_use_case = generate_acceptance_criteria_use_case
         self.generate_test_scenarios_use_case = generate_test_scenarios_use_case
         self.documentation_generation_usecase = documentation_generation_usecase
+        self.project_config_settings = project_config_settings
 
     async def sync_developer_board_features(
         self,
+        project_key: Optional[str] = None,
         project_board_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Synchronize features between Google Sheets, Jira, and Telegram using intelligent change detection.
 
         Args:
+            project_key: Optional project key (e.g., 'PARSCHAT') to identify the project configuration
             project_board_key: Optional project/board key to sync (defaults to settings if not provided)
 
         Returns:
@@ -88,7 +94,7 @@ class SynthPMUseCase:
         """
         # Use provided board key or fall back to settings
         board_key = project_board_key or self.settings.pm_project_key
-        LOGGER.info(f"Syncing features for project board: {board_key}")
+        LOGGER.info(f"Syncing features for project: {project_key}, board: {board_key}")
         try:
             LOGGER.info("Starting intelligent SynthPM synchronization")
 
@@ -143,7 +149,7 @@ class SynthPMUseCase:
                 
                 
                 try:
-                    await self._process_feature(feature, sync_results, release_notes)
+                    await self._process_feature(feature, sync_results, release_notes, project_key)
                     processed_features.append(feature)
 
                     # Generate documentation for new features
@@ -267,6 +273,7 @@ class SynthPMUseCase:
         feature: SynthPMFeatureEntity,
         sync_results: Dict[str, Any],
         release_notes: Optional[List[ReleaseNoteEntity]] = None,
+        project_key: Optional[str] = None,
     ):
         """Process a single feature.
 
@@ -274,6 +281,7 @@ class SynthPMUseCase:
             feature: feature entity
             sync_results: Dictionary to track sync results
             release_notes: Optional cached list of release notes (optimization)
+            project_key: Optional project key for configuration lookup
         """  # TODO: creation of jira task in pm, in developer board conditional checking must become separated. 
         try:
             if not (
@@ -353,7 +361,7 @@ class SynthPMUseCase:
                 and (feature.release or feature.version)
             ):
                 try:
-                    project_config = self._get_project_config()
+                    project_config = self._get_project_config(project_key)
                     
                     doc_created = await self._create_and_save_feature_documentation(
                         feature,
@@ -1487,8 +1495,12 @@ class SynthPMUseCase:
             department,
         )
     
-    def _get_project_config(self) -> ProjectConfig:
+    def _get_project_config(self, project_key: Optional[str] = None) -> ProjectConfig:
         """Get project configuration from projects_config.json.
+        
+        Args:
+            project_key: Optional project key (e.g., 'PARSCHAT'). If provided, directly looks up this project.
+                        If not provided, tries to find by board key or spreadsheet_id from settings.
         
         Returns:
             ProjectConfig entity
@@ -1496,22 +1508,30 @@ class SynthPMUseCase:
         Raises:
             ValueError: If project configuration not found
         """
-        from jira_telegram_bot.settings.project_config_settings import (
-            ProjectConfigSettings,
-        )
+        projects_config = self.project_config_settings.load_config()
         
-        config_settings = ProjectConfigSettings()
+        # If project_key is provided, directly look it up
+        if project_key:
+            if project_key in projects_config.projects:
+                return projects_config.projects[project_key]
+            else:
+                raise ValueError(f"Project '{project_key}' not found in configuration")
         
-        # Try to find by board key
-        project_config = config_settings.get_project_by_board_key(
-            self.settings.pm_project_key,
-        )
+        # Otherwise, try to find by board key
+        project_config = None
+        for current_project_key, project in projects_config.projects.items():
+            # Check if board key matches PM board or development board
+            if (project.jira.pm_board and project.jira.pm_board.board_key == self.settings.pm_project_key) or \
+               (project.jira.development_board and project.jira.development_board.board_key == self.settings.pm_project_key):
+                project_config = project
+                break
         
         if not project_config:
             # Fallback: try to find by spreadsheet_id
-            project_config = config_settings.get_project_by_spreadsheet_id(
-                self.settings.google_sheets_id,
-            )
+            for current_project_key, project in projects_config.projects.items():
+                if project.google_sheets.spreadsheet_id == self.settings.google_sheets_id:
+                    project_config = project
+                    break
         
         if not project_config:
             raise ValueError(
@@ -1622,7 +1642,7 @@ class SynthPMUseCase:
                 release_notes = await self.repository.get_release_notes()
             
             for release_note in release_notes:
-                if release_note.release_version == feature.release:
+                if release_note.release_components == feature.release:
                     return release_note
             
             return None
