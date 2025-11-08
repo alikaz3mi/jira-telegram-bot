@@ -20,6 +20,9 @@ from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import 
     JiraServerRepository,
 )
 from jira_telegram_bot.entities.task import TaskData
+from jira_telegram_bot.settings.google_api_credentials_settings import (
+    GoogleApiCredentialsSettings,
+)
 from jira_telegram_bot.settings.google_sheets_settings import (
     GoogleSheetsConnectionSettings,
 )
@@ -63,12 +66,17 @@ class ISheetClient(ABC):
 class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
     """Implementation of Google Sheets client using gspread."""
 
-    def __init__(self, settings: GoogleSheetsConnectionSettings):
+    def __init__(
+        self,
+        settings: GoogleSheetsConnectionSettings,
+        credentials_settings: GoogleApiCredentialsSettings,
+    ):
         """
         Initialize the Google Sheets client with authentication.
 
         Args:
-            settings: Google Sheets connection settings
+            settings: Google Sheets connection settings (sheet_id, worksheet_name)
+            credentials_settings: Google API credentials settings (token_path)
         """
         # Define the default scope if not provided.
         scope = [
@@ -80,9 +88,10 @@ class GoogleSheetClient(ISheetClient, GoogleSheetClientInterface):
         # Authenticate using the service account JSON token.
         try:
             self.settings = settings
+            self.credentials_settings = credentials_settings
             LOGGER.info(f"settings = {self.settings}")
             self.credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                settings.token_path,
+                credentials_settings.token_path,
                 scope,
             )
             self.client = gspread.authorize(self.credentials)

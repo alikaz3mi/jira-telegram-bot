@@ -98,6 +98,9 @@ from jira_telegram_bot.settings.deadline_notifier_settings import (
 from jira_telegram_bot.settings.fast_api_settings import FastAPISettings
 from jira_telegram_bot.settings.gemini_settings import GeminiConnectionSetting
 from jira_telegram_bot.settings.gitlab_settings import GitlabSettings
+from jira_telegram_bot.settings.google_api_credentials_settings import (
+    GoogleApiCredentialsSettings,
+)
 from jira_telegram_bot.settings.google_sheets_settings import (
     GoogleSheetsConnectionSettings,
 )
@@ -378,6 +381,9 @@ def _configure_settings(container: Container) -> None:
     container[GitlabSettings] = Singleton(lambda: GitlabSettings())
     container[PostgresSettings] = Singleton(lambda: PostgresSettings())
     container[JiraBoardSettings] = Singleton(lambda: JiraBoardSettings())
+    container[GoogleApiCredentialsSettings] = Singleton(
+        lambda: GoogleApiCredentialsSettings(),
+    )
     container[GoogleSheetsConnectionSettings] = Singleton(
         lambda: GoogleSheetsConnectionSettings(),
     )
@@ -444,7 +450,10 @@ def _configure_services_and_gateways(container: Container) -> None:
     """Configure service implementations and gateways."""
     # Google Sheets
     container[GoogleSheetClient] = Singleton(
-        lambda c: GoogleSheetClient(c[GoogleSheetsConnectionSettings]),
+        lambda c: GoogleSheetClient(
+            settings=c[GoogleSheetsConnectionSettings],
+            credentials_settings=c[GoogleApiCredentialsSettings],
+        ),
     )
 
     # Notification services
@@ -798,9 +807,11 @@ def _configure_synth_pm_board(container: Container) -> None:
     )
 
     # Google Docs Repository (must be before SynthPMUseCase and DocumentationGenerationUseCase)
+    # Note: GoogleDocsRepository uses GoogleApiCredentialsSettings for service account credentials.
+    # Document IDs come from project configuration and are passed per-operation.
     container[GoogleDocsRepositoryInterface] = Singleton(
         lambda c: GoogleDocsRepository(
-            settings=c[GoogleSheetsConnectionSettings],
+            credentials_settings=c[GoogleApiCredentialsSettings],
         ),
     )
     

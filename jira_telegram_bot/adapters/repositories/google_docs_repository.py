@@ -21,8 +21,8 @@ from jira_telegram_bot.entities.synth_pm.google_docs_entities import (
 from jira_telegram_bot.entities.synth_pm.google_docs_entities import (
     GoogleDocsStructure,
 )
-from jira_telegram_bot.settings.google_sheets_settings import (
-    GoogleSheetsConnectionSettings,
+from jira_telegram_bot.settings.google_api_credentials_settings import (
+    GoogleApiCredentialsSettings,
 )
 from jira_telegram_bot.use_cases.interfaces.google_docs_repository_interface import (
     GoogleDocsRepositoryInterface,
@@ -30,15 +30,21 @@ from jira_telegram_bot.use_cases.interfaces.google_docs_repository_interface imp
 
 
 class GoogleDocsRepository(GoogleDocsRepositoryInterface):
-    """Repository implementation for Google Docs operations."""
+    """Repository implementation for Google Docs operations.
     
-    def __init__(self, settings: GoogleSheetsConnectionSettings):
+    This repository uses shared Google API credentials to connect to Google Docs API.
+    Document IDs are passed as parameters to methods, not stored in the repository.
+    """
+    
+    def __init__(self, credentials_settings: GoogleApiCredentialsSettings):
         """Initialize Google Docs repository.
         
         Args:
-            settings: Google Sheets connection settings (reusing same credentials)
+            credentials_settings: Google API credentials settings containing
+                                 service account token path. Document IDs are
+                                 provided per-operation from project configuration.
         """
-        self.settings = settings
+        self.credentials_settings = credentials_settings
         self._service = None
         self._initialize_service()
     
@@ -50,7 +56,7 @@ class GoogleDocsRepository(GoogleDocsRepositoryInterface):
                 "https://www.googleapis.com/auth/drive.file",
             ]
             credentials = Credentials.from_service_account_file(
-                self.settings.token_path,
+                self.credentials_settings.token_path,
                 scopes=scopes,
             )
             self._service = build("docs", "v1", credentials=credentials)
@@ -91,50 +97,30 @@ class GoogleDocsRepository(GoogleDocsRepositoryInterface):
             raise
     
     async def _create_epic_tab(self, document_id: str, epic_name: str) -> str:
-        """Create new Epic tab/section in document.
+        """Create new Epic tab (actual document tab) in document.
         
         Args:
             document_id: Google Docs document ID
-            epic_name: Epic name
+            epic_name: Epic name for the tab title
             
         Returns:
-            Tab ID
+            Tab ID of the newly created tab
         """
         try:
             loop = asyncio.get_event_loop()
             
-            document = await loop.run_in_executor(
-                None,
-                lambda: self._service.documents().get(documentId=document_id).execute(),
-            )
-            
-            content_length = document.get("body", {}).get("content", [])[-1].get(
-                "endIndex",
-                1,
-            )
-            
+            # Create a new document tab using the createTab request
             requests = [
                 {
-                    "insertText": {
-                        "location": {"index": content_length - 1},
-                        "text": f"\n\n{epic_name}\n",
-                    },
-                },
-                {
-                    "updateParagraphStyle": {
-                        "range": {
-                            "startIndex": content_length - 1,
-                            "endIndex": content_length + len(epic_name) + 1,
+                    "createTab": {
+                        "tabProperties": {
+                            "title": epic_name,
                         },
-                        "paragraphStyle": {
-                            "namedStyleType": "HEADING_1",
-                        },
-                        "fields": "namedStyleType",
                     },
                 },
             ]
             
-            await loop.run_in_executor(
+            response = await loop.run_in_executor(
                 None,
                 lambda: self._service.documents().batchUpdate(
                     documentId=document_id,
@@ -142,7 +128,12 @@ class GoogleDocsRepository(GoogleDocsRepositoryInterface):
                 ).execute(),
             )
             
-            tab_id = f"epic_{epic_name.replace(' ', '_')}"
+            # Extract the tab ID from the response
+            tab_id = response.get("replies", [{}])[0].get("createTab", {}).get("tabId")
+            
+            if not tab_id:
+                raise ValueError(f"Failed to get tab ID from createTab response")
+            
             LOGGER.info(f"Created Epic tab: {epic_name} with ID: {tab_id}")
             return tab_id
             
@@ -582,13 +573,13 @@ class GoogleDocsRepository(GoogleDocsRepositoryInterface):
             raise
     
     async def list_epic_tabs(self, document_id: str) -> List[EpicTab]:
-        """List all Epic tabs in document.
+        """List all Epic tabs (actual document tabs) in document.
         
         Args:
             document_id: Google Docs document ID
             
         Returns:
-            List of EpicTab entities
+            List of EpicTab entities from actual document tabs
         """
         try:
             loop = asyncio.get_event_loop()
@@ -599,30 +590,31 @@ class GoogleDocsRepository(GoogleDocsRepositoryInterface):
             )
             
             epic_tabs = []
-            content = document.get("body", {}).get("content", [])
             
-            for element in content:
-                paragraph = element.get("paragraph")
-                if paragraph:
-                    style = paragraph.get("paragraphStyle", {})
-                    if style.get("namedStyleType") == "HEADING_1":
-                        text_runs = paragraph.get("elements", [])
-                        if text_runs:
-                            epic_name = text_runs[0].get("textRun", {}).get(
-                                "content",
-                                "",
-                            ).strip()
-                            if epic_name:
-                                tab_id = f"epic_{epic_name.replace(' ', '_')}"
-                                epic_tabs.append(
-                                    EpicTab(
-                                        epic_name=epic_name,
-                                        tab_id=tab_id,
-                                        features=[],
-                                    ),
-                                )
+            # Get actual document tabs from the tabs field
+            tabs = document.get("tabs", [])
             
-            LOGGER.info(f"Found {len(epic_tabs)} Epic tabs in document")
+            if not tabs:
+                LOGGER.warning(f"No tabs found in document {document_id}")
+                return []
+            
+            for tab in tabs:
+                # Get tab properties
+                tab_properties = tab.get("tabProperties", {})
+                tab_id = tab_properties.get("tabId")
+                title = tab_properties.get("title", "")
+                
+                if tab_id and title:
+                    epic_tabs.append(
+                        EpicTab(
+                            epic_name=title,
+                            tab_id=tab_id,
+                            features=[],
+                        ),
+                    )
+                    LOGGER.debug(f"Found tab: {title} (ID: {tab_id})")
+            
+            LOGGER.info(f"Found {len(epic_tabs)} document tabs")
             return epic_tabs
             
         except Exception as e:

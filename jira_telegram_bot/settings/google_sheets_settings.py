@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 from pydantic import Field
-from pydantic_settings import SettingsConfigDict, BaseSettings
+from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+
+from jira_telegram_bot.settings.google_api_credentials_settings import (
+    GoogleApiCredentialsSettings,
+)
 
 
 class GoogleSheetsConnectionSettings(BaseSettings):
-    token_path: str = Field(
-        description="Path to the Google Sheets API token JSON file",
-    )
+    """Google Sheets specific connection settings.
+    
+    Note: Credentials are managed separately via GoogleApiCredentialsSettings.
+    """
+    
     sheet_id: str = Field(
         description="Google Sheet ID to use for task creation",
     )
