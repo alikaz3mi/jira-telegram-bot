@@ -122,19 +122,48 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
     issue = jira_repository.create_task(task_data)
     issue_message = f"Task created (media group) successfully! Link: {JIRA_SETTINGS.domain.scheme}://{JIRA_SETTINGS.domain.host}/browse/{issue.key}"
     LOGGER.info(issue_message)
-    post = telegram_post_data_store.load_data_store()[str(messages[-1]["message_id"])]
-    group_chat_id = post["group_chat_id"]
+    
+    # Update issue_key in data store for all messages in the group
     data_store = telegram_post_data_store.load_data_store()
     for message in messages:
         if str(message["message_id"]) in data_store:
             data_store[str(message["message_id"])]["issue_key"] = issue.key
-            telegram_post_data_store.save_data_store(data_store)
-    send_telegram_message(
-        group_chat_id,
-        issue_message,
-        reply_message_id=post["reply_message_id"],
-        token=TELEGRAM_SETTINGS.HOOK_TOKEN
-    )
+    telegram_post_data_store.save_data_store(data_store)
+    
+    # Wait for auto-forward to update group_chat_id (retry with timeout)
+    max_retries = 10
+    retry_delay = 1.0  # seconds
+    group_chat_id = None
+    reply_message_id = None
+    channel_chat_id = messages[0]["chat"]["id"]
+    
+    for attempt in range(max_retries):
+        data_store = telegram_post_data_store.load_data_store()
+        post = data_store.get(str(messages[-1]["message_id"]), {})
+        potential_group_id = post.get("group_chat_id")
+        
+        # Check if group_chat_id is different from channel_chat_id (meaning it was updated)
+        if potential_group_id and potential_group_id != channel_chat_id:
+            group_chat_id = potential_group_id
+            reply_message_id = post.get("reply_message_id")
+            LOGGER.info(f"Found group_chat_id={group_chat_id} for media group after {attempt + 1} attempts")
+            break
+        
+        if attempt < max_retries - 1:
+            await asyncio.sleep(retry_delay)
+    
+    # Send message to group if we found the group_chat_id
+    if group_chat_id and reply_message_id:
+        send_telegram_message(
+            group_chat_id,
+            issue_message,
+            reply_message_id=reply_message_id,
+            token=TELEGRAM_SETTINGS.HOOK_TOKEN
+        )
+    else:
+        LOGGER.warning(
+            f"Could not send Jira link for media group {issue.key} - group_chat_id not found after {max_retries} attempts"
+        )
 
 
 async def process_single_message(channel_post: Dict[str, Any], task_data: TaskData):
@@ -455,7 +484,7 @@ async def handle_channel_post(channel_post: Dict[str, Any]) -> Dict[str, Any]:
     text = channel_post.get("text") or channel_post.get("caption") or ""
 
     parsed_fields = parse_jira_prompt(text)
-    task_data = create_task_data(username, parsed_fields)
+    task_data = create_task_data(username, parsed_fields, original_text=text)
 
     media_group_id = channel_post.get("media_group_id")
     if media_group_id:
@@ -479,7 +508,7 @@ async def handle_media_group_message(
             message["message_id"],
             "pending",  # Will be updated when issue is created
             message["chat"]["id"],
-            message["chat"]["id"],
+            message["chat"]["id"],  # Initially set to channel ID, will be updated on auto-forward
             message_data=message,
         )
     return {
@@ -543,16 +572,7 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
     group_chat_id = message["chat"]["id"]
 
     if issue_key:
-        issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
-        issue_message = f"Jira Issue Created:\nLink: {issue_link}"
-        if issue_key != "pending":
-            send_telegram_message(
-                group_chat_id,
-                issue_message,
-                reply_message_id=message_id,
-                token=TELEGRAM_SETTINGS.HOOK_TOKEN
-            )
-
+        # Always update the group_chat_id and reply_message_id in the data store
         data_local = telegram_post_data_store.load_data_store()
         if str(original_message_id) in data_local:
             entry = data_local[str(original_message_id)]
@@ -560,10 +580,25 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
             entry["metadata"]["forwarded_at"] = int(time.time())
             entry["reply_message_id"] = message_id
             telegram_post_data_store.save_data_store(data_local)
+        
+        # Send message only if issue is not pending
+        if issue_key != "pending":
+            issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+            issue_message = f"Jira Issue Created:\nLink: {issue_link}"
+            send_telegram_message(
+                group_chat_id,
+                issue_message,
+                reply_message_id=message_id,
+                token=TELEGRAM_SETTINGS.HOOK_TOKEN
+            )
+            LOGGER.info(
+                f"Sent Jira issue link to group chat_id={group_chat_id}: {issue_link}",
+            )
+        else:
+            LOGGER.info(
+                f"Auto-forward received for pending issue (message_id={original_message_id}). Group chat updated, awaiting issue creation.",
+            )
 
-        LOGGER.info(
-            f"Sent Jira issue link to group chat_id={group_chat_id}: {issue_link}",
-        )
         return {"status": "success", "message": "Forwarded message processed."}
     else:
         LOGGER.warning(
@@ -626,16 +661,29 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def create_task_data(username: str, parsed_fields: Dict[str, str]) -> TaskData:
+def create_task_data(username: str, parsed_fields: Dict[str, str], original_text: str = "") -> TaskData:
     """Create TaskData object from parsed fields."""
     user_cfg = user_config.get_user_config(username)
     assignee = user_cfg.jira_username if user_cfg else None
     reporter = user_cfg.jira_username if user_cfg else None
     
+    # Create description with both original message and parsed description
+    parsed_description = parsed_fields.get("description", "")
+    
+    # Build the combined description with titles
+    if original_text and parsed_description:
+        description = f'h3. Original Message from User:\n"{original_text}"\n\nh3. AI Analysis:\n{parsed_description}'
+    elif original_text:
+        description = f'h3. Original Message from User:\n"{original_text}"'
+    elif parsed_description:
+        description = f'h3. AI Analysis:\n{parsed_description}'
+    else:
+        description = ""
+    
     return TaskData(
         project_key=JIRA_PROJECT_KEY,
         summary=parsed_fields["summary"],
-        description=parsed_fields["description"],
+        description=description,
         task_type=parsed_fields["task_type"],
         labels=[parsed_fields.get("labels", "")],
         assignee=assignee,
@@ -747,11 +795,24 @@ async def finalize_media_groups():
                 user_cfg = user_config.get_user_config(username)
                 assignee = user_cfg.jira_username if user_cfg else None
                 reporter = user_cfg.jira_username if user_cfg else None
+                
+                # Create description with both original message and parsed description
+                parsed_description = parsed_fields.get("description", "")
+                
+                # Build the combined description with titles
+                if text and parsed_description:
+                    description = f'h3. Original Message from User:\n"{text}"\n\nh3. AI Analysis:\n{parsed_description}'
+                elif text:
+                    description = f'h3. Original Message from User:\n"{text}"'
+                elif parsed_description:
+                    description = f'h3. AI Analysis:\n{parsed_description}'
+                else:
+                    description = ""
 
                 task_data = TaskData(
                     project_key=JIRA_PROJECT_KEY,
                     summary=parsed_fields["summary"],
-                    description=parsed_fields["description"],
+                    description=description,
                     task_type=parsed_fields["task_type"],
                     assignee=assignee,
                     reporter=reporter,
