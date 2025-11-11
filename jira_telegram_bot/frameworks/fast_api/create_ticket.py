@@ -99,6 +99,18 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
             elif "video" in msg:
                 vid = msg["video"]
                 file_id = vid["file_id"]
+                file_size = vid.get("file_size", 0)
+                file_size_mb = file_size / (1024 * 1024) if file_size else 0
+                
+                # Telegram Bot API getFile has 20MB limit
+                if file_size > 20 * 1024 * 1024:
+                    LOGGER.warning(
+                        f"Video file too large ({file_size_mb:.2f}MB > 20MB limit). "
+                        f"Skipping attachment. Consider using direct download or file hosting."
+                    )
+                    continue
+                
+                LOGGER.info(f"Processing video: file_id={file_id}, size={file_size_mb:.2f}MB")
                 mock_media = MockTelegramVideo(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
                 await fetch_and_store_media(
                     mock_media,
@@ -196,14 +208,26 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
         elif "video" in channel_post:
             vid = channel_post["video"]
             file_id = vid["file_id"]
-            mock_media = MockTelegramVideo(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
-            await fetch_and_store_media(
-                mock_media,
-                session,
-                attachments["videos"],
-                "single_video.mp4",
-                token=TELEGRAM_SETTINGS.HOOK_TOKEN,
-            )
+            file_size = vid.get("file_size", 0)
+            file_size_mb = file_size / (1024 * 1024) if file_size else 0
+            
+            # Telegram Bot API getFile has 20MB limit
+            if file_size > 20 * 1024 * 1024:
+                LOGGER.warning(
+                    f"Video file too large ({file_size_mb:.2f}MB > 20MB limit). "
+                    f"Ticket will be created without video attachment. "
+                    f"File ID: {file_id}"
+                )
+            else:
+                LOGGER.info(f"Processing video: file_id={file_id}, size={file_size_mb:.2f}MB")
+                mock_media = MockTelegramVideo(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+                await fetch_and_store_media(
+                    mock_media,
+                    session,
+                    attachments["videos"],
+                    "single_video.mp4",
+                    token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+                )
         elif "audio" in channel_post:
             aud = channel_post["audio"]
             file_id = aud["file_id"]
@@ -574,17 +598,40 @@ async def process_text_only_message(
 
 async def handle_group_message(message: Dict[str, Any]) -> Dict[str, Any]:
     """Handle messages in group chats."""
-    if message.get("is_automatic_forward", False) is True:
+    # Support both old (forward_from_chat) and new (is_automatic_forward) Telegram API formats
+    is_auto_forward = (
+        message.get("is_automatic_forward", False) is True
+        or "forward_from_chat" in message
+    )
+    
+    if is_auto_forward:
         return await handle_auto_forward_message(message)
     else:
         return await handle_group_comment(message)
 
 
 async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]:
-    """Handle automatically forwarded messages from channel to group."""
+    """Handle automatically forwarded messages from channel to group.
+    
+    Supports both old and new Telegram Bot API formats:
+    - Old format (deprecated): forward_from_chat, forward_from_message_id
+    - New format (Bot API 6.9+): is_automatic_forward, forward_origin
+    """
     message_id = message["message_id"]
-    forward_origin = message.get("forward_origin", {})
-    original_message_id = forward_origin.get("message_id")
+    
+    # Support both old and new Telegram API formats
+    if "forward_origin" in message:
+        # New Bot API 6.9+ format
+        forward_origin = message["forward_origin"]
+        original_message_id = forward_origin.get("message_id")
+    else:
+        # Old deprecated format (but still widely used)
+        original_message_id = message.get("forward_from_message_id")
+    
+    if not original_message_id:
+        LOGGER.warning("Could not extract original message ID from forwarded message")
+        return {"status": "error", "message": "Invalid forward message structure"}
+    
     issue_key = telegram_post_data_store.get_issue_key_from_channel_post(
         original_message_id,
     )
@@ -687,14 +734,17 @@ def get_user_assignee_and_reporter(username: str) -> tuple[str | None, str | Non
         username: Telegram username
         
     Returns:
-        Tuple of (assignee, reporter). Both are None if user not found in config.
+        Tuple of (assignee, reporter). 
+        - assignee is always None (tasks are unassigned by default, PM assigns later)
+        - reporter is the user's Jira username if found in config, None otherwise
     """
     user_cfg = user_config.get_user_config(username)
     
     if user_cfg:
-        return user_cfg.jira_username, user_cfg.jira_username
+        # Return None for assignee (unassigned), user's jira_username for reporter
+        return None, user_cfg.jira_username
     else:
-        LOGGER.warning(f"User {username} not found in config, using API caller as reporter")
+        LOGGER.warning(f"User {username} not found in config, ticket will be unassigned with no reporter")
         return None, None
 
 

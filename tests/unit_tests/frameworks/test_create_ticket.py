@@ -39,7 +39,7 @@ class TestGetUserAssigneeAndReporter(unittest.TestCase):
         self.user_config_patcher.stop()
 
     def test_user_exists_returns_jira_username(self):
-        """Test that existing user returns their Jira username for both assignee and reporter."""
+        """Test that existing user returns None for assignee and their Jira username for reporter."""
         from jira_telegram_bot.frameworks.fast_api.create_ticket import (
             get_user_assignee_and_reporter,
         )
@@ -50,7 +50,7 @@ class TestGetUserAssigneeAndReporter(unittest.TestCase):
 
         assignee, reporter = get_user_assignee_and_reporter("test_telegram_user")
 
-        self.assertEqual(assignee, "test_jira_user")
+        self.assertIsNone(assignee)  # assignee is always None now
         self.assertEqual(reporter, "test_jira_user")
         self.mock_user_config.get_user_config.assert_called_once_with(
             "test_telegram_user"
@@ -1104,7 +1104,7 @@ class TestUsernameHandling(unittest.TestCase):
 
             assignee, reporter = get_user_assignee_and_reporter("user_123@test")
 
-            self.assertEqual(assignee, "test_user_123")
+            self.assertIsNone(assignee)  # assignee is always None now
             self.assertEqual(reporter, "test_user_123")
 
 

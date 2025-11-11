@@ -548,7 +548,7 @@ class TestCreateTicketIntegration(unittest.TestCase):
 
             assignee, reporter = get_user_assignee_and_reporter("valid_telegram_user")
 
-            self.assertEqual(assignee, "valid_jira_user")
+            self.assertIsNone(assignee)  # assignee is always None now
             self.assertEqual(reporter, "valid_jira_user")
 
     def test_get_user_assignee_and_reporter_with_invalid_user(self):

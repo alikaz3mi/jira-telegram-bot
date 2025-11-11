@@ -439,6 +439,16 @@ class TestCreateTicketE2E(unittest.TestCase):
         
         # Setup data store to return this issue key
         self.mock_data_store.find_issue_key_from_message_id.return_value = issue["key"]
+        
+        # Setup find_channel_post_by_issue to return proper metadata
+        self.mock_data_store.find_channel_post_by_issue.return_value = {
+            "issue_key": issue["key"],
+            "group_chat_id": -12345,
+            "reply_message_id": 100,
+            "metadata": {
+                "creator_username": "test_user"  # Must match the webhook sender
+            }
+        }
 
         webhook_payload = {
             "update_id": 123460,
@@ -607,11 +617,7 @@ class TestCreateTicketE2E(unittest.TestCase):
         self.assertEqual(response2.status_code, 200)
 
         # Step 3: Comment on task
-        self.mock_data_store.find_by_group_chat_and_message_id.return_value = {
-            "issue_key": issue_key,
-            "group_chat_id": -12345,
-            "reply_message_id": 300,
-        }
+        self.mock_data_store.find_issue_key_from_message_id.return_value = issue_key
 
         comment_payload = {
             "update_id": 3,
@@ -619,7 +625,7 @@ class TestCreateTicketE2E(unittest.TestCase):
                 "message_id": 301,
                 "chat": {"id": -12345, "type": "group"},
                 "date": 1234567892,
-                "reply_to_message": {"message_id": 300},
+                "reply_to_message": {"message_id": 300, "forward_from_message_id": 100},
                 "text": "Working on it!",
                 "from": {"id": 111, "username": "requester"},
             },
@@ -629,7 +635,8 @@ class TestCreateTicketE2E(unittest.TestCase):
         self.assertEqual(response3.status_code, 200)
 
         # Step 4: Mark as done
-        self.mock_data_store.find_by_group_chat_and_message_id.return_value = {
+        # Setup find_channel_post_by_issue for command processing
+        self.mock_data_store.find_channel_post_by_issue.return_value = {
             "issue_key": issue_key,
             "group_chat_id": -12345,
             "reply_message_id": 300,
@@ -642,7 +649,7 @@ class TestCreateTicketE2E(unittest.TestCase):
                 "message_id": 302,
                 "chat": {"id": -12345, "type": "group"},
                 "date": 1234567893,
-                "reply_to_message": {"message_id": 300},
+                "reply_to_message": {"message_id": 300, "forward_from_message_id": 100},
                 "text": "/done",
                 "from": {"id": 111, "username": "requester"},
             },
