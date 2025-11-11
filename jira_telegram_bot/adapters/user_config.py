@@ -71,6 +71,42 @@ class UserConfig(UserConfigInterface):
         LOGGER.debug(f"User config not found for JIRA username: {jira_username}")
         return None
 
+    def get_user_role_for_board(
+        self,
+        username: str,
+        board_name: str,
+    ) -> Optional[str]:
+        """Get the role of a user for a specific board.
+        
+        Args:
+            username: Telegram username
+            board_name: Name of the board (e.g., 'PARSCHAT', 'PCT')
+            
+        Returns:
+            Role string (e.g., 'admin', 'member', 'viewer') or None if not found
+        """
+        user_cfg = self.get_user_config(username)
+        if user_cfg and user_cfg.board_roles:
+            return user_cfg.board_roles.get(board_name)
+        return None
+
+    def is_board_admin(
+        self,
+        username: str,
+        board_name: str,
+    ) -> bool:
+        """Check if a user is an admin for a specific board.
+        
+        Args:
+            username: Telegram username
+            board_name: Name of the board
+            
+        Returns:
+            True if user is admin, False otherwise
+        """
+        role = self.get_user_role_for_board(username, board_name)
+        return role == "admin" if role else False
+
     def save_user_config(
         self,
         telegram_username: str,
