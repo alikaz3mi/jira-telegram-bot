@@ -457,10 +457,11 @@ async def jira_webhook_endpoint(request: Request):
             elif field == "assignee":
                 assignee = item.get("toString")
                 assignee = jira_repository.jira.issue(issue_key).fields.assignee.name
-                telegram_username = user_config.get_user_config_by_jira_username(
-                    assignee,
-                ).telegram_username
-                if assignee:
+                user_cfg = user_config.get_user_config_by_jira_username(assignee)
+                telegram_username = user_cfg.telegram_username if user_cfg else None
+                
+                if assignee and telegram_username:
+                    # Send notification to the group
                     message = f"<b>👤Task Assigned</b>\n\nTask has been assigned to @{telegram_username}"
                     send_telegram_message(
                         group_chat_id,
@@ -469,7 +470,25 @@ async def jira_webhook_endpoint(request: Request):
                         parse_mode="html",
                         token=TELEGRAM_SETTINGS.HOOK_TOKEN
                     )
-                    LOGGER.info(f"Sent reassignment notification for {issue_key}")
+                    LOGGER.info(f"Sent reassignment notification to group for {issue_key}")
+                    
+                    # Send direct message to the assigned person
+                    if user_cfg.telegram_id:
+                        issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+                        issue = jira_repository.jira.issue(issue_key)
+                        dm_message = (
+                            f"<b>📋 New Task Assigned to You</b>\n\n"
+                            f"<b>Task:</b> {issue_key}\n"
+                            f"<b>Summary:</b> {issue.fields.summary}\n"
+                            f"<b>Link:</b> {issue_link}"
+                        )
+                        send_telegram_message(
+                            user_cfg.telegram_id,
+                            dm_message,
+                            parse_mode="html",
+                            token=TELEGRAM_SETTINGS.HOOK_TOKEN
+                        )
+                        LOGGER.info(f"Sent direct notification to {telegram_username} for {issue_key}")
 
         return {"status": "success", "message": "Webhook processed"}
 
@@ -661,11 +680,27 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def get_user_assignee_and_reporter(username: str) -> tuple[str | None, str | None]:
+    """Get assignee and reporter for a given username.
+    
+    Args:
+        username: Telegram username
+        
+    Returns:
+        Tuple of (assignee, reporter). Both are None if user not found in config.
+    """
+    user_cfg = user_config.get_user_config(username)
+    
+    if user_cfg:
+        return user_cfg.jira_username, user_cfg.jira_username
+    else:
+        LOGGER.warning(f"User {username} not found in config, using API caller as reporter")
+        return None, None
+
+
 def create_task_data(username: str, parsed_fields: Dict[str, str], original_text: str = "") -> TaskData:
     """Create TaskData object from parsed fields."""
-    user_cfg = user_config.get_user_config(username)
-    assignee = user_cfg.jira_username if user_cfg else None
-    reporter = user_cfg.jira_username if user_cfg else None
+    assignee, reporter = get_user_assignee_and_reporter(username)
     
     # Create description with both original message and parsed description
     parsed_description = parsed_fields.get("description", "")
@@ -792,9 +827,8 @@ async def finalize_media_groups():
                 # Use LangChain to parse the text
                 parsed_fields = parse_jira_prompt(text)
 
-                user_cfg = user_config.get_user_config(username)
-                assignee = user_cfg.jira_username if user_cfg else None
-                reporter = user_cfg.jira_username if user_cfg else None
+                # Get assignee and reporter for the user
+                assignee, reporter = get_user_assignee_and_reporter(username)
                 
                 # Create description with both original message and parsed description
                 parsed_description = parsed_fields.get("description", "")
