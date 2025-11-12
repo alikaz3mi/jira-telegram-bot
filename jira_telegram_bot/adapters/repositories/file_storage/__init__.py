@@ -113,11 +113,37 @@ class TelegramPostDataStore:
         data_store: Dict[str, Any],
         issue_key: str,
     ) -> Optional[Dict[str, Any]]:
-        """Find the group chat info for a given issue key."""
+        """Find the group chat info for a given issue key.
+        
+        Prioritizes entries with reply_message_id and where group_chat_id differs
+        from channel_chat_id (indicating the message was forwarded to a group).
+        This ensures webhook notifications reply to the correct thread.
+        """
+        candidates = []
         for entry in data_store.values():
             if entry.get("issue_key") == issue_key:
+                candidates.append(entry)
+        
+        if not candidates:
+            return None
+        
+        # Prioritize entries with reply_message_id and different group_chat_id
+        for entry in candidates:
+            has_reply_id = "reply_message_id" in entry
+            group_id = entry.get("group_chat_id")
+            channel_id = entry.get("channel_chat_id")
+            is_forwarded = group_id and channel_id and group_id != channel_id
+            
+            if has_reply_id and is_forwarded:
                 return entry
-        return None
+        
+        # Fallback to any entry with reply_message_id
+        for entry in candidates:
+            if "reply_message_id" in entry:
+                return entry
+        
+        # Last resort: return first match
+        return candidates[0]
 
     def find_channel_post_by_issue(
         self,
