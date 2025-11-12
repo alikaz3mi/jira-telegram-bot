@@ -443,10 +443,31 @@ async def process_command(
     data_store = telegram_post_data_store.load_data_store()
     store_entry = telegram_post_data_store.find_channel_post_by_issue(data_store, issue_key)
     if "/done" in text.lower():
-        if (
-            store_entry
-            and store_entry.get("metadata", {}).get("creator_username") == message_from
-        ):
+        # Allow the original creator, PCT admins, or a superadmin to mark as done
+        allowed_to_mark_done = False
+
+        # Creator of the post can always mark as done
+        if store_entry and store_entry.get("metadata", {}).get("creator_username") == message_from:
+            allowed_to_mark_done = True
+
+        # Try to resolve user config and check roles (PCT admin or superadmin)
+        if not allowed_to_mark_done:
+            try:
+                user_cfg = user_config.get_user_config(message_from)
+                # Check board_roles if present
+                board_roles = getattr(user_cfg, "board_roles", None) if user_cfg else None
+                if isinstance(board_roles, dict):
+                    # PCT admin explicitly allowed
+                    if board_roles.get("PCT") == "admin":
+                        allowed_to_mark_done = True
+                    # Global superadmin role allowed (if any board has role 'superadmin')
+                    if any(role == "superadmin" for role in board_roles.values()):
+                        allowed_to_mark_done = True
+            except Exception:
+                # If user_config lookup fails, fall back to denying permission
+                allowed_to_mark_done = allowed_to_mark_done
+
+        if allowed_to_mark_done:
             jira_repository.transition_task(issue_key, "done")
             store_entry["resolved_at"] = int(time.time())
             telegram_post_data_store.save_data_store(data_store)
