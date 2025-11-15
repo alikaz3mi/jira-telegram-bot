@@ -304,7 +304,10 @@ async def handle_comment_event(
     reply_message_id: int,
     issue_key: str,
 ) -> None:
-    """Handle a new comment event from Jira webhook."""
+    """Handle a new comment event from Jira webhook.
+    
+    Sends notification to group chat and DMs the assignee if comment is from someone else.
+    """
     comment = body.get("comment", {})
     if not comment:
         return  
@@ -318,6 +321,7 @@ async def handle_comment_event(
     if "h6. Comment from" in comment_body:
         return
 
+    # Send notification to group chat
     comment_content = f"Comment from [@{telegram_username}] :\n\n{comment_body}"
     message = (
         f"*💬 Comment Added*\n\nTask {issue_key} has a new comment: {comment_content}"
@@ -329,6 +333,38 @@ async def handle_comment_event(
         token=TELEGRAM_SETTINGS.HOOK_TOKEN
     )
     LOGGER.info(f"Sent comment notification for {issue_key}")
+    
+    # Send DM to assignee if comment is from someone else
+    try:
+        issue = jira_repository.jira.issue(issue_key)
+        assignee = issue.fields.assignee
+        
+        if assignee:
+            assignee_jira_username = assignee.name if hasattr(assignee, "name") else None
+            
+            # Only send DM if commenter is not the assignee
+            if assignee_jira_username and assignee_jira_username != jira_username:
+                assignee_cfg = lookup_user_config_by_jira_username(assignee_jira_username)
+                
+                if assignee_cfg and getattr(assignee_cfg, "telegram_user_chat_id", None):
+                    commenter_mention = f"@{telegram_username}" if telegram_username else jira_username
+                    issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+                    
+                    dm_message = (
+                        f"<b>💬 New message from {commenter_mention} for {issue_key}:</b>\n\n"
+                        f"{comment_body}\n\n"
+                        f"<b>Link:</b> {issue_link}"
+                    )
+                    
+                    send_telegram_message(
+                        assignee_cfg.telegram_user_chat_id,
+                        dm_message,
+                        parse_mode="html",
+                        token=TELEGRAM_SETTINGS.TOKEN,
+                    )
+                    LOGGER.info(f"Sent comment DM to assignee {assignee_jira_username} for {issue_key}")
+    except Exception as e:
+        LOGGER.warning(f"Could not send comment DM to assignee for {issue_key}: {e}")
 
 
 async def handle_status_change(
@@ -596,7 +632,13 @@ async def jira_webhook_endpoint(request: Request):
                 assigned_display = assignee_from_item or (
                     assignee_obj.get("displayName") if isinstance(assignee_obj, dict) else None
                 ) or matched_identifier or "<unknown>"
-                group_message = f"<b>👤 Task Assigned</b>\n\nTask has been assigned to {assigned_display}"
+                
+                # Add Telegram mention if we found a user config with telegram_username
+                telegram_mention = ""
+                if user_cfg and getattr(user_cfg, "telegram_username", None):
+                    telegram_mention = f" @{user_cfg.telegram_username}"
+                
+                group_message = f"<b>👤 Task Assigned</b>\n\nTask has been assigned to {assigned_display}{telegram_mention}"
                 send_telegram_message(
                     group_chat_id,
                     group_message,
@@ -604,7 +646,7 @@ async def jira_webhook_endpoint(request: Request):
                     parse_mode="html",
                     token=TELEGRAM_SETTINGS.HOOK_TOKEN,
                 )
-                LOGGER.info(f"Sent reassignment notification to group for {issue_key}: {assigned_display}")
+                LOGGER.info(f"Sent reassignment notification to group for {issue_key}: {assigned_display}{telegram_mention}")
 
                 # If we found a user config with a telegram_id, DM the assignee directly
                 if user_cfg and getattr(user_cfg, "telegram_user_chat_id", None):
@@ -788,49 +830,190 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
         return {"status": "error", "message": "No matching Jira issue found"}
 
 async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
-    """Handle comments in group chats."""
+    """Handle comments in group chats.
+    
+    Supports both regular user messages and anonymous admin (GroupAnonymousBot) messages.
+    For anonymous messages, extracts the real user from the message context.
+    """
     chat_id = message["chat"]["id"]
-    message_from = message.get("from", {}).get("username", "UnknownUser")
+    
+    # Check if this is an anonymous admin message (GroupAnonymousBot or sender_chat)
+    is_anonymous = (
+        message.get("from", {}).get("username") == "GroupAnonymousBot"
+        or "sender_chat" in message
+    )
+    
+    # For anonymous messages, we need to infer the user differently
+    if is_anonymous:
+        # The actual user info might be in the thread context,   not in 'from'
+        # We'll try to get it from the message content or skip user attribution
+        message_from = None
+        LOGGER.info(f"Processing anonymous admin message in chat_id={chat_id}")
+    else:
+        message_from = message.get("from", {}).get("username", "UnknownUser")
+    
     text = message.get("text") or message.get("caption") or ""
 
-    try:
-        issue_key = telegram_post_data_store.find_issue_key_from_message_id(
-            f"{message['reply_to_message']['forward_from_message_id']}",
-        )
-    except KeyError:
-        LOGGER.warning(f"Invalid message structure in group chat_id={chat_id}")
+    # Find the issue key from the replied-to message
+    reply_to_message = message.get("reply_to_message")
+    if not reply_to_message:
+        LOGGER.warning(f"Group message has no reply_to_message in chat_id={chat_id}")
         return {
             "status": "ignored",
-            "reason": "Invalid message structure",
+            "reason": "No reply context",
         }
+    
+    # Try multiple ways to find the issue key
+    issue_key = None
+    original_message_id = None
+    
+    # Method 1: New Bot API format (forward_origin) - for auto-forwarded channel posts
+    if "forward_origin" in reply_to_message:
+        forward_origin = reply_to_message["forward_origin"]
+        original_message_id = forward_origin.get("message_id")
+        if original_message_id:
+            issue_key = telegram_post_data_store.find_issue_key_from_message_id(str(original_message_id))
+    
+    # Method 2: Old format (forward_from_message_id) - for auto-forwarded channel posts
+    if not issue_key and "forward_from_message_id" in reply_to_message:
+        original_message_id = reply_to_message["forward_from_message_id"]
+        issue_key = telegram_post_data_store.find_issue_key_from_message_id(str(original_message_id))
+    
+    # Method 3: Direct reply to a group message (not forwarded from channel)
+    # This handles replies within the group thread
+    if not issue_key:
+        replied_message_id = reply_to_message.get("message_id")
+        if replied_message_id:
+            # Look up the issue from the group message being replied to
+            data_store = telegram_post_data_store.load_data_store()
+            for entry in data_store.values():
+                if entry.get("reply_message_id") == replied_message_id:
+                    issue_key = entry.get("issue_key")
+                    if issue_key and issue_key != "pending":
+                        LOGGER.info(f"Found issue {issue_key} from group reply_message_id={replied_message_id}")
+                        break
+    
+    # Method 4: Use message_thread_id to find the issue
+    # For Telegram topics/threads, all messages in a thread share the same message_thread_id
+    if not issue_key:
+        thread_id = message.get("message_thread_id")
+        if thread_id:
+            data_store = telegram_post_data_store.load_data_store()
+            for entry in data_store.values():
+                # Check if the reply_message_id in our data matches the thread_id
+                if entry.get("reply_message_id") == thread_id:
+                    issue_key = entry.get("issue_key")
+                    if issue_key and issue_key != "pending":
+                        LOGGER.info(f"Found issue {issue_key} from message_thread_id={thread_id}")
+                        break
 
     if not issue_key:
-        LOGGER.warning(f"No Jira issue mapping found for group chat_id={chat_id}")
+        LOGGER.warning(f"No Jira issue mapping found for original_message_id={original_message_id}")
         return {
             "status": "ignored",
             "reason": "No Jira issue mapping found for this group.",
         }
 
-    user_cfg = user_config.get_user_config(message_from)
-    jira_username = user_cfg.jira_username if user_cfg else None
+    # Get user config and Jira username
+    jira_username = None
+    if message_from:
+        user_cfg = user_config.get_user_config(message_from)
+        jira_username = user_cfg.jira_username if user_cfg else None
     
     if not jira_username:
-        LOGGER.warning(f"No jira_username found for user: {message_from}")
-        return {
-            "status": "ignored",
-            "reason": "User not configured in system",
-        }
-
-    # Handle commands
-    command_result = await process_command(text, issue_key, message_from, jira_username)
-    if command_result:
-        return command_result
-
-    # Handle regular comments
-    if text:
+        if is_anonymous:
+            # For anonymous messages, use a generic attribution
+            LOGGER.info(f"Anonymous comment on {issue_key}, using generic attribution")
+            jira_username = "anonymous_admin"
+            formatted_comment = f"h6. Comment from Anonymous Admin:\n\n{text}"
+        else:
+            LOGGER.warning(f"No jira_username found for user: {message_from}")
+            return {
+                "status": "ignored",
+                "reason": "User not configured in system",
+            }
+    else:
+        # Handle commands only for identified users
+        command_result = await process_command(text, issue_key, message_from, jira_username)
+        if command_result:
+            return command_result
+        
         formatted_comment = f"h6. Comment from [~{jira_username}] :\n\n{text}"
+
+    # Collect media attachments from the message
+    media_files = []
+    has_media = False
+    
+    async with aiohttp.ClientSession() as session:
+        # Handle photo(s)
+        if "photo" in message:
+            has_media = True
+            photo_array = message["photo"]
+            file_id = photo_array[-1]["file_id"]  # Get largest photo
+            mock_media = MockTelegramPhoto(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+            media_path = f"comment_photo_{message['message_id']}.jpg"
+            try:
+                await fetch_and_store_media(mock_media, session, media_files, media_path, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+            except Exception as e:
+                LOGGER.warning(f"Failed to fetch photo for comment: {e}")
+        
+        # Handle document
+        if "document" in message:
+            has_media = True
+            doc = message["document"]
+            file_id = doc["file_id"]
+            file_name = doc.get("file_name", f"comment_doc_{message['message_id']}")
+            mock_media = MockTelegramDocument(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+            try:
+                await fetch_and_store_media(mock_media, session, media_files, file_name, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+            except Exception as e:
+                LOGGER.warning(f"Failed to fetch document for comment: {e}")
+        
+        # Handle video
+        if "video" in message:
+            has_media = True
+            vid = message["video"]
+            file_id = vid["file_id"]
+            file_size = vid.get("file_size", 0)
+            file_size_mb = file_size / (1024 * 1024) if file_size else 0
+            
+            if file_size > 20 * 1024 * 1024:
+                LOGGER.warning(f"Video too large ({file_size_mb:.2f}MB) for comment on {issue_key}")
+                formatted_comment += f"\n\n_[Video attachment too large to upload: {file_size_mb:.2f}MB]_"
+            else:
+                mock_media = MockTelegramVideo(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+                media_path = f"comment_video_{message['message_id']}.mp4"
+                try:
+                    await fetch_and_store_media(mock_media, session, media_files, media_path, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+                except Exception as e:
+                    LOGGER.warning(f"Failed to fetch video for comment: {e}")
+        
+        # Handle audio/voice
+        if "audio" in message or "voice" in message:
+            has_media = True
+            audio_data = message.get("audio") or message.get("voice")
+            file_id = audio_data["file_id"]
+            mock_media = MockTelegramAudio(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+            media_path = f"comment_audio_{message['message_id']}.mp3"
+            try:
+                await fetch_and_store_media(mock_media, session, media_files, media_path, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+            except Exception as e:
+                LOGGER.warning(f"Failed to fetch audio/voice for comment: {e}")
+
+    # Add comment to Jira
+    if text or has_media:
         jira_repository.add_comment(issue_key, formatted_comment)
-        LOGGER.info(f"Added comment to Jira issue {issue_key}")
+        
+        # Attach media files if any
+        if media_files:
+            try:
+                jira_repository.handle_attachments(issue_key, {"images": media_files})
+                LOGGER.info(f"Added comment with {len(media_files)} attachment(s) to {issue_key}")
+            except Exception as e:
+                LOGGER.warning(f"Failed to attach media to comment on {issue_key}: {e}")
+        else:
+            LOGGER.info(f"Added text comment to Jira issue {issue_key}")
+        
         return {
             "status": "success",
             "message": "Comment added to Jira issue.",
@@ -838,7 +1021,7 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "status": "ignored",
-        "reason": "No comment text provided",
+        "reason": "No comment text or media provided",
     }
 
 
