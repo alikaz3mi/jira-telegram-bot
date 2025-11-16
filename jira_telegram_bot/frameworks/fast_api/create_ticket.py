@@ -452,18 +452,45 @@ async def handle_due_date_change(
 
 
 def format_jalali_date(date_str: str) -> str:
+    """Convert a Gregorian date string to Jalali format.
+    
+    Supports multiple formats:
+    - ISO format: YYYY-MM-DD HH:MM
+    - Jira format: 16/Nov/25 8:17 AM
+    """
     try:
-        """Convert a Gregorian date string to Jalali format."""
-        if " " not in date_str:
-            date_str += " 00:00"
-        year, month, day = date_str.split(" ")[0].split("-")
-        time = date_str.split(" ")[1]
-        georgian_time = jdatetime.GregorianToJalali(
-            int(year),
-            int(month),
-            int(day),
-        )
-        return f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday} {time}"
+        from datetime import datetime
+        
+        # Try parsing different date formats
+        parsed_date = None
+        
+        # Try ISO format first (YYYY-MM-DD)
+        if "-" in date_str:
+            if " " not in date_str:
+                date_str += " 00:00"
+            year, month, day = date_str.split(" ")[0].split("-")
+            time = date_str.split(" ")[1]
+            parsed_date = datetime(int(year), int(month), int(day))
+        # Try Jira format (16/Nov/25 8:17 AM)
+        elif "/" in date_str:
+            # Parse formats like "16/Nov/25 8:17 AM"
+            try:
+                parsed_date = datetime.strptime(date_str, "%d/%b/%y %I:%M %p")
+            except ValueError:
+                # Try without time
+                parsed_date = datetime.strptime(date_str.split(" ")[0], "%d/%b/%y")
+            time = parsed_date.strftime("%H:%M")
+        
+        if parsed_date:
+            georgian_time = jdatetime.GregorianToJalali(
+                parsed_date.year,
+                parsed_date.month,
+                parsed_date.day,
+            )
+            return f"{georgian_time.jyear}/{georgian_time.jmonth}/{georgian_time.jday} {time}"
+        else:
+            return date_str
+            
     except Exception as e:
         LOGGER.error(f"Error formatting date {date_str}: {e}")
         return date_str
@@ -571,6 +598,7 @@ async def jira_webhook_endpoint(request: Request):
         changelog = body.get("changelog", {}).get("items", [])
         for item in changelog:
             field = item.get("field")
+            field_lower = field.lower() if field else ""
             if field == "status":
                 await handle_status_change(
                     item,
@@ -579,7 +607,7 @@ async def jira_webhook_endpoint(request: Request):
                     reply_message_id,
                     group_chat_info,
                 )
-            elif field in ["duedate", "due date"]:
+            elif field_lower in ["duedate", "due date"]:
                 await handle_due_date_change(
                     item,
                     issue_key,
@@ -829,6 +857,81 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
         )
         return {"status": "error", "message": "No matching Jira issue found"}
 
+async def handle_edited_message(message: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle edited messages in group chats.
+    
+    Updates the corresponding Jira comment when a Telegram message is edited.
+    Uses stored telegram_message_id -> jira_comment_id mapping for exact updates.
+    Note: Currently only supports editing text, not media attachments.
+    """
+    chat_id = message["chat"]["id"]
+    message_id = message["message_id"]
+    
+    # Check if this is an anonymous admin message
+    is_anonymous = (
+        message.get("from", {}).get("username") == "GroupAnonymousBot"
+        or "sender_chat" in message
+    )
+    
+    if is_anonymous:
+        message_from = None
+        LOGGER.info(f"Processing edited anonymous admin message in chat_id={chat_id}")
+    else:
+        message_from = message.get("from", {}).get("username", "UnknownUser")
+    
+    text = message.get("text") or message.get("caption") or ""
+    
+    if not text:
+        LOGGER.warning(f"Edited message {message_id} has no text, skipping")
+        return {"status": "ignored", "reason": "No text in edited message"}
+    
+    # Look up the stored comment mapping
+    comment_mapping = telegram_post_data_store.find_comment_mapping(message_id, chat_id)
+    
+    if not comment_mapping:
+        LOGGER.warning(f"No comment mapping found for message {message_id} in chat {chat_id}")
+        return {"status": "ignored", "reason": "No stored comment mapping found"}
+    
+    jira_comment_id = comment_mapping.get("jira_comment_id")
+    issue_key = comment_mapping.get("issue_key")
+    
+    if not jira_comment_id or not issue_key:
+        LOGGER.error(f"Invalid comment mapping data: {comment_mapping}")
+        return {"status": "error", "reason": "Invalid comment mapping data"}
+    
+    # Get user config and format the updated comment
+    jira_username = None
+    if message_from:
+        user_cfg = user_config.get_user_config(message_from)
+        jira_username = user_cfg.jira_username if user_cfg else None
+    
+    if not jira_username:
+        if is_anonymous:
+            jira_username = "anonymous_admin"
+            formatted_comment = f"h6. Comment from Anonymous Admin (edited):\n\n{text}"
+        else:
+            LOGGER.warning(f"No jira_username found for user: {message_from}")
+            return {"status": "ignored", "reason": "User not configured"}
+    else:
+        formatted_comment = f"h6. Comment from [~{jira_username}] (edited):\n\n{text}"
+    
+    # Update the specific comment in Jira
+    try:
+        issue = jira_repository.jira.issue(issue_key)
+        comment = jira_repository.jira.comment(issue_key, jira_comment_id)
+        
+        if comment:
+            comment.update(body=formatted_comment)
+            LOGGER.info(f"Updated comment {jira_comment_id} on {issue_key} for edited message {message_id}")
+            return {"status": "success", "message": "Comment updated in Jira"}
+        else:
+            LOGGER.warning(f"Comment {jira_comment_id} not found on {issue_key}")
+            return {"status": "error", "reason": "Comment not found in Jira"}
+            
+    except Exception as e:
+        LOGGER.error(f"Failed to update comment {jira_comment_id} for edited message {message_id}: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
+
 async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
     """Handle comments in group chats.
     
@@ -925,23 +1028,27 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
             # For anonymous messages, use a generic attribution
             LOGGER.info(f"Anonymous comment on {issue_key}, using generic attribution")
             jira_username = "anonymous_admin"
-            formatted_comment = f"h6. Comment from Anonymous Admin:\n\n{text}"
         else:
             LOGGER.warning(f"No jira_username found for user: {message_from}")
             return {
                 "status": "ignored",
                 "reason": "User not configured in system",
             }
+    
+    # Handle commands for both identified users and anonymous admins
+    command_result = await process_command(text, issue_key, message_from, jira_username)
+    if command_result:
+        return command_result
+    
+    # Format the comment based on user type
+    if is_anonymous:
+        formatted_comment = f"h6. Comment from Anonymous Admin:\n\n{text}"
     else:
-        # Handle commands only for identified users
-        command_result = await process_command(text, issue_key, message_from, jira_username)
-        if command_result:
-            return command_result
-        
         formatted_comment = f"h6. Comment from [~{jira_username}] :\n\n{text}"
 
     # Collect media attachments from the message
     media_files = []
+    media_descriptions = []  # Track media types and names for comment
     has_media = False
     
     async with aiohttp.ClientSession() as session:
@@ -954,6 +1061,7 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
             media_path = f"comment_photo_{message['message_id']}.jpg"
             try:
                 await fetch_and_store_media(mock_media, session, media_files, media_path, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+                media_descriptions.append(f"📷 Image: [^{media_path}]")
             except Exception as e:
                 LOGGER.warning(f"Failed to fetch photo for comment: {e}")
         
@@ -966,6 +1074,7 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
             mock_media = MockTelegramDocument(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
             try:
                 await fetch_and_store_media(mock_media, session, media_files, file_name, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+                media_descriptions.append(f"📄 Document: [^{file_name}]")
             except Exception as e:
                 LOGGER.warning(f"Failed to fetch document for comment: {e}")
         
@@ -979,12 +1088,13 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
             
             if file_size > 20 * 1024 * 1024:
                 LOGGER.warning(f"Video too large ({file_size_mb:.2f}MB) for comment on {issue_key}")
-                formatted_comment += f"\n\n_[Video attachment too large to upload: {file_size_mb:.2f}MB]_"
+                media_descriptions.append(f"🎥 Video: _(file too large, not attached - {file_size_mb:.2f}MB)_")
             else:
                 mock_media = MockTelegramVideo(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
                 media_path = f"comment_video_{message['message_id']}.mp4"
                 try:
                     await fetch_and_store_media(mock_media, session, media_files, media_path, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+                    media_descriptions.append(f"🎥 Video: [^{media_path}]")
                 except Exception as e:
                     LOGGER.warning(f"Failed to fetch video for comment: {e}")
         
@@ -995,14 +1105,32 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
             file_id = audio_data["file_id"]
             mock_media = MockTelegramAudio(file_id, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
             media_path = f"comment_audio_{message['message_id']}.mp3"
+            media_type = "🎵 Audio" if "audio" in message else "🎤 Voice"
             try:
                 await fetch_and_store_media(mock_media, session, media_files, media_path, token=TELEGRAM_SETTINGS.HOOK_TOKEN)
+                media_descriptions.append(f"{media_type}: [^{media_path}]")
             except Exception as e:
                 LOGGER.warning(f"Failed to fetch audio/voice for comment: {e}")
+    
+    # Append media descriptions to the comment
+    if media_descriptions:
+        formatted_comment += "\n\n*Attachments:*\n" + "\n".join(media_descriptions)
 
     # Add comment to Jira
     if text or has_media:
-        jira_repository.add_comment(issue_key, formatted_comment)
+        comment = jira_repository.add_comment(issue_key, formatted_comment)
+        
+        # Store the mapping of telegram_message_id -> jira_comment_id for edit support
+        if comment and hasattr(comment, 'id'):
+            telegram_message_id = message.get("message_id")
+            chat_id = message["chat"]["id"]
+            telegram_post_data_store.store_comment_mapping(
+                telegram_message_id=telegram_message_id,
+                chat_id=chat_id,
+                jira_comment_id=comment.id,
+                issue_key=issue_key
+            )
+            LOGGER.info(f"Stored comment mapping: telegram_msg={telegram_message_id} -> jira_comment={comment.id}")
         
         # Attach media files if any
         if media_files:
@@ -1083,6 +1211,18 @@ async def handle_webhook_update(data: Dict[str, Any]) -> Dict[str, Any]:
             f"Handling channel post with ID: {data['channel_post'].get('message_id')}",
         )
         return await handle_channel_post(data["channel_post"])
+    elif "edited_channel_post" in data:
+        LOGGER.info(
+            f"Handling edited channel post with ID: {data['edited_channel_post'].get('message_id')}",
+        )
+        # For now, treat edited channel posts as new posts
+        # TODO: Implement issue update logic if needed
+        return {"status": "ignored", "reason": "Channel post edits not yet supported"}
+    elif "edited_message" in data:
+        LOGGER.info(
+            f"Handling edited message with ID: {data['edited_message'].get('message_id')}",
+        )
+        return await handle_edited_message(data["edited_message"])
     elif "message" in data:
         LOGGER.info(
             f"Handling group message with ID: {data['message'].get('message_id')}",

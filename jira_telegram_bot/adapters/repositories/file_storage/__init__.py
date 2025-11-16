@@ -155,3 +155,54 @@ class TelegramPostDataStore:
             if entry.get("issue_key") == issue_key:
                 return entry
         return None
+
+    def store_comment_mapping(
+        self,
+        telegram_message_id: int,
+        chat_id: int,
+        jira_comment_id: str,
+        issue_key: str,
+    ):
+        """Store mapping between Telegram message ID and Jira comment ID.
+        
+        This mapping enables editing Telegram messages to update corresponding Jira comments.
+        
+        Args:
+            telegram_message_id: The Telegram message ID
+            chat_id: The chat ID where the message was sent
+            jira_comment_id: The Jira comment ID (from API response)
+            issue_key: The Jira issue key
+        """
+        data = self.load_data_store()
+        
+        # Use a composite key: chat_id_message_id_comment
+        comment_key = f"{chat_id}_{telegram_message_id}_comment"
+        
+        data[comment_key] = {
+            "telegram_message_id": telegram_message_id,
+            "chat_id": chat_id,
+            "jira_comment_id": jira_comment_id,
+            "issue_key": issue_key,
+            "created_at": int(time.time()),
+            "type": "comment_mapping"
+        }
+        
+        self.save_data_store(data)
+
+    def find_comment_mapping(
+        self,
+        telegram_message_id: int,
+        chat_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Find the Jira comment ID for a given Telegram message.
+        
+        Args:
+            telegram_message_id: The Telegram message ID
+            chat_id: The chat ID
+            
+        Returns:
+            Dict containing jira_comment_id and issue_key, or None if not found
+        """
+        data = self.load_data_store()
+        comment_key = f"{chat_id}_{telegram_message_id}_comment"
+        return data.get(comment_key)
