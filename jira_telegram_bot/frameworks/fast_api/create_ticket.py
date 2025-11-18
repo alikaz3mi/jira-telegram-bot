@@ -52,6 +52,10 @@ from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSetti
 from jira_telegram_bot.use_cases.ai_agents.create_ticketing_issue import (
     parse_jira_prompt,
 )
+from jira_telegram_bot.utils.mention_parser import (
+    convert_jira_mentions_to_telegram,
+    get_mentioned_user_configs,
+)
 
 
 JIRA_SETTINGS = JiraConnectionSettings()
@@ -306,7 +310,8 @@ async def handle_comment_event(
 ) -> None:
     """Handle a new comment event from Jira webhook.
     
-    Sends notification to group chat and DMs the assignee if comment is from someone else.
+    Sends notification to group chat, DMs the assignee if comment is from someone else,
+    and notifies all mentioned users.
     """
     comment = body.get("comment", {})
     if not comment:
@@ -321,10 +326,14 @@ async def handle_comment_event(
     if "h6. Comment from" in comment_body:
         return
 
-    # Send notification to group chat
-    comment_content = f"Comment from [@{telegram_username}] :\n\n{comment_body}"
+    # Convert Jira mentions to Telegram mentions
+    converted_comment, mentioned_telegram_users = convert_jira_mentions_to_telegram(comment_body, user_config)
+    
+    # Send notification to group chat with converted mentions
+    commenter_display = f"@{telegram_username}" if telegram_username else jira_username
+    comment_content = f"Comment from {commenter_display}:\n\n{converted_comment}"
     message = (
-        f"*💬 Comment Added*\n\nTask {issue_key} has a new comment: {comment_content}"
+        f"*💬 Comment Added*\n\nTask {issue_key} has a new comment:\n\n{comment_content}"
     )
     send_telegram_message(
         group_chat_id,
@@ -334,37 +343,69 @@ async def handle_comment_event(
     )
     LOGGER.info(f"Sent comment notification for {issue_key}")
     
+    # Get mentioned users from the comment
+    mentioned_user_configs = get_mentioned_user_configs(comment_body, user_config)
+    
     # Send DM to assignee if comment is from someone else
     try:
         issue = jira_repository.jira.issue(issue_key)
         assignee = issue.fields.assignee
+        assignee_jira_username = assignee.name if assignee and hasattr(assignee, "name") else None
         
-        if assignee:
-            assignee_jira_username = assignee.name if hasattr(assignee, "name") else None
+        # Send DM to assignee (if not the commenter)
+        if assignee_jira_username and assignee_jira_username != jira_username:
+            assignee_cfg = lookup_user_config_by_jira_username(assignee_jira_username)
             
-            # Only send DM if commenter is not the assignee
-            if assignee_jira_username and assignee_jira_username != jira_username:
-                assignee_cfg = lookup_user_config_by_jira_username(assignee_jira_username)
+            if assignee_cfg and getattr(assignee_cfg, "telegram_user_chat_id", None):
+                commenter_mention = f"@{telegram_username}" if telegram_username else jira_username
+                issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
                 
-                if assignee_cfg and getattr(assignee_cfg, "telegram_user_chat_id", None):
-                    commenter_mention = f"@{telegram_username}" if telegram_username else jira_username
-                    issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
-                    
-                    dm_message = (
-                        f"<b>💬 New message from {commenter_mention} for {issue_key}:</b>\n\n"
-                        f"{comment_body}\n\n"
-                        f"<b>Link:</b> {issue_link}"
-                    )
-                    
-                    send_telegram_message(
-                        assignee_cfg.telegram_user_chat_id,
-                        dm_message,
-                        parse_mode="html",
-                        token=TELEGRAM_SETTINGS.TOKEN,
-                    )
-                    LOGGER.info(f"Sent comment DM to assignee {assignee_jira_username} for {issue_key}")
+                dm_message = (
+                    f"<b>💬 New comment from {commenter_mention} on {issue_key}:</b>\n\n"
+                    f"{converted_comment}\n\n"
+                    f"<b>Link:</b> {issue_link}"
+                )
+                
+                send_telegram_message(
+                    assignee_cfg.telegram_user_chat_id,
+                    dm_message,
+                    parse_mode="html",
+                    token=TELEGRAM_SETTINGS.TOKEN,
+                )
+                LOGGER.info(f"Sent comment DM to assignee {assignee_jira_username} for {issue_key}")
+        
+        # Send DM to all mentioned users (excluding commenter and assignee who already got notified)
+        for mentioned_cfg in mentioned_user_configs:
+            mentioned_jira_username = getattr(mentioned_cfg, "jira_username", None)
+            mentioned_telegram_chat_id = getattr(mentioned_cfg, "telegram_user_chat_id", None)
+            
+            # Skip if this is the commenter or assignee (already notified)
+            if mentioned_jira_username == jira_username:
+                continue
+            if mentioned_jira_username == assignee_jira_username:
+                continue
+                
+            if mentioned_telegram_chat_id:
+                commenter_mention = f"@{telegram_username}" if telegram_username else jira_username
+                issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+                mentioned_telegram_username = getattr(mentioned_cfg, "telegram_username", mentioned_jira_username)
+                
+                dm_message = (
+                    f"<b>👋 You were mentioned by {commenter_mention} in {issue_key}:</b>\n\n"
+                    f"{converted_comment}\n\n"
+                    f"<b>Link:</b> {issue_link}"
+                )
+                
+                send_telegram_message(
+                    mentioned_telegram_chat_id,
+                    dm_message,
+                    parse_mode="html",
+                    token=TELEGRAM_SETTINGS.TOKEN,
+                )
+                LOGGER.info(f"Sent mention notification to @{mentioned_telegram_username} for {issue_key}")
+                
     except Exception as e:
-        LOGGER.warning(f"Could not send comment DM to assignee for {issue_key}: {e}")
+        LOGGER.warning(f"Could not send notification DMs for {issue_key}: {e}")
 
 
 async def handle_status_change(

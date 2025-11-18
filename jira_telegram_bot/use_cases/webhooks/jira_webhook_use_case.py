@@ -111,7 +111,7 @@ class JiraWebhookUseCase(JiraWebhookHandlerInterface):
             await self.telegram_gateway.send_message(
                 chat_id=channel_chat_id,
                 text=message,
-                reply_to_message_id=reply_to,
+                reply_message_id=reply_to,
                 parse_mode="HTML"
             )
     
@@ -147,7 +147,7 @@ class JiraWebhookUseCase(JiraWebhookHandlerInterface):
                 await self.telegram_gateway.send_message(
                     chat_id=channel_chat_id,
                     text=message,
-                    reply_to_message_id=reply_to,
+                    reply_message_id=reply_to,
                     parse_mode="HTML"
                 )
             
@@ -158,6 +158,6 @@ class JiraWebhookUseCase(JiraWebhookHandlerInterface):
                 await self.telegram_gateway.send_message(
                     chat_id=channel_chat_id, 
                     text=message,
-                    reply_to_message_id=reply_to,
+                    reply_message_id=reply_to,
                     parse_mode="HTML"
                 )
