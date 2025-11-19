@@ -1680,5 +1680,706 @@ class TestFormatJalaliDate(unittest.TestCase):
         self.assertIn("12:00", result)
 
 
+class TestTelegramLinkHelpers(unittest.TestCase):
+    """Test Telegram channel post link helper functions."""
+
+    def test_build_telegram_channel_post_link(self):
+        """Test building Telegram channel post link."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            build_telegram_channel_post_link,
+        )
+
+        link = build_telegram_channel_post_link(-1001234567890, 12345)
+
+        self.assertEqual(link, "https://t.me/c/1234567890/12345")
+
+    def test_build_telegram_channel_post_link_without_prefix(self):
+        """Test building link when chat_id doesn't have -100 prefix."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            build_telegram_channel_post_link,
+        )
+
+        link = build_telegram_channel_post_link(-1234567890, 67890)
+
+        self.assertEqual(link, "https://t.me/c/-1234567890/67890")
+
+    def test_add_telegram_link_to_description(self):
+        """Test adding Telegram link to task description."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            add_telegram_link_to_description,
+        )
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description="Original description",
+            task_type="Task",
+        )
+
+        add_telegram_link_to_description(task_data, "https://t.me/c/123/456")
+
+        self.assertIn("Original description", task_data.description)
+        self.assertIn("h3. Telegram Channel Post:", task_data.description)
+        self.assertIn("https://t.me/c/123/456", task_data.description)
+
+    def test_add_telegram_link_to_empty_description(self):
+        """Test adding Telegram link when description is empty."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            add_telegram_link_to_description,
+        )
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description="",
+            task_type="Task",
+        )
+
+        add_telegram_link_to_description(task_data, "https://t.me/c/123/456")
+
+        self.assertIn("h3. Telegram Channel Post:", task_data.description)
+        self.assertIn("https://t.me/c/123/456", task_data.description)
+
+    def test_add_telegram_link_to_none_description(self):
+        """Test adding Telegram link when description is None."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            add_telegram_link_to_description,
+        )
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description=None,
+            task_type="Task",
+        )
+
+        add_telegram_link_to_description(task_data, "https://t.me/c/123/456")
+
+        self.assertIn("h3. Telegram Channel Post:", task_data.description)
+        self.assertIn("https://t.me/c/123/456", task_data.description)
+
+    def test_format_issue_created_message(self):
+        """Test formatting issue created message with both links."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            format_issue_created_message,
+        )
+
+        with patch(
+            "jira_telegram_bot.frameworks.fast_api.create_ticket.JIRA_SETTINGS"
+        ) as mock_settings:
+            mock_settings.domain = "https://jira.example.com/"
+
+            message = format_issue_created_message(
+                "PCT-123", "https://t.me/c/123/456"
+            )
+
+            self.assertIn("Jira Issue Created:", message)
+            self.assertIn("Jira: https://jira.example.com/browse/PCT-123", message)
+            self.assertIn("Telegram: https://t.me/c/123/456", message)
+
+    def test_extract_channel_info_from_forward_new_format(self):
+        """Test extracting channel info from new Bot API format."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            extract_channel_info_from_forward,
+        )
+
+        message = {
+            "forward_origin": {
+                "chat": {"id": -1001234567890},
+                "message_id": 12345,
+            }
+        }
+
+        chat_id, message_id = extract_channel_info_from_forward(message)
+
+        self.assertEqual(chat_id, -1001234567890)
+        self.assertEqual(message_id, 12345)
+
+    def test_extract_channel_info_from_forward_old_format(self):
+        """Test extracting channel info from old Bot API format."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            extract_channel_info_from_forward,
+        )
+
+        message = {
+            "forward_from_chat": {"id": -1001234567890},
+            "forward_from_message_id": 12345,
+        }
+
+        chat_id, message_id = extract_channel_info_from_forward(message)
+
+        self.assertEqual(chat_id, -1001234567890)
+        self.assertEqual(message_id, 12345)
+
+    def test_extract_channel_info_from_forward_no_data(self):
+        """Test extracting channel info when no forward data exists."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            extract_channel_info_from_forward,
+        )
+
+        message = {"message_id": 123}
+
+        chat_id, message_id = extract_channel_info_from_forward(message)
+
+        self.assertIsNone(chat_id)
+        self.assertIsNone(message_id)
+
+
+class TestCommentEventWithMentions(unittest.TestCase):
+    """Test comment event handling with mentions and Persian text."""
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.send_telegram_message")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.convert_jira_mentions_to_telegram")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.get_mentioned_user_configs")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.lookup_user_config_by_jira_username")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    async def test_comment_with_persian_text_and_mentions(
+        self,
+        mock_jira_repo,
+        mock_lookup_user,
+        mock_get_mentioned,
+        mock_convert_mentions,
+        mock_send_message,
+    ):
+        """Test comment with Persian text and mentions uses parse_mode=None."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            handle_comment_event,
+        )
+
+        # Setup mocks
+        mock_lookup_user.return_value = Mock(telegram_username="testuser")
+        mock_convert_mentions.return_value = (
+            "این رو میگین؟\n@Mousavi_Shoushtari",
+            ["Mousavi_Shoushtari"],
+        )
+        mock_get_mentioned.return_value = []
+        
+        mock_issue = Mock()
+        mock_issue.fields.assignee = None
+        mock_jira_repo.jira.issue.return_value = mock_issue
+
+        body = {
+            "comment": {
+                "body": "این رو میگین؟\n[~m_Mousavi]",
+                "author": {"name": "a_kazemi"},
+            }
+        }
+
+        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+
+        # Verify send_telegram_message was called with parse_mode=None
+        mock_send_message.assert_called()
+        call_args = mock_send_message.call_args
+        self.assertEqual(call_args[1].get("parse_mode"), None)
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.send_telegram_message")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.convert_jira_mentions_to_telegram")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.get_mentioned_user_configs")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.lookup_user_config_by_jira_username")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    async def test_comment_with_mentions_sends_dms_with_html(
+        self,
+        mock_jira_repo,
+        mock_lookup_user,
+        mock_get_mentioned,
+        mock_convert_mentions,
+        mock_send_message,
+    ):
+        """Test that DMs to mentioned users use HTML parse mode."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            handle_comment_event,
+        )
+
+        # Setup mocks
+        commenter = Mock(telegram_username="commenter")
+        mentioned_user = Mock(
+            jira_username="m_Mousavi",
+            telegram_username="Mousavi_Shoushtari",
+            telegram_user_chat_id=123456789,
+        )
+        
+        mock_lookup_user.side_effect = lambda x: commenter if x == "a_kazemi" else mentioned_user
+        mock_convert_mentions.return_value = ("Comment with @Mousavi_Shoushtari", ["Mousavi_Shoushtari"])
+        mock_get_mentioned.return_value = [mentioned_user]
+        
+        mock_issue = Mock()
+        mock_issue.fields.assignee = None
+        mock_jira_repo.jira.issue.return_value = mock_issue
+
+        body = {
+            "comment": {
+                "body": "Comment with [~m_Mousavi]",
+                "author": {"name": "a_kazemi"},
+            }
+        }
+
+        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+
+        # Verify DM was sent with parse_mode="html"
+        dm_calls = [call for call in mock_send_message.call_args_list if call[0][0] == 123456789]
+        self.assertTrue(len(dm_calls) > 0)
+        self.assertEqual(dm_calls[0][1].get("parse_mode"), "html")
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.send_telegram_message")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.convert_jira_mentions_to_telegram")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.get_mentioned_user_configs")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.lookup_user_config_by_jira_username")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    async def test_comment_skips_telegram_originated_comments(
+        self,
+        mock_jira_repo,
+        mock_lookup_user,
+        mock_get_mentioned,
+        mock_convert_mentions,
+        mock_send_message,
+    ):
+        """Test that comments starting with 'h6. Comment from' are skipped."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            handle_comment_event,
+        )
+
+        body = {
+            "comment": {
+                "body": "h6. Comment from [~testuser] :\n\nThis is a Telegram comment",
+                "author": {"name": "a_kazemi"},
+            }
+        }
+
+        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+
+        # Verify no messages were sent
+        mock_send_message.assert_not_called()
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.send_telegram_message")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.convert_jira_mentions_to_telegram")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.get_mentioned_user_configs")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.lookup_user_config_by_jira_username")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    async def test_comment_handles_dm_failures_gracefully(
+        self,
+        mock_jira_repo,
+        mock_lookup_user,
+        mock_get_mentioned,
+        mock_convert_mentions,
+        mock_send_message,
+    ):
+        """Test that DM failures don't prevent group notification."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            handle_comment_event,
+        )
+
+        # Setup mocks
+        commenter = Mock(telegram_username="commenter")
+        mentioned_user = Mock(
+            jira_username="m_Mousavi",
+            telegram_username="Mousavi_Shoushtari",
+            telegram_user_chat_id=123456789,
+        )
+        
+        mock_lookup_user.side_effect = lambda x: commenter if x == "a_kazemi" else mentioned_user
+        mock_convert_mentions.return_value = ("Comment", ["Mousavi_Shoushtari"])
+        mock_get_mentioned.return_value = [mentioned_user]
+        
+        # Make DM fail but group message succeed
+        def send_side_effect(chat_id, *args, **kwargs):
+            if chat_id == 123456789:  # DM
+                raise Exception("Chat not found")
+        
+        mock_send_message.side_effect = send_side_effect
+        
+        mock_issue = Mock()
+        mock_issue.fields.assignee = None
+        mock_jira_repo.jira.issue.return_value = mock_issue
+
+        body = {
+            "comment": {
+                "body": "Comment with [~m_Mousavi]",
+                "author": {"name": "a_kazemi"},
+            }
+        }
+
+        # Should not raise exception
+        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+
+
+class TestMediaGroupWithTelegramLink(unittest.TestCase):
+    """Test media group processing includes Telegram channel post link."""
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.telegram_post_data_store")
+    async def test_media_group_adds_telegram_link_to_description(
+        self, mock_data_store, mock_jira_repo
+    ):
+        """Test that media group processing adds Telegram link to issue description."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            process_media_group,
+        )
+
+        mock_issue = Mock()
+        mock_issue.key = "PCT-123"
+        mock_jira_repo.create_task.return_value = mock_issue
+        mock_data_store.load_data_store.return_value = {"100": {}}
+
+        messages = [
+            {
+                "message_id": 100,
+                "chat": {"id": -1001234567890},
+                "photo": [{"file_id": "test_file_id"}],
+            }
+        ]
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description="Original description",
+            task_type="Task",
+        )
+
+        await process_media_group(messages, task_data)
+
+        # Verify create_task was called with updated description
+        created_task = mock_jira_repo.create_task.call_args[0][0]
+        self.assertIn("h3. Telegram Channel Post:", created_task.description)
+        self.assertIn("https://t.me/c/1234567890/100", created_task.description)
+
+
+class TestSingleMessageWithTelegramLink(unittest.TestCase):
+    """Test single message processing includes Telegram channel post link."""
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.telegram_post_data_store")
+    async def test_single_message_adds_telegram_link_to_description(
+        self, mock_data_store, mock_jira_repo
+    ):
+        """Test that single message processing adds Telegram link to issue description."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            process_single_message,
+        )
+
+        mock_issue = Mock()
+        mock_issue.key = "PCT-456"
+        mock_jira_repo.create_task.return_value = mock_issue
+
+        channel_post = {
+            "message_id": 200,
+            "chat": {"id": -1009876543210},
+            "text": "Test message",
+        }
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description="Test description",
+            task_type="Task",
+        )
+
+        await process_single_message(channel_post, task_data)
+
+        # Verify create_task was called with updated description
+        created_task = mock_jira_repo.create_task.call_args[0][0]
+        self.assertIn("h3. Telegram Channel Post:", created_task.description)
+        self.assertIn("https://t.me/c/9876543210/200", created_task.description)
+
+
+class TestTelegramLinkHelperFunctions(unittest.TestCase):
+    """Test helper functions for building Telegram channel post links."""
+
+    def test_build_telegram_channel_post_link_removes_prefix(self):
+        """Test that build_telegram_channel_post_link removes -100 prefix correctly."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            build_telegram_channel_post_link,
+        )
+
+        link = build_telegram_channel_post_link(-1001234567890, 100)
+        
+        self.assertEqual(link, "https://t.me/c/1234567890/100")
+        self.assertNotIn("-100", link)
+
+    def test_build_telegram_channel_post_link_handles_positive_id(self):
+        """Test building link with positive channel ID (edge case)."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            build_telegram_channel_post_link,
+        )
+
+        link = build_telegram_channel_post_link(1234567890, 200)
+        
+        self.assertEqual(link, "https://t.me/c/1234567890/200")
+
+    def test_add_telegram_link_to_description_appends_to_existing(self):
+        """Test that add_telegram_link_to_description appends to existing description."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            add_telegram_link_to_description,
+        )
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description="Original description",
+            task_type="Task",
+        )
+        
+        add_telegram_link_to_description(task_data, "https://t.me/c/123/456")
+        
+        self.assertIn("Original description", task_data.description)
+        self.assertIn("h3. Telegram Channel Post:", task_data.description)
+        self.assertIn("https://t.me/c/123/456", task_data.description)
+
+    def test_add_telegram_link_to_empty_description(self):
+        """Test adding Telegram link when description is empty."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            add_telegram_link_to_description,
+        )
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description="",
+            task_type="Task",
+        )
+        
+        add_telegram_link_to_description(task_data, "https://t.me/c/789/012")
+        
+        self.assertIn("h3. Telegram Channel Post:", task_data.description)
+        self.assertIn("https://t.me/c/789/012", task_data.description)
+
+    def test_add_telegram_link_to_none_description(self):
+        """Test adding Telegram link when description is None."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            add_telegram_link_to_description,
+        )
+
+        task_data = TaskData(
+            project_key="PCT",
+            summary="Test",
+            description=None,
+            task_type="Task",
+        )
+        
+        add_telegram_link_to_description(task_data, "https://t.me/c/111/222")
+        
+        self.assertIn("h3. Telegram Channel Post:", task_data.description)
+        self.assertIn("https://t.me/c/111/222", task_data.description)
+
+    def test_format_issue_created_message_includes_both_links(self):
+        """Test that format_issue_created_message includes both Jira and Telegram links."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            format_issue_created_message,
+        )
+
+        message = format_issue_created_message("PCT-123", "https://t.me/c/456/789")
+        
+        self.assertIn("Jira Issue Created:", message)
+        self.assertIn("PCT-123", message)
+        self.assertIn("https://t.me/c/456/789", message)
+        self.assertIn("Jira:", message)
+        self.assertIn("Telegram:", message)
+
+    def test_extract_channel_info_from_forward_new_api(self):
+        """Test extracting channel info from new Bot API 6.9+ format."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            extract_channel_info_from_forward,
+        )
+
+        message = {
+            "forward_origin": {
+                "chat": {"id": -1001234567890},
+                "message_id": 100,
+            }
+        }
+        
+        channel_chat_id, message_id = extract_channel_info_from_forward(message)
+        
+        self.assertEqual(channel_chat_id, -1001234567890)
+        self.assertEqual(message_id, 100)
+
+    def test_extract_channel_info_from_forward_old_api(self):
+        """Test extracting channel info from old deprecated Bot API format."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            extract_channel_info_from_forward,
+        )
+
+        message = {
+            "forward_from_chat": {"id": -1009876543210},
+            "forward_from_message_id": 200,
+        }
+        
+        channel_chat_id, message_id = extract_channel_info_from_forward(message)
+        
+        self.assertEqual(channel_chat_id, -1009876543210)
+        self.assertEqual(message_id, 200)
+
+    def test_extract_channel_info_returns_none_when_missing(self):
+        """Test that extract_channel_info_from_forward returns None when info missing."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            extract_channel_info_from_forward,
+        )
+
+        message = {"text": "Regular message without forward info"}
+        
+        channel_chat_id, message_id = extract_channel_info_from_forward(message)
+        
+        self.assertIsNone(channel_chat_id)
+        self.assertIsNone(message_id)
+
+
+class TestCommentEventWithPersianText(unittest.IsolatedAsyncioTestCase):
+    """Test comment event handling with Persian/Unicode text and mentions."""
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.telegram_post_data_store")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.user_config")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.send_telegram_message")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.convert_jira_mentions_to_telegram")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.get_mentioned_user_configs")
+    async def test_comment_with_persian_text_and_mention_uses_no_parse_mode(
+        self,
+        mock_get_mentions,
+        mock_convert_mentions,
+        mock_send,
+        mock_user_config,
+        mock_data_store,
+        mock_jira_repo,
+    ):
+        """Test that comments with Persian text use parse_mode=None to avoid entity parsing errors."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            handle_comment_event,
+        )
+
+        # Setup mocks
+        mock_convert_mentions.return_value = (
+            "این رو میگین؟\n@Mousavi_Shoushtari",
+            ["Mousavi_Shoushtari"],
+        )
+        mock_get_mentions.return_value = []
+        
+        mock_issue = Mock()
+        mock_issue.fields.assignee = None
+        mock_jira_repo.jira.issue.return_value = mock_issue
+
+        body = {
+            "comment": {
+                "body": "این رو میگین؟\n[~m_Mousavi]",
+                "author": {"name": "a_kazemi"},
+            }
+        }
+
+        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+
+        # Verify send_telegram_message was called with parse_mode=None
+        mock_send.assert_called()
+        call_args = mock_send.call_args
+        self.assertEqual(call_args[1].get("parse_mode"), None)
+        
+        # Verify message contains Persian text and mention
+        message = call_args[0][1]
+        self.assertIn("این رو میگین؟", message)
+        self.assertIn("@Mousavi_Shoushtari", message)
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.telegram_post_data_store")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.user_config")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.send_telegram_message")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.convert_jira_mentions_to_telegram")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.get_mentioned_user_configs")
+    async def test_comment_without_persian_text_still_uses_no_parse_mode(
+        self,
+        mock_get_mentions,
+        mock_convert_mentions,
+        mock_send,
+        mock_user_config,
+        mock_data_store,
+        mock_jira_repo,
+    ):
+        """Test that all comments use parse_mode=None for consistency."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            handle_comment_event,
+        )
+
+        # Setup mocks
+        mock_convert_mentions.return_value = (
+            "Check this out @alikaz3mi",
+            ["alikaz3mi"],
+        )
+        mock_get_mentions.return_value = []
+        
+        mock_issue = Mock()
+        mock_issue.fields.assignee = None
+        mock_jira_repo.jira.issue.return_value = mock_issue
+
+        body = {
+            "comment": {
+                "body": "Check this out [~a_kazemi]",
+                "author": {"name": "m_Mousavi"},
+            }
+        }
+
+        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+
+        # Verify parse_mode=None is used
+        call_args = mock_send.call_args
+        self.assertEqual(call_args[1].get("parse_mode"), None)
+
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.telegram_post_data_store")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.user_config")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.send_telegram_message")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.convert_jira_mentions_to_telegram")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.get_mentioned_user_configs")
+    @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.lookup_user_config_by_jira_username")
+    async def test_comment_dm_uses_html_parse_mode(
+        self,
+        mock_lookup_user,
+        mock_get_mentions,
+        mock_convert_mentions,
+        mock_send,
+        mock_user_config,
+        mock_data_store,
+        mock_jira_repo,
+    ):
+        """Test that DM notifications use parse_mode='html' for proper formatting."""
+        from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+            handle_comment_event,
+        )
+
+        # Setup mocks
+        mock_convert_mentions.return_value = (
+            "Test comment @mentioned_user",
+            ["mentioned_user"],
+        )
+        
+        mock_mentioned_user = Mock()
+        mock_mentioned_user.telegram_user_chat_id = 123456789
+        mock_mentioned_user.telegram_username = "mentioned_user"
+        mock_mentioned_user.jira_username = "mentioned_jira"
+        
+        mock_get_mentions.return_value = [mock_mentioned_user]
+        mock_lookup_user.return_value = None  # Commenter not found
+        
+        mock_issue = Mock()
+        mock_issue.fields.assignee = None
+        mock_jira_repo.jira.issue.return_value = mock_issue
+
+        body = {
+            "comment": {
+                "body": "Test comment [~mentioned_jira]",
+                "author": {"name": "a_kazemi"},
+            }
+        }
+
+        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+
+        # Find the DM call (second call)
+        self.assertEqual(mock_send.call_count, 2)
+        dm_call = mock_send.call_args_list[1]
+        
+        # Verify DM uses html parse_mode
+        self.assertEqual(dm_call[1].get("parse_mode"), "html")
+        
+        # Verify DM message structure
+        dm_message = dm_call[0][1]
+        self.assertIn("<b>", dm_message)  # HTML formatting
+        self.assertIn("mentioned", dm_message)
+
+
 if __name__ == "__main__":
     unittest.main()

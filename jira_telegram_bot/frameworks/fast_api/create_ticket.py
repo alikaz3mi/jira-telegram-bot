@@ -108,6 +108,75 @@ def lookup_user_config_by_jira_username(jira_username: str):
 
     return None
 
+
+def build_telegram_channel_post_link(channel_chat_id: int, message_id: int) -> str:
+    """Build a Telegram channel post link from chat_id and message_id.
+    
+    Args:
+        channel_chat_id: The channel chat ID (with -100 prefix)
+        message_id: The message ID
+        
+    Returns:
+        The full Telegram channel post URL
+    """
+    # Format: https://t.me/c/{channel_id_without_prefix}/{message_id}
+    # Remove -100 prefix from channel_chat_id for the link
+    channel_id_for_link = str(channel_chat_id).replace("-100", "")
+    return f"https://t.me/c/{channel_id_for_link}/{message_id}"
+
+
+def add_telegram_link_to_description(task_data: TaskData, telegram_post_link: str) -> None:
+    """Add Telegram channel post link to task description.
+    
+    Args:
+        task_data: The TaskData object to update
+        telegram_post_link: The Telegram post URL to add
+    """
+    current_description = task_data.description or ""
+    task_data.description = f"{current_description}\n\nh3. Telegram Channel Post:\n{telegram_post_link}"
+
+
+def format_issue_created_message(issue_key: str, telegram_post_link: str) -> str:
+    """Format the issue created message with both Jira and Telegram links.
+    
+    Args:
+        issue_key: The Jira issue key
+        telegram_post_link: The Telegram post URL
+        
+    Returns:
+        Formatted message string
+    """
+    issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+    return f"Jira Issue Created:\n\nJira: {issue_link}\nTelegram: {telegram_post_link}"
+
+
+def extract_channel_info_from_forward(message: Dict[str, Any]) -> tuple[int | None, int | None]:
+    """Extract channel chat_id and message_id from a forwarded message.
+    
+    Supports both old and new Telegram Bot API formats.
+    
+    Args:
+        message: The forwarded message dict
+        
+    Returns:
+        Tuple of (channel_chat_id, channel_message_id) or (None, None) if not found
+    """
+    # New Bot API 6.9+ format
+    if "forward_origin" in message:
+        forward_origin = message["forward_origin"]
+        channel_chat_id = forward_origin.get("chat", {}).get("id")
+        channel_message_id = forward_origin.get("message_id")
+        return channel_chat_id, channel_message_id
+    
+    # Old deprecated format
+    if "forward_from_chat" in message and "forward_from_message_id" in message:
+        channel_chat_id = message["forward_from_chat"].get("id")
+        channel_message_id = message["forward_from_message_id"]
+        return channel_chat_id, channel_message_id
+    
+    return None, None
+
+
 JIRA_PROJECT_KEY = "PCT"
 MEDIA_GROUP_STORE: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 MEDIA_GROUP_METADATA: Dict[str, float] = {}
@@ -178,8 +247,17 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
                     token=TELEGRAM_SETTINGS.HOOK_TOKEN,
                 )
 
+    # Build Telegram channel post link and add to description
+    channel_chat_id = messages[0]["chat"]["id"]
+    channel_message_id = messages[0]["message_id"]
+    telegram_post_link = build_telegram_channel_post_link(channel_chat_id, channel_message_id)
+    add_telegram_link_to_description(task_data, telegram_post_link)
+    
+    # Create the Jira task
     issue = jira_repository.create_task(task_data)
-    issue_message = f"Task created (media group) successfully! Link: {JIRA_SETTINGS.domain.scheme}://{JIRA_SETTINGS.domain.host}/browse/{issue.key}"
+    
+    # Format success message
+    issue_message = f"Task created (media group) successfully!\n\nJira: {JIRA_SETTINGS.domain.scheme}://{JIRA_SETTINGS.domain.host}/browse/{issue.key}\nTelegram: {telegram_post_link}"
     LOGGER.info(issue_message)
     
     # Update issue_key in data store for all messages in the group
@@ -194,7 +272,6 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
     retry_delay = 1.0  # seconds
     group_chat_id = None
     reply_message_id = None
-    channel_chat_id = messages[0]["chat"]["id"]
     
     for attempt in range(max_retries):
         data_store = telegram_post_data_store.load_data_store()
@@ -287,8 +364,17 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
                 token=TELEGRAM_SETTINGS.HOOK_TOKEN,
             )
 
+    # Build Telegram channel post link and add to description
+    channel_chat_id = channel_post["chat"]["id"]
+    channel_message_id = channel_post["message_id"]
+    telegram_post_link = build_telegram_channel_post_link(channel_chat_id, channel_message_id)
+    add_telegram_link_to_description(task_data, telegram_post_link)
+    
+    # Create the Jira task
     issue = jira_repository.create_task(task_data)
-    issue_message = f"Task created (single) successfully! Link: {JIRA_SETTINGS.domain}/browse/{issue.key}"
+    
+    # Format success message
+    issue_message = f"Task created (single) successfully!\n\nJira: {JIRA_SETTINGS.domain}/browse/{issue.key}\nTelegram: {telegram_post_link}"
     LOGGER.info(issue_message)
     chat_id = channel_post["chat"]["id"]
 
@@ -322,8 +408,9 @@ async def handle_comment_event(
     user_cfg_for_comment = lookup_user_config_by_jira_username(jira_username)
     telegram_username = user_cfg_for_comment.telegram_username if user_cfg_for_comment else None
 
-    # Skip if this is a comment we posted from Telegram
-    if "h6. Comment from" in comment_body:
+    # Skip if this is a comment we posted from Telegram (comments from Telegram start with this marker)
+    if comment_body.strip().startswith("h6. Comment from"):
+        LOGGER.debug(f"Skipping Telegram-originated comment on {issue_key}")
         return
 
     # Convert Jira mentions to Telegram mentions
@@ -332,16 +419,22 @@ async def handle_comment_event(
     # Send notification to group chat with converted mentions
     commenter_display = f"@{telegram_username}" if telegram_username else jira_username
     comment_content = f"Comment from {commenter_display}:\n\n{converted_comment}"
+    # Use plain text (no parse_mode) to avoid entity parsing errors with Persian/Unicode text and @mentions
     message = (
-        f"*💬 Comment Added*\n\nTask {issue_key} has a new comment:\n\n{comment_content}"
+        f"💬 Comment Added\n\nTask {issue_key} has a new comment:\n\n{comment_content}"
     )
-    send_telegram_message(
-        group_chat_id,
-        message,
-        reply_message_id=reply_message_id,
-        token=TELEGRAM_SETTINGS.HOOK_TOKEN
-    )
-    LOGGER.info(f"Sent comment notification for {issue_key}")
+    
+    try:
+        send_telegram_message(
+            group_chat_id,
+            message,
+            reply_message_id=reply_message_id,
+            parse_mode=None,
+            token=TELEGRAM_SETTINGS.HOOK_TOKEN
+        )
+        LOGGER.info(f"Sent comment notification to group {group_chat_id} for {issue_key}")
+    except Exception as e:
+        LOGGER.error(f"Failed to send comment notification to group {group_chat_id} for {issue_key}: {e}")
     
     # Get mentioned users from the comment
     mentioned_user_configs = get_mentioned_user_configs(comment_body, user_config)
@@ -366,13 +459,16 @@ async def handle_comment_event(
                     f"<b>Link:</b> {issue_link}"
                 )
                 
-                send_telegram_message(
-                    assignee_cfg.telegram_user_chat_id,
-                    dm_message,
-                    parse_mode="html",
-                    token=TELEGRAM_SETTINGS.TOKEN,
-                )
-                LOGGER.info(f"Sent comment DM to assignee {assignee_jira_username} for {issue_key}")
+                try:
+                    send_telegram_message(
+                        assignee_cfg.telegram_user_chat_id,
+                        dm_message,
+                        parse_mode="html",
+                        token=TELEGRAM_SETTINGS.TOKEN,
+                    )
+                    LOGGER.info(f"Sent comment DM to assignee {assignee_jira_username} for {issue_key}")
+                except Exception as dm_error:
+                    LOGGER.warning(f"Failed to send DM to assignee {assignee_jira_username} (chat_id={assignee_cfg.telegram_user_chat_id}): {dm_error}. User may not have started bot.")
         
         # Send DM to all mentioned users (excluding commenter and assignee who already got notified)
         for mentioned_cfg in mentioned_user_configs:
@@ -396,13 +492,16 @@ async def handle_comment_event(
                     f"<b>Link:</b> {issue_link}"
                 )
                 
-                send_telegram_message(
-                    mentioned_telegram_chat_id,
-                    dm_message,
-                    parse_mode="html",
-                    token=TELEGRAM_SETTINGS.TOKEN,
-                )
-                LOGGER.info(f"Sent mention notification to @{mentioned_telegram_username} for {issue_key}")
+                try:
+                    send_telegram_message(
+                        mentioned_telegram_chat_id,
+                        dm_message,
+                        parse_mode="html",
+                        token=TELEGRAM_SETTINGS.TOKEN,
+                    )
+                    LOGGER.info(f"Sent mention notification to @{mentioned_telegram_username} for {issue_key}")
+                except Exception as dm_error:
+                    LOGGER.warning(f"Failed to send mention DM to @{mentioned_telegram_username} (chat_id={mentioned_telegram_chat_id}): {dm_error}. User may not have started bot.")
                 
     except Exception as e:
         LOGGER.warning(f"Could not send notification DMs for {issue_key}: {e}")
@@ -875,8 +974,18 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
         
         # Send message only if issue is not pending
         if issue_key != "pending":
-            issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
-            issue_message = f"Jira Issue Created:\nLink: {issue_link}"
+            # Extract channel info from the forwarded message
+            channel_chat_id, channel_message_id = extract_channel_info_from_forward(reply_to_message)
+            
+            # Build message with both Jira and Telegram links if available
+            if channel_chat_id and channel_message_id:
+                telegram_post_link = build_telegram_channel_post_link(channel_chat_id, channel_message_id)
+                issue_message = format_issue_created_message(issue_key, telegram_post_link)
+            else:
+                # Fallback to Jira link only
+                issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+                issue_message = f"Jira Issue Created:\nLink: {issue_link}"
+            
             send_telegram_message(
                 group_chat_id,
                 issue_message,
@@ -884,7 +993,7 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
                 token=TELEGRAM_SETTINGS.HOOK_TOKEN
             )
             LOGGER.info(
-                f"Sent Jira issue link to group chat_id={group_chat_id}: {issue_link}",
+                f"Sent Jira issue link to group chat_id={group_chat_id}: {issue_key}",
             )
         else:
             LOGGER.info(

@@ -128,7 +128,10 @@ def send_telegram_message(
 ):
     """Send a message to a Telegram chat."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+    payload = {"chat_id": chat_id, "text": text}
+    # Only add parse_mode if it's not None
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_message_id:
         payload["reply_parameters"] = {"message_id": reply_message_id}
     resp = requests.post(url, json=payload)
