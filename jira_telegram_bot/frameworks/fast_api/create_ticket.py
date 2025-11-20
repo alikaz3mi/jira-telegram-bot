@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict
+from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import List
@@ -968,14 +969,16 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
         if str(original_message_id) in data_local:
             entry = data_local[str(original_message_id)]
             entry["group_chat_id"] = group_chat_id
-            entry["metadata"]["forwarded_at"] = int(time.time())
+            forwarded_time = int(time.time())
+            entry["metadata"]["forwarded_at"] = forwarded_time
+            entry["metadata"]["forwarded_at_str"] = datetime.fromtimestamp(forwarded_time).strftime("%Y/%m/%d %H:%M")
             entry["reply_message_id"] = message_id
             telegram_post_data_store.save_data_store(data_local)
         
         # Send message only if issue is not pending
         if issue_key != "pending":
             # Extract channel info from the forwarded message
-            channel_chat_id, channel_message_id = extract_channel_info_from_forward(reply_to_message)
+            channel_chat_id, channel_message_id = extract_channel_info_from_forward(message)
             
             # Build message with both Jira and Telegram links if available
             if channel_chat_id and channel_message_id:

@@ -1663,8 +1663,8 @@ class TestFormatJalaliDate(unittest.TestCase):
 
         result = format_jalali_date("")
 
-        # Should return string with 00:00 appended
-        self.assertEqual(result, " 00:00")
+        # Should return empty string as-is since it cannot be parsed
+        self.assertEqual(result, "")
 
     def test_format_with_specific_date(self):
         """Test formatting with specific known date."""

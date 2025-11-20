@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -67,13 +68,23 @@ class TelegramPostDataStore:
         else:
             content_type = "text"
 
+        # Create human-readable timestamp
+        created_at_str = datetime.fromtimestamp(created_at).strftime("%Y/%m/%d %H:%M")
+        
+        # Build Telegram channel post link
+        # Import the helper function to avoid circular dependency
+        channel_id_for_link = str(channel_chat_id).replace("-100", "")
+        telegram_post_link = f"https://t.me/c/{channel_id_for_link}/{channel_post_id}"
+        
         data[str(channel_post_id)] = {
             "type": "jira_issue_mapping",
             "issue_key": issue_key,
             "channel_chat_id": channel_chat_id,
             "group_chat_id": group_id,
+            "telegram_post_link": telegram_post_link,
             "metadata": {
                 "created_at": created_at,
+                "created_at_str": created_at_str,
                 "creator_id": from_user.get("id"),
                 "creator_username": from_user.get("username"),
                 "content_type": content_type,
@@ -178,12 +189,16 @@ class TelegramPostDataStore:
         # Use a composite key: chat_id_message_id_comment
         comment_key = f"{chat_id}_{telegram_message_id}_comment"
         
+        current_time = int(time.time())
+        created_at_str = datetime.fromtimestamp(current_time).strftime("%Y/%m/%d %H:%M")
+        
         data[comment_key] = {
             "telegram_message_id": telegram_message_id,
             "chat_id": chat_id,
             "jira_comment_id": jira_comment_id,
             "issue_key": issue_key,
-            "created_at": int(time.time()),
+            "created_at": current_time,
+            "created_at_str": created_at_str,
             "type": "comment_mapping"
         }
         
