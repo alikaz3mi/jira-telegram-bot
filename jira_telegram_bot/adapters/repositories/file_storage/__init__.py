@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import datetime
 from typing import Any
 from typing import Dict
 from typing import Optional
@@ -67,13 +68,23 @@ class TelegramPostDataStore:
         else:
             content_type = "text"
 
+        # Create human-readable timestamp
+        created_at_str = datetime.fromtimestamp(created_at).strftime("%Y/%m/%d %H:%M")
+        
+        # Build Telegram channel post link
+        # Import the helper function to avoid circular dependency
+        channel_id_for_link = str(channel_chat_id).replace("-100", "")
+        telegram_post_link = f"https://t.me/c/{channel_id_for_link}/{channel_post_id}"
+        
         data[str(channel_post_id)] = {
             "type": "jira_issue_mapping",
             "issue_key": issue_key,
             "channel_chat_id": channel_chat_id,
             "group_chat_id": group_id,
+            "telegram_post_link": telegram_post_link,
             "metadata": {
                 "created_at": created_at,
+                "created_at_str": created_at_str,
                 "creator_id": from_user.get("id"),
                 "creator_username": from_user.get("username"),
                 "content_type": content_type,
@@ -113,11 +124,37 @@ class TelegramPostDataStore:
         data_store: Dict[str, Any],
         issue_key: str,
     ) -> Optional[Dict[str, Any]]:
-        """Find the group chat info for a given issue key."""
+        """Find the group chat info for a given issue key.
+        
+        Prioritizes entries with reply_message_id and where group_chat_id differs
+        from channel_chat_id (indicating the message was forwarded to a group).
+        This ensures webhook notifications reply to the correct thread.
+        """
+        candidates = []
         for entry in data_store.values():
             if entry.get("issue_key") == issue_key:
+                candidates.append(entry)
+        
+        if not candidates:
+            return None
+        
+        # Prioritize entries with reply_message_id and different group_chat_id
+        for entry in candidates:
+            has_reply_id = "reply_message_id" in entry
+            group_id = entry.get("group_chat_id")
+            channel_id = entry.get("channel_chat_id")
+            is_forwarded = group_id and channel_id and group_id != channel_id
+            
+            if has_reply_id and is_forwarded:
                 return entry
-        return None
+        
+        # Fallback to any entry with reply_message_id
+        for entry in candidates:
+            if "reply_message_id" in entry:
+                return entry
+        
+        # Last resort: return first match
+        return candidates[0]
 
     def find_channel_post_by_issue(
         self,
@@ -129,3 +166,58 @@ class TelegramPostDataStore:
             if entry.get("issue_key") == issue_key:
                 return entry
         return None
+
+    def store_comment_mapping(
+        self,
+        telegram_message_id: int,
+        chat_id: int,
+        jira_comment_id: str,
+        issue_key: str,
+    ):
+        """Store mapping between Telegram message ID and Jira comment ID.
+        
+        This mapping enables editing Telegram messages to update corresponding Jira comments.
+        
+        Args:
+            telegram_message_id: The Telegram message ID
+            chat_id: The chat ID where the message was sent
+            jira_comment_id: The Jira comment ID (from API response)
+            issue_key: The Jira issue key
+        """
+        data = self.load_data_store()
+        
+        # Use a composite key: chat_id_message_id_comment
+        comment_key = f"{chat_id}_{telegram_message_id}_comment"
+        
+        current_time = int(time.time())
+        created_at_str = datetime.fromtimestamp(current_time).strftime("%Y/%m/%d %H:%M")
+        
+        data[comment_key] = {
+            "telegram_message_id": telegram_message_id,
+            "chat_id": chat_id,
+            "jira_comment_id": jira_comment_id,
+            "issue_key": issue_key,
+            "created_at": current_time,
+            "created_at_str": created_at_str,
+            "type": "comment_mapping"
+        }
+        
+        self.save_data_store(data)
+
+    def find_comment_mapping(
+        self,
+        telegram_message_id: int,
+        chat_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Find the Jira comment ID for a given Telegram message.
+        
+        Args:
+            telegram_message_id: The Telegram message ID
+            chat_id: The chat ID
+            
+        Returns:
+            Dict containing jira_comment_id and issue_key, or None if not found
+        """
+        data = self.load_data_store()
+        comment_key = f"{chat_id}_{telegram_message_id}_comment"
+        return data.get(comment_key)

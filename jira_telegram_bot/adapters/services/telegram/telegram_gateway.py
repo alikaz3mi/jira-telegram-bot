@@ -128,7 +128,10 @@ def send_telegram_message(
 ):
     """Send a message to a Telegram chat."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+    payload = {"chat_id": chat_id, "text": text}
+    # Only add parse_mode if it's not None
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_message_id:
         payload["reply_parameters"] = {"message_id": reply_message_id}
     resp = requests.post(url, json=payload)
@@ -145,16 +148,31 @@ async def fetch_and_store_media(
     filename: str,
     token: str = None,
 ):
-    """Fetch media from Telegram and store it in the provided storage list."""
-    media_file = await media.get_file()
-    file_url = (
-        f"https://api.telegram.org/file/bot{token}/{media_file.file_path}"
-    )
-    async with session.get(file_url) as response:
-        if response.status == 200:
-            buffer = BytesIO(await response.read())
-            storage_list.append((filename, buffer))
-        else:
-            LOGGER.error(
-                f"Failed to fetch media: {media_file.file_path} (status {response.status})",
-            )
+    """Fetch media from Telegram and store it in the provided storage list.
+    
+    Gracefully handles errors by logging and skipping files that cannot be downloaded.
+    Common reasons for failure:
+    - File too large (>20MB for Bot API getFile)
+    - Expired file_id
+    - Network issues
+    """
+    try:
+        media_file = await media.get_file()
+        file_url = (
+            f"https://api.telegram.org/file/bot{token}/{media_file.file_path}"
+        )
+        async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            if response.status == 200:
+                buffer = BytesIO(await response.read())
+                storage_list.append((filename, buffer))
+                LOGGER.info(f"Successfully fetched media: {filename}")
+            else:
+                LOGGER.error(
+                    f"Failed to fetch media: {media_file.file_path} (status {response.status})",
+                )
+    except Exception as e:
+        LOGGER.error(
+            f"Error fetching media {filename}: {str(e)}. Skipping attachment.",
+        )
+        # Don't re-raise - we want to continue creating the ticket even if media fails
+

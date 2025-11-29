@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Dict
 from typing import List
 from typing import Optional
 
@@ -18,8 +19,10 @@ class UserConfig(BaseModel):
     gitlab_username: Optional[str] = None
     google_sheet_name: Optional[str] = None
     email: Optional[str] = None
+    telegram_id: Optional[int] = None
     user_components: Optional[dict] = None
     weekly_capacity: Optional[dict] = None
+    board_roles: Optional[Dict[str, str]] = None  # Board name -> role (admin, member, viewer, etc.)
     project: FieldConfig = FieldConfig()
     component: FieldConfig = FieldConfig()
     task_type: FieldConfig = FieldConfig()
