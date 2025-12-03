@@ -233,7 +233,7 @@ class JiraDataService(JiraDataServiceInterface):
             release=release_list,
             original_estimate=original_estimate,
             remaining_estimate=remaining_estimate,
-            root_cause=getattr(issue.fields, "customfield_10400", None),
+            root_cause=str(getattr(issue.fields, "customfield_10601", None)) if getattr(issue.fields, "customfield_10601", None) else None,
             worklog_entries=worklog_entries,
             linked_issues=linked_issues,
         )
