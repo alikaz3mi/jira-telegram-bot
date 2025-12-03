@@ -234,6 +234,12 @@ class JiraDataService(JiraDataServiceInterface):
             original_estimate=original_estimate,
             remaining_estimate=remaining_estimate,
             root_cause=str(getattr(issue.fields, "customfield_10601", None)) if getattr(issue.fields, "customfield_10601", None) else None,
+            fix_versions=[
+                v.name for v in getattr(issue.fields, "fixVersions", []) or []
+            ],
+            affected_versions=[
+                v.name for v in getattr(issue.fields, "versions", []) or []
+            ],
             worklog_entries=worklog_entries,
             linked_issues=linked_issues,
         )

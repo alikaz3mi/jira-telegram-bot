@@ -58,6 +58,8 @@ class JiraTaskModel(Base):
     original_estimate = Column(Text, nullable=True)
     remaining_estimate = Column(Text, nullable=True)
     root_cause = Column(Text, nullable=True)
+    fix_versions = Column(ARRAY(String), nullable=True)
+    affected_versions = Column(ARRAY(String), nullable=True)
     worklog_entries = Column(JSON, nullable=True)
     linked_issues = Column(JSON, nullable=True)
     last_synced = Column(DateTime, nullable=True)
@@ -249,6 +251,8 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             original_estimate=issue.original_estimate,
             remaining_estimate=issue.remaining_estimate,
             root_cause=issue.root_cause,
+            fix_versions=issue.fix_versions,
+            affected_versions=issue.affected_versions,
             worklog_entries=worklog_data,
             linked_issues=linked_data,
             last_synced=datetime.now(),
@@ -302,6 +306,8 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             original_estimate=model.original_estimate,
             remaining_estimate=model.remaining_estimate,
             root_cause=model.root_cause,
+            fix_versions=model.fix_versions or [],
+            affected_versions=model.affected_versions or [],
             worklog_entries=worklog_entries,
             linked_issues=linked_issues,
         )

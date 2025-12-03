@@ -67,6 +67,8 @@ class JiraIssueDetail(BaseModel):
     original_estimate: Optional[str] = Field(default=None, description="Original time estimate")
     remaining_estimate: Optional[str] = Field(default=None, description="Remaining time estimate")
     root_cause: Optional[str] = Field(default=None, description="Root cause for bugs")
+    fix_versions: List[str] = Field(default_factory=list, description="Fix versions for the issue")
+    affected_versions: List[str] = Field(default_factory=list, description="Affected versions for the issue")
     worklog_entries: List[WorklogEntry] = Field(default_factory=list, description="Worklog entries")
     linked_issues: List[LinkedIssue] = Field(default_factory=list, description="Linked issues")
 
