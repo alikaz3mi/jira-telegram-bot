@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import urllib
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import Column
 from sqlalchemy import DateTime
@@ -20,6 +20,7 @@ from jira_telegram_bot.entities.jira_report import JiraIssueDetail
 from jira_telegram_bot.entities.jira_report import LinkedIssue
 from jira_telegram_bot.entities.jira_report import ProjectReport
 from jira_telegram_bot.entities.jira_report import WorklogEntry
+from jira_telegram_bot.entities.sync_status import SyncStatus
 from jira_telegram_bot.use_cases.interfaces.database_connection_interface import DatabaseConnectionInterface
 from jira_telegram_bot.use_cases.interfaces.jira_report_repository_interface import JiraReportRepositoryInterface
 
@@ -56,9 +57,27 @@ class JiraTaskModel(Base):
     release = Column(ARRAY(String), nullable=True)
     original_estimate = Column(Text, nullable=True)
     remaining_estimate = Column(Text, nullable=True)
+    root_cause = Column(Text, nullable=True)
     worklog_entries = Column(JSON, nullable=True)
     linked_issues = Column(JSON, nullable=True)
     last_synced = Column(DateTime, nullable=True)
+
+
+class SyncStatusModel(Base):
+    """SQLAlchemy ORM model for sync status tracking."""
+
+    __tablename__ = "sync_status"
+
+    project_key = Column(String, primary_key=True)
+    last_full_sync = Column(DateTime, nullable=True)
+    last_incremental_sync = Column(DateTime, nullable=True)
+    last_sync_status = Column(String(20), nullable=False, default="never_synced")
+    issues_synced = Column(Integer, nullable=False, default=0)
+    issues_failed = Column(Integer, nullable=False, default=0)
+    sync_duration_seconds = Column(Float, nullable=True)
+    errors = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
 
 class JiraReportRepository(JiraReportRepositoryInterface):
@@ -229,6 +248,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             release=issue.release,
             original_estimate=issue.original_estimate,
             remaining_estimate=issue.remaining_estimate,
+            root_cause=issue.root_cause,
             worklog_entries=worklog_data,
             linked_issues=linked_data,
             last_synced=datetime.now(),
@@ -281,6 +301,76 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             release=model.release or [],
             original_estimate=model.original_estimate,
             remaining_estimate=model.remaining_estimate,
+            root_cause=model.root_cause,
             worklog_entries=worklog_entries,
             linked_issues=linked_issues,
         )
+
+    async def get_sync_status(self, project_key: str) -> Optional[SyncStatus]:
+        """Retrieve sync status for a project.
+        
+        Args:
+            project_key: The Jira project key.
+            
+        Returns:
+            Sync status if exists, None otherwise.
+        """
+        session = self.db_connection.get_session()
+        try:
+            model = session.query(SyncStatusModel).filter(
+                SyncStatusModel.project_key == project_key
+            ).first()
+            
+            if not model:
+                return None
+            
+            return SyncStatus(
+                project_key=model.project_key,
+                last_full_sync=model.last_full_sync,
+                last_incremental_sync=model.last_incremental_sync,
+                last_sync_status=model.last_sync_status,
+                issues_synced=model.issues_synced,
+                issues_failed=model.issues_failed,
+                sync_duration_seconds=model.sync_duration_seconds,
+                errors=model.errors,
+                created_at=model.created_at,
+                updated_at=model.updated_at,
+            )
+            
+        except Exception as e:
+            LOGGER.error(f"Failed to get sync status for {project_key}: {e}")
+            raise
+        finally:
+            session.close()
+
+    async def update_sync_status(self, sync_status: SyncStatus) -> None:
+        """Update sync status for a project.
+        
+        Args:
+            sync_status: Updated sync status to store.
+        """
+        session = self.db_connection.get_session()
+        try:
+            model = SyncStatusModel(
+                project_key=sync_status.project_key,
+                last_full_sync=sync_status.last_full_sync,
+                last_incremental_sync=sync_status.last_incremental_sync,
+                last_sync_status=sync_status.last_sync_status,
+                issues_synced=sync_status.issues_synced,
+                issues_failed=sync_status.issues_failed,
+                sync_duration_seconds=sync_status.sync_duration_seconds,
+                errors=sync_status.errors,
+                created_at=sync_status.created_at,
+                updated_at=datetime.now(),
+            )
+            
+            session.merge(model)
+            session.commit()
+            LOGGER.info(f"Updated sync status for {sync_status.project_key}")
+            
+        except Exception as e:
+            session.rollback()
+            LOGGER.error(f"Failed to update sync status: {e}")
+            raise
+        finally:
+            session.close()

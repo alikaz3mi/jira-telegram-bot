@@ -36,9 +36,15 @@ This documentation is organized by features and infrastructure components to mak
 - **example_configurations.md** - Example configurations
 - **metrics_system_overview.md** - System overview
 
+### 📈 [PO/PM Dashboards](features/po-pm-dashboards/)
+- **DASHBOARD_ARCHITECTURE.md** - Complete architecture for Product Owner and Project Manager dashboards combining Jira tasks and Git metrics
+
 ## 🏗️ Infrastructure
 
-### 🗄️ [MongoDB](infrastructure/mongodb/)
+### 🗄️ [Database](infrastructure/)
+- **postgresql-jira-sync.md** - PostgreSQL Jira task synchronization complete guide
+- **postgresql-sync-enhancement-plan.md** - Enhancement roadmap and deprecation plan
+- **VERIFICATION-REPORT.md** - Deprecation verification and migration status
 - **mongodb-architecture-diagrams.md** - MongoDB architecture diagrams
 - **mongodb-database-ecosystem.md** - Database ecosystem overview
 

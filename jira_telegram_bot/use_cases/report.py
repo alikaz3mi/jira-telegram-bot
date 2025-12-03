@@ -1,6 +1,47 @@
+"""
+⚠️  DEPRECATED - DO NOT USE THIS FILE ⚠️
+
+This file violates Clean Architecture principles and is NO LONGER USED.
+
+DEPRECATION DATE: December 3, 2025
+REMOVAL TARGET: Version 2.0.0
+
+VIOLATIONS:
+1. Direct database connections at module level (should be in adapters/)
+2. ORM models in use_cases layer (should be in adapters/repositories/)
+3. No dependency injection (hard-coded global variables)
+4. Use cases importing framework code (SQLAlchemy)
+5. Global state makes testing impossible
+
+✅ USE INSTEAD:
+- GenerateJiraReportUseCase: jira_telegram_bot/use_cases/generate_jira_report_use_case.py
+- JiraReportRepository: jira_telegram_bot/adapters/repositories/postgres/jira_report_repository.py
+- Execution: scripts/generate_reports_once.py or scripts/run_scheduled_reports.py
+
+MIGRATION EXAMPLE:
+    # Old way (DON'T USE):
+    from jira_telegram_bot.use_cases.report import get_tasks_info, store_tasks_in_db
+    tasks = get_tasks_info("PROJ")
+    store_tasks_in_db(tasks)
+
+    # New way (CORRECT):
+    import asyncio
+    from jira_telegram_bot.app_container import get_container
+    from jira_telegram_bot.use_cases.generate_jira_report_use_case import GenerateJiraReportUseCase
+    
+    async def sync():
+        container = get_container()
+        use_case = container[GenerateJiraReportUseCase]
+        report = await use_case.generate_project_report("PROJ")
+    
+    asyncio.run(sync())
+
+SEE: docs/infrastructure/postgresql-sync-enhancement-plan.md
+"""
 from __future__ import annotations
 
 import urllib
+import warnings
 
 import pandas as pd
 from sqlalchemy import Column
@@ -20,6 +61,15 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
+
+# Show deprecation warning when imported
+warnings.warn(
+    "jira_telegram_bot.use_cases.report is deprecated and violates Clean Architecture. "
+    "Use GenerateJiraReportUseCase instead. "
+    "See docs/infrastructure/postgresql-sync-enhancement-plan.md",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Legacy direct instantiation - should be injected via DI
 _postgres_settings = PostgresSettings()

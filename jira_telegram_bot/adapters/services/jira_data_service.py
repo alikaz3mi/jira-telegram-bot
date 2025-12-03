@@ -90,6 +90,65 @@ class JiraDataService(JiraDataServiceInterface):
                 epics[epic_issue.key] = epic_issue.fields.summary
 
         return await self._convert_to_detailed_issue(issue, epics)
+    
+    async def fetch_updated_issues(
+        self,
+        project_key: str,
+        since: datetime,
+    ) -> List[JiraIssueDetail]:
+        """Fetch only issues updated since a specific timestamp.
+        
+        This is more efficient than fetching all issues for incremental sync.
+        
+        Args:
+            project_key: The Jira project key.
+            since: Fetch issues updated after this timestamp.
+            
+        Returns:
+            List of detailed issue information for updated issues.
+        """
+        LOGGER.info(
+            f"Fetching issues updated since {since.strftime('%Y-%m-%d %H:%M')} "
+            f"for project {project_key}"
+        )
+        
+        # Build JQL for updated issues
+        since_str = since.strftime('%Y-%m-%d %H:%M')
+        jql = f"project = {project_key} AND updated >= '{since_str}' ORDER BY updated DESC"
+        
+        start_at = 0
+        max_results = 100
+        issues = []
+
+        while True:
+            batch = self._jira_repository.search_issues(
+                jql,
+                start_at=start_at,
+                max_results=max_results,
+                expand="changelog,worklog,issuelinks"
+            )
+            if not batch:
+                break
+            issues.extend(batch)
+            if len(batch) < max_results:
+                break
+            start_at += max_results
+
+        LOGGER.info(
+            f"Found {len(issues)} updated issues for project {project_key}"
+        )
+        
+        epics = self._extract_epics(issues)
+        detailed_issues = []
+
+        for issue in issues:
+            if issue.fields.issuetype.name == "Epic":
+                continue
+                
+            detailed_issue = await self._convert_to_detailed_issue(issue, epics)
+            detailed_issues.append(detailed_issue)
+
+        return detailed_issues
 
     def _extract_epics(self, issues) -> dict:
         """Extract epic information from issues list.
@@ -174,6 +233,7 @@ class JiraDataService(JiraDataServiceInterface):
             release=release_list,
             original_estimate=original_estimate,
             remaining_estimate=remaining_estimate,
+            root_cause=getattr(issue.fields, "customfield_10400", None),
             worklog_entries=worklog_entries,
             linked_issues=linked_issues,
         )

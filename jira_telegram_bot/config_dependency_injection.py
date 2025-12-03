@@ -139,6 +139,7 @@ from jira_telegram_bot.use_cases.generate_user_story import GenerateUserStoryUse
 from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
     HandleJiraWebhookUseCase,
 )
+from jira_telegram_bot.use_cases.sync_jira_issue_use_case import SyncJiraIssueUseCase
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
     AIServiceProtocol,
 )
@@ -623,6 +624,12 @@ def _configure_use_cases(container: Container) -> None:
             report_use_case=c[GenerateJiraReportUseCase],
             scheduler_service=c[SchedulerServiceInterface],
             project_keys=["PARSCHAT", "PCT"],
+        ),
+    )
+    container[SyncJiraIssueUseCase] = Singleton(
+        lambda c: SyncJiraIssueUseCase(
+            jira_service=c[JiraDataServiceInterface],
+            report_repository=c[JiraReportRepositoryInterface],
         ),
     )
     container[GetCurrentStoriesUseCase] = Singleton(

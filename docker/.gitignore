@@ -1,0 +1,22 @@
+# .gitignore entries for Docker PostgreSQL setup
+
+# Environment files with sensitive data
+docker/.env
+
+# PostgreSQL data and logs
+docker/postgres/data/
+docker/postgres/pg_log/
+
+# Backup files
+docker/backups/
+*.sql.backup
+*.dump
+
+# pgAdmin data
+docker/postgres/pgadmin/data/
+docker/postgres/pgadmin/sessions/
+
+# Docker volumes (managed by Docker, not tracked in Git)
+# These are listed for documentation purposes
+# - postgres_data volume (database files)
+# - pgadmin_data volume (pgAdmin settings)

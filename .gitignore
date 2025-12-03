@@ -9,6 +9,7 @@
 *.log*
 *.ogg
 *.mp3
+*.zip
 *.oga
 cron.log
 extract*.py

@@ -104,7 +104,7 @@ class MigrationRunner:
         migrations = []
         
         # Import the migrations package
-        import jira_telegram_bot.adapters.database.migrations as migrations_package
+        import jira_telegram_bot.adapters.repositories.postgres.database.migrations as migrations_package
         
         # Iterate through all modules in the migrations package
         for _, module_name, _ in pkgutil.iter_modules(migrations_package.__path__, 
