@@ -11,6 +11,7 @@ from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.jira_report import JiraIssueDetail
 from jira_telegram_bot.entities.jira_report import LinkedIssue
 from jira_telegram_bot.entities.jira_report import WorklogEntry
+from jira_telegram_bot.entities.status_change import StatusChange
 from jira_telegram_bot.use_cases.interfaces.jira_data_service_interface import JiraDataServiceInterface
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 
@@ -183,6 +184,7 @@ class JiraDataService(JiraDataServiceInterface):
         sprint_info = self._extract_sprint_info(issue)
         worklog_entries = self._extract_worklog_entries(issue)
         linked_issues = self._extract_linked_issues(issue)
+        status_changes = self._extract_status_changes(issue)
         
         story_points = getattr(issue.fields, "customfield_10106", None)
         
@@ -242,6 +244,7 @@ class JiraDataService(JiraDataServiceInterface):
             ],
             worklog_entries=worklog_entries,
             linked_issues=linked_issues,
+            status_changes=status_changes,
         )
 
     def _extract_comments(self, issue) -> List[str]:
@@ -342,6 +345,35 @@ class JiraDataService(JiraDataServiceInterface):
                 linked_issues.append(linked)
         
         return linked_issues
+
+    def _extract_status_changes(self, issue) -> List[StatusChange]:
+        """Extract status change history from issue changelog.
+        
+        Args:
+            issue: Jira issue object with expanded changelog.
+            
+        Returns:
+            List of status changes.
+        """
+        status_changes = []
+        
+        if hasattr(issue, 'changelog') and issue.changelog:
+            for history in issue.changelog.histories:
+                for item in history.items:
+                    if item.field == 'status':
+                        changed_at = self._parse_datetime(history.created)
+                        if changed_at:  # Only add if we have a valid timestamp
+                            change = StatusChange(
+                                issue_key=issue.key,
+                                from_status=item.fromString if hasattr(item, 'fromString') else None,
+                                to_status=item.toString if hasattr(item, 'toString') else 'Unknown',
+                                changed_at=changed_at,
+                                changed_by=history.author.displayName if hasattr(history, 'author') and history.author else 'Unknown',
+                                project=issue.fields.project.key,
+                            )
+                            status_changes.append(change)
+        
+        return status_changes
 
     def _parse_datetime(self, date_str) -> datetime:
         """Parse datetime string to datetime object.

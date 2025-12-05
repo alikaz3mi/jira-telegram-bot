@@ -6,19 +6,21 @@ from datetime import datetime, timedelta
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.config_dependency_injection import configure_container
+from jira_telegram_bot.settings.jira_sync_settings import JiraSyncSettings
 from jira_telegram_bot.use_cases.sync_jira_issue_use_case import SyncJiraIssueUseCase
 
 
 async def sync_projects():
-    """Sync PCT and PARSCHAT projects from the last 2 months."""
+    """Sync configured Jira projects to PostgreSQL."""
     try:
         LOGGER.info("Starting project synchronization")
         
         # Use base container without Telegram bot setup
         container = configure_container()
         sync_use_case = container[SyncJiraIssueUseCase]
+        sync_settings = JiraSyncSettings()
         
-        projects = ["PCT", "PARSCHAT"]
+        projects = sync_settings.sync_project_keys
         
         for project_key in projects:
             LOGGER.info(f"Syncing project: {project_key}")

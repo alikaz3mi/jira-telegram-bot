@@ -107,7 +107,7 @@ Main configuration file located in the project root:
 
 ```bash
 # Google Sheets Authentication
-GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/service-account.json
+GOOGLE_SERVICE_ACCOUNT_FILE=config/service-account.json
 
 # Sheet Configuration (alternative to config file)
 DAILY_SCOREBOARD_SHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
@@ -118,7 +118,7 @@ JIRA_WEBHOOK_SECRET=your_jira_webhook_secret
 GITLAB_WEBHOOK_SECRET=your_gitlab_webhook_secret
 
 # Application Settings
-METRICS_CONFIG_FILE=/path/to/metrics_config.json
+METRICS_CONFIG_FILE=config/metrics_config.json
 LOG_LEVEL=INFO
 ```
 

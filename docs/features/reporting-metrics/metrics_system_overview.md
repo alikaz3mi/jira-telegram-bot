@@ -241,7 +241,7 @@ Required environment variables for Google Sheets integration:
 
 ```bash
 # Google Sheets
-GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/service-account.json
+GOOGLE_SERVICE_ACCOUNT_FILE=config/service-account.json
 DAILY_SCOREBOARD_SHEET_ID=your_daily_sheet_id
 SPRINT_MATRIX_SHEET_ID=your_sprint_sheet_id
 

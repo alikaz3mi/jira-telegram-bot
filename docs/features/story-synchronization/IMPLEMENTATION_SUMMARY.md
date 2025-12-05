@@ -211,12 +211,12 @@ Tracks hours for 18 individual developers:
 
 ### Daily Full Sync (Cron)
 ```bash
-0 8 * * * cd /path/to/jira-telegram-bot && python scripts/sync_stories.py sync --full
+0 8 * * * cd $(pwd) && python scripts/sync_stories.py sync --full
 ```
 
 ### Incremental Sync Every 15 Minutes
 ```bash
-*/15 * * * * cd /path/to/jira-telegram-bot && python scripts/sync_stories.py sync --days-back 7
+*/15 * * * * cd $(pwd) && python scripts/sync_stories.py sync --days-back 7
 ```
 
 ### Continuous Scheduled Sync

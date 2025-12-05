@@ -63,7 +63,7 @@ This feature automatically syncs Jira story data to Google Sheets, tracking prog
 4. Set environment variables:
 
 ```bash
-export GOOGLE_SHEETS_TOKEN_PATH=/path/to/token.json
+export GOOGLE_SHEETS_TOKEN_PATH=config/token.json
 ```
 
 ### 2. Configure Board-to-Sheet Mappings
@@ -294,7 +294,7 @@ To run as a scheduled cron job:
 
 ```bash
 # Every 5 minutes during work hours (9 AM - 6 PM)
-*/5 9-18 * * 1-5 cd /path/to/jira-telegram-bot && python scripts/sync_stories.py sync --days-back 7
+*/5 9-18 * * 1-5 cd $(pwd) && python scripts/sync_stories.py sync --days-back 7
 
 # Or use scheduled mode (runs continuously)
 # Add to systemd service or supervisor
@@ -347,7 +347,7 @@ jira_telegram_bot/
 
 ```bash
 # Google Sheets
-GOOGLE_SHEETS_TOKEN_PATH=/path/to/token.json
+GOOGLE_SHEETS_TOKEN_PATH=config/token.json
 
 # Jira
 JIRA_DOMAIN=your-jira-instance.atlassian.net
@@ -392,13 +392,13 @@ To reduce quota usage:
 ### Example 1: Daily Full Sync
 ```bash
 # Full sync once per day at 8 AM
-0 8 * * * python /path/to/scripts/sync_stories.py sync --full
+0 8 * * * python scripts/sync_stories.py sync --full
 ```
 
 ### Example 2: Incremental Sync Every 15 Minutes
 ```bash
 # Sync last 7 days of changes every 15 minutes
-*/15 * * * * python /path/to/scripts/sync_stories.py sync --days-back 7
+*/15 * * * * python scripts/sync_stories.py sync --days-back 7
 ```
 
 ### Example 3: Continuous Scheduled Sync

@@ -8,6 +8,8 @@ from typing import Optional
 from pydantic import BaseModel
 from pydantic import Field
 
+from jira_telegram_bot.entities.status_change import StatusChange
+
 
 class WorklogEntry(BaseModel):
     """Represents a single worklog entry on a Jira issue."""
@@ -69,6 +71,7 @@ class JiraIssueDetail(BaseModel):
     root_cause: Optional[str] = Field(default=None, description="Root cause for bugs")
     fix_versions: List[str] = Field(default_factory=list, description="Fix versions for the issue")
     affected_versions: List[str] = Field(default_factory=list, description="Affected versions for the issue")
+    status_changes: List[StatusChange] = Field(default_factory=list, description="Status change history")
     worklog_entries: List[WorklogEntry] = Field(default_factory=list, description="Worklog entries")
     linked_issues: List[LinkedIssue] = Field(default_factory=list, description="Linked issues")
 

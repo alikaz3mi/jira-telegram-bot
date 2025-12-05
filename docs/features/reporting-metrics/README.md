@@ -168,7 +168,7 @@ curl -X POST https://your-domain.com/metrics/jira \
 
 ```bash
 # Google Sheets
-GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/service-account.json
+GOOGLE_SERVICE_ACCOUNT_FILE=config/service-account.json
 DAILY_SCOREBOARD_SHEET_ID=your_daily_sheet_id
 SPRINT_MATRIX_SHEET_ID=your_sprint_sheet_id
 
@@ -177,7 +177,7 @@ JIRA_WEBHOOK_SECRET=your_jira_secret
 GITLAB_WEBHOOK_SECRET=your_gitlab_secret
 
 # Application Settings
-METRICS_CONFIG_FILE=/path/to/metrics_config.json
+METRICS_CONFIG_FILE=config/metrics_config.json
 LOG_LEVEL=INFO
 ```
 

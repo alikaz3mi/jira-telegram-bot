@@ -1,5 +1,12 @@
 version: '3.8'
 
+networks:
+  jira-bot-network:
+    name: jira-telegram-bot-network
+    external: true
+  
+
+
 services:
   telegram-bot:
     build:
@@ -39,6 +46,27 @@ services:
     restart: always
     ports:
       - "2315:2315"
+
+
+  jira-sync-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jira_sync_service
+    image: jira_telegram_bot:v3
+    volumes:
+      - .:/app
+    command: >
+      python3 scripts/run_scheduled_sync.py
+    restart: always
+    environment:
+      - SYNC_INTERVAL_MINUTES=10
+      - SYNC_PROJECT_KEYS=["PCT","PARSCHAT"]
+      - SYNC_FULL_SYNC=true
+      - db_port=5432
+      - db_host=postgres
+    networks:
+      - jira-bot-network
 
   # jira-report-scheduler:
   #   build:
@@ -82,3 +110,4 @@ services:
   #   command: >
   #     python3 jira_telegram_bot/frameworks/scheduler/cron_job.py
   #   restart: always
+

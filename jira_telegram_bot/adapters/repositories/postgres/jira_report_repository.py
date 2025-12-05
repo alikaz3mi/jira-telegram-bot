@@ -12,6 +12,7 @@ from sqlalchemy import Integer
 from sqlalchemy import JSON
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -113,6 +114,32 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             for issue in issues:
                 task_model = self._convert_to_model(issue)
                 session.merge(task_model)
+                
+                # Store status changes in history table
+                if issue.status_changes:
+                    # Delete existing history for this issue
+                    session.execute(
+                        text("DELETE FROM jira_status_history WHERE issue_key = :key"),
+                        {"key": issue.key}
+                    )
+                    
+                    # Insert new status changes
+                    for change in issue.status_changes:
+                        session.execute(
+                            text("""
+                                INSERT INTO jira_status_history 
+                                (issue_key, from_status, to_status, changed_at, changed_by, project)
+                                VALUES (:issue_key, :from_status, :to_status, :changed_at, :changed_by, :project)
+                            """),
+                            {
+                                "issue_key": issue.key,
+                                "from_status": change.from_status,
+                                "to_status": change.to_status,
+                                "changed_at": change.changed_at,
+                                "changed_by": change.changed_by,
+                                "project": change.project,
+                            },
+                        )
             
             session.commit()
             LOGGER.info(f"Stored {len(issues)} issues in database")

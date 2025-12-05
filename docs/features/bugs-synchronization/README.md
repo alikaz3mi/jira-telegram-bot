@@ -49,7 +49,7 @@ This feature automatically syncs Jira bugs and improvements to Google Sheets, pr
 4. Set environment variables:
 
 ```bash
-export GOOGLE_SHEETS_TOKEN_PATH=/path/to/token.json
+export GOOGLE_SHEETS_TOKEN_PATH=config/token.json
 ```
 
 ### 2. Configure Board-to-Sheet Mappings
@@ -209,7 +209,7 @@ jira_telegram_bot/
 
 ```bash
 # Google Sheets
-GOOGLE_SHEETS_TOKEN_PATH=/path/to/token.json
+GOOGLE_SHEETS_TOKEN_PATH=config/token.json
 
 # Jira (existing)
 JIRA_DOMAIN=your-jira-instance.atlassian.net
