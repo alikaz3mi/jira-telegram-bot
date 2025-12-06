@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import math
 from io import BytesIO
 from typing import Any
 from typing import Dict
@@ -95,6 +96,40 @@ class JiraTaskCreation:
             14,
             21,
         ]
+        self.HOURS_PER_STORY_POINT = 8
+        self.HOURS_PER_WORKING_DAY = 8
+
+    def _calculate_target_start(
+        self,
+        story_points: float,
+        target_end_date: datetime.date,
+    ) -> datetime.date:
+        """Calculate target start date based on story points and deadline.
+        
+        Args:
+            story_points: Story points for the task.
+            target_end_date: Target end date (deadline).
+            
+        Returns:
+            Calculated target start date.
+        """
+        total_hours = story_points * self.HOURS_PER_STORY_POINT
+        working_days_needed = total_hours / self.HOURS_PER_WORKING_DAY
+        
+        if working_days_needed < 1:
+            return target_end_date
+        
+        days_to_subtract = math.ceil(working_days_needed)
+        
+        current_date = target_end_date
+        days_counted = 0
+        
+        while days_counted < days_to_subtract:
+            current_date -= datetime.timedelta(days=1)
+            if current_date.weekday() < 5:
+                days_counted += 1
+        
+        return current_date
 
     def build_keyboard(
         self,
@@ -1170,15 +1205,35 @@ class JiraTaskCreation:
             LOGGER.info("Deadline skipped.")
             task_data.due_date = None
             task_data.target_end = None
+            task_data.target_start = None
         else:
             try:
                 day_offset = int(query.data)
-                target_date = datetime.date.today() + datetime.timedelta(
+                target_end_date = datetime.date.today() + datetime.timedelta(
                     days=day_offset,
                 )
-                date_str = target_date.strftime("%Y-%m-%d")
+                date_str = target_end_date.strftime("%Y-%m-%d")
                 task_data.due_date = date_str
                 task_data.target_end = date_str
+                
+                if task_data.story_points and task_data.story_points > 0:
+                    target_start_date = self._calculate_target_start(
+                        task_data.story_points,
+                        target_end_date,
+                    )
+                    task_data.target_start = target_start_date.strftime("%Y-%m-%d")
+                    LOGGER.info(
+                        "Calculated target_start: %s (based on %s story points = %s hours)",
+                        task_data.target_start,
+                        task_data.story_points,
+                        task_data.story_points * self.HOURS_PER_STORY_POINT,
+                    )
+                else:
+                    task_data.target_start = None
+                    LOGGER.info(
+                        "No story points set, target_start not calculated",
+                    )
+                
                 LOGGER.info(
                     "Deadline chosen: day offset %s => %s",
                     day_offset,
@@ -1188,6 +1243,7 @@ class JiraTaskCreation:
                 LOGGER.warning("Invalid day offset picked: %s", query.data)
                 task_data.due_date = None
                 task_data.target_end = None
+                task_data.target_start = None
 
         return await self._ask_labels_common(
             context,
