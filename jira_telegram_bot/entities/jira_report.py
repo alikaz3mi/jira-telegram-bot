@@ -47,6 +47,7 @@ class JiraIssueDetail(BaseModel):
     summary: str = Field(description="Issue summary")
     description: Optional[str] = Field(default=None, description="Issue description")
     epic_name: Optional[str] = Field(default=None, description="Epic name if applicable")
+    epic_link: Optional[str] = Field(default=None, description="Epic link (issue key) if applicable")
     comments: str = Field(default="", description="Concatenated comments")
     task_type: str = Field(description="Issue type")
     assignee: Optional[str] = Field(default=None, description="Assignee display name")

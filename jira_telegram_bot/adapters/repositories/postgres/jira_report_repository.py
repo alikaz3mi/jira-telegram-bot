@@ -37,6 +37,7 @@ class JiraTaskModel(Base):
     summary = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
     epic_name = Column(Text, nullable=True)
+    epic_link = Column(String, nullable=True)
     comments = Column(Text, nullable=True)
     task_type = Column(String, nullable=True)
     assignee = Column(String, nullable=True)
@@ -256,6 +257,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             summary=issue.summary,
             description=issue.description,
             epic_name=issue.epic_name,
+            epic_link=issue.epic_link,
             comments=issue.comments,
             task_type=issue.task_type,
             assignee=issue.assignee,
@@ -311,6 +313,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             summary=model.summary or "",
             description=model.description,
             epic_name=model.epic_name,
+            epic_link=model.epic_link,
             comments=model.comments or "",
             task_type=model.task_type or "",
             assignee=model.assignee,

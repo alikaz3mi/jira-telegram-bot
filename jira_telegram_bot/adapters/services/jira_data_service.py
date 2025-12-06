@@ -186,6 +186,28 @@ class JiraDataService(JiraDataServiceInterface):
         linked_issues = self._extract_linked_issues(issue)
         status_changes = self._extract_status_changes(issue)
         
+        # Extract epic link and name
+        epic_link_key = getattr(issue.fields, 'customfield_10100', None)
+        epic_name = None
+        
+        if epic_link_key:
+            # Try to get epic name from local epics dict
+            epic_name = epics.get(epic_link_key)
+            
+            # If not found locally, fetch from Jira
+            if not epic_name:
+                try:
+                    epic_issues = self._jira_repository.search_issues(
+                        jql=f"key = {epic_link_key}",
+                        max_results=1
+                    )
+                    if epic_issues:
+                        epic_name = epic_issues[0].fields.summary
+                        LOGGER.debug(f"Fetched epic name for {epic_link_key}: {epic_name}")
+                except Exception as e:
+                    LOGGER.warning(f"Failed to fetch epic {epic_link_key}: {e}")
+                    epic_name = epic_link_key  # Fallback to key if fetch fails
+        
         story_points = getattr(issue.fields, "customfield_10106", None)
         
         fix_versions = issue.fields.fixVersions
@@ -203,7 +225,8 @@ class JiraDataService(JiraDataServiceInterface):
             key=issue.key,
             summary=issue.fields.summary,
             description=issue.fields.description or "",
-            epic_name=epics.get(getattr(issue.fields, 'customfield_10100', None)),
+            epic_name=epic_name,
+            epic_link=epic_link_key,
             comments="\n".join(comments_text),
             task_type=issue.fields.issuetype.name,
             assignee=(
