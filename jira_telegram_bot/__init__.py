@@ -12,8 +12,6 @@ __version__ = "2.40.89"
 __name__ = "jira_telegram_bot"
 
 
-DEFAULT_PATH = Path(os.path.realpath(__file__)).parents[1]
-
 
 DEFAULT_PATH = Path(os.path.realpath(__file__)).parents[1]
 CACHE_DIR = Path.home()

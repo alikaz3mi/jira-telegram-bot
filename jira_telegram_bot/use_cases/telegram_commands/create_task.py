@@ -1479,6 +1479,167 @@ class JiraTaskCreation:
             else:
                 LOGGER.error("Failed to fetch media from %s", media_file.file_path)
 
+    def _build_notification_message(self, task_data: TaskData, jira_url: str, max_length: int = None) -> str:
+        """Build notification message text for assignee.
+        
+        Args:
+            task_data: Task data containing summary, description, etc.
+            jira_url: URL to the Jira issue.
+            max_length: Maximum length for caption (1024 for Telegram captions).
+            
+        Returns:
+            Formatted notification message text.
+        """
+        notification_text = (
+            f"📋 *New Task Assigned to You*\n\n"
+            f"*Task:* {task_data.summary}\n"
+            f"*Link:* {jira_url}\n"
+        )
+        
+        if task_data.description:
+            # Use smaller limit for captions if specified
+            max_desc_length = 300 if max_length else 500
+            description = task_data.description
+            if len(description) > max_desc_length:
+                description = description[:max_desc_length] + "..."
+            notification_text += f"\n*Description:*\n{description}\n"
+        
+        if task_data.priority:
+            notification_text += f"\n*Priority:* {task_data.priority}"
+        
+        if hasattr(task_data, 'deadline') and task_data.deadline:
+            notification_text += f"\n*Due Date:* {task_data.deadline}"
+        
+        # Truncate if max_length specified (for captions)
+        if max_length and len(notification_text) > max_length:
+            notification_text = notification_text[:max_length-3] + "..."
+        
+        return notification_text
+
+    async def _send_attachment_to_user(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        filename: str,
+        buffer: BytesIO,
+        attachment_type: str,
+        caption: str = None,
+    ) -> None:
+        """Send a single attachment to user.
+        
+        Args:
+            context: Telegram callback context.
+            chat_id: User's Telegram chat ID.
+            filename: Name of the attachment file.
+            buffer: File buffer containing attachment data.
+            attachment_type: Type of attachment (images, documents, videos, audio).
+            caption: Optional caption for the attachment.
+        """
+        try:
+            buffer.seek(0)
+            if not caption:
+                caption = f"📎 {filename}"
+            
+            if attachment_type == "images":
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=buffer,
+                    caption=caption,
+                    parse_mode="Markdown",
+                )
+            elif attachment_type == "documents":
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=buffer,
+                    filename=filename,
+                    caption=caption,
+                    parse_mode="Markdown",
+                )
+            elif attachment_type == "videos":
+                await context.bot.send_video(
+                    chat_id=chat_id,
+                    video=buffer,
+                    caption=caption,
+                    parse_mode="Markdown",
+                )
+            elif attachment_type == "audio":
+                await context.bot.send_audio(
+                    chat_id=chat_id,
+                    audio=buffer,
+                    caption=caption,
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            LOGGER.error(f"Failed to send {attachment_type} attachment {filename}: {e}")
+
+    async def _send_attachments_to_assignee(
+        self,
+        context: CallbackContext,
+        chat_id: int,
+        attachments: Dict[str, List],
+        caption: str = None,
+    ) -> None:
+        """Send all attachments to the assignee.
+        
+        Args:
+            context: Telegram callback context.
+            chat_id: User's Telegram chat ID.
+            attachments: Dictionary of attachment types and their files.
+            caption: Caption to add to attachments.
+        """
+        for attachment_type in ["images", "documents", "videos", "audio"]:
+            for filename, buffer in attachments.get(attachment_type, []):
+                await self._send_attachment_to_user(
+                    context, chat_id, filename, buffer, attachment_type, caption
+                )
+
+    async def _notify_assignee(
+        self,
+        context: CallbackContext,
+        task_data: TaskData,
+        new_issue: Issue,
+    ) -> None:
+        """Notify the assignee about the new task.
+        
+        Args:
+            context: Telegram callback context.
+            task_data: Task data containing summary, description, attachments, etc.
+            new_issue: Created Jira issue.
+        """
+        assignee_user_data = self.user_config.get_user_config_by_jira_username(
+            task_data.assignee,
+        )
+        
+        if not assignee_user_data:
+            return
+        
+        try:
+            jira_url = f"{self.jira_repository.settings.domain.scheme}://{self.jira_repository.settings.domain.host}/browse/{new_issue.key}"
+            
+            total_attachments = sum(
+                len(files) for files in task_data.attachments.values()
+            )
+            
+            if total_attachments > 0:
+                # Send task info as caption of attachments (Telegram caption limit is 1024)
+                caption = self._build_notification_message(task_data, jira_url, max_length=1024)
+                await self._send_attachments_to_assignee(
+                    context,
+                    assignee_user_data.telegram_user_chat_id,
+                    task_data.attachments,
+                    caption,
+                )
+            else:
+                # Send as regular message if no attachments
+                notification_text = self._build_notification_message(task_data, jira_url)
+                await context.bot.send_message(
+                    chat_id=assignee_user_data.telegram_user_chat_id,
+                    text=notification_text,
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            LOGGER.error("Failed to notify user about task creation: %s", e)
+
     # -------------------------------------------------------------------------
     #  FINALIZE AND CREATE ANOTHER?
     # -------------------------------------------------------------------------
@@ -1499,20 +1660,8 @@ class JiraTaskCreation:
             await message.reply_text(
                 f"Task created successfully! Link: {self.jira_repository.settings.domain.scheme}://{self.jira_repository.settings.domain.host}/browse/{new_issue.key}",
             )
-            assignee_user_data = self.user_config.get_user_config_by_jira_username(
-                task_data.assignee,
-            )
-            if assignee_user_data:
-                try:
-                    await context.bot.send_message(
-                        chat_id=assignee_user_data.telegram_user_chat_id,
-                        text=(
-                            f"Task \n📄{task_data.summary} "
-                            f"\n{self.jira_repository.settings.domain.scheme}://{self.jira_repository.settings.domain.host}/browse/{new_issue.key} was created for you"
-                        ),
-                    )
-                except Exception as e:
-                    LOGGER.error("Failed to notify user about task creation: %s", e)
+            
+            await self._notify_assignee(context, task_data, new_issue)
         except Exception as e:
             await message.reply_text(f"Failed to create task: {e}")
             return
