@@ -542,26 +542,24 @@ async def handle_review_transition(
     reply_message_id: int,
     user_data: Dict[str, Any],
 ) -> None:
-    """Handle transition to review status."""
+    """Handle transition to review status by notifying the reporter."""
     creator_username = user_data.get("metadata", {}).get("creator_username")
     if not creator_username or creator_username not in user_config.list_all_users():
         return
 
     user_cfg = user_config.get_user_config(creator_username)
-    assignee = user_cfg.jira_username if user_cfg else None
-    if not assignee:
-        LOGGER.warning(f"No jira_username found for creator: {creator_username}")
+    if not user_cfg:
+        LOGGER.warning(f"No user config found for creator: {creator_username}")
         return
-        
-    jira_repository.assign_issue(issue_key, assignee)
-    notify_msg = f"""*👤 Task Reassigned*\n\nTask {issue_key} has been assigned to @{creator_username} for review"""
+    
+    notify_msg = f"""*🔍 Task Ready for Review*\n\nTask {issue_key} is now ready for review by @{creator_username}"""
     send_telegram_message(
         group_chat_id,
         notify_msg,
         reply_message_id=reply_message_id,
         token=TELEGRAM_SETTINGS.HOOK_TOKEN
     )
-    LOGGER.info(f"Reassigned {issue_key} to {assignee} for review")
+    LOGGER.info(f"Notified {creator_username} that {issue_key} is ready for review")
 
 
 async def handle_due_date_change(
