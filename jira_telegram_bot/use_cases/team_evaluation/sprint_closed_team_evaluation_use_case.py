@@ -24,6 +24,7 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserCon
 from jira_telegram_bot.use_cases.interfaces.google_sheet_gateway_interface import GoogleSheetGatewayInterface
 from jira_telegram_bot.use_cases.interfaces.calendar_repository_interface import CalendarRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.leave_repository_interface import LeaveRepositoryInterface
+from jira_telegram_bot.use_cases.interfaces.team_evaluation_repository_interface import TeamEvaluationRepositoryInterface
 from jira_telegram_bot.use_cases.team_evaluation.services import (
     CalendarService,
     ChangelogService,
@@ -44,6 +45,7 @@ class SprintClosedTeamEvaluationUseCase:
         google_sheet_gateway: GoogleSheetGatewayInterface,
         calendar_repo: CalendarRepositoryInterface,
         leave_repo: LeaveRepositoryInterface,
+        team_evaluation_repo: TeamEvaluationRepositoryInterface,
         settings: TeamEvaluationSettings
     ):
         """Initialize the use case.
@@ -51,14 +53,16 @@ class SprintClosedTeamEvaluationUseCase:
         Args:
             task_manager_repo: Jira repository
             user_config_service: User configuration service
-            google_sheet_gateway: Google Sheets gateway
+            google_sheet_gateway: Google Sheets gateway (deprecated, kept for backward compatibility)
             calendar_repo: Calendar repository
-            leave_repo: Leave repository  
+            leave_repo: Leave repository
+            team_evaluation_repo: Team evaluation repository for database storage
             settings: Team evaluation settings
         """
         self.task_manager_repo = task_manager_repo
         self.user_config_service = user_config_service
         self.google_sheet_gateway = google_sheet_gateway
+        self.team_evaluation_repo = team_evaluation_repo
         self.settings = settings
         
         # Initialize services
@@ -120,9 +124,9 @@ class SprintClosedTeamEvaluationUseCase:
             )
             
             if evaluation_rows:
-                # Update Google Sheet
-                await self._update_sheet(evaluation_rows)
-                LOGGER.info(f"Successfully processed {len(evaluation_rows)} evaluation rows")
+                # Save to database instead of Google Sheets
+                await self._save_to_database(evaluation_rows, event.sprint_id)
+                LOGGER.info(f"Successfully processed and saved {len(evaluation_rows)} evaluation rows")
             else:
                 LOGGER.warning("No evaluation rows generated")
                 
@@ -608,29 +612,24 @@ class SprintClosedTeamEvaluationUseCase:
             LOGGER.error(f"Error computing evaluation for {developer}: {e}")
             return None
 
-    async def _update_sheet(self, rows: List[TeamEvaluationRow]) -> None:
-        """Update Google Sheet with evaluation data.
+    async def _save_to_database(self, rows: List[TeamEvaluationRow], sprint_id: int) -> None:
+        """Save team evaluation data to database.
         
         Args:
-            rows: List of evaluation rows to write
+            rows: List of evaluation rows to save
+            sprint_id: Sprint ID for tracking
         """
         try:
             if self.settings.dry_run:
-                LOGGER.info(f"DRY RUN: Would write {len(rows)} rows to sheet")
+                LOGGER.info(f"DRY RUN: Would save {len(rows)} rows to database")
                 for row in rows:
-                    LOGGER.info(f"DRY RUN: {row.developer_name} - {row.department} - {row.project} - {row.sprint}")
+                    LOGGER.info(f"DRY RUN: {row.developer_name} - {row.department} - {row.project} - {row.sprint} - Score: {row.quality_score}")
                 return
             
-            # Use developer name, department, project, and sprint as unique keys for upsert
-            upsert_keys = ("توسعه دهنده", "دپارتمان", "پروژه", "اسپرینت")
-            
-            await self.google_sheet_gateway.upsert_rows(
-                sheet_id=self.settings.sheet_id,
-                tab_name=self.settings.tab_name,
-                rows=rows,
-                upsert_keys=upsert_keys
-            )
+            # Save batch to database
+            saved_count = await self.team_evaluation_repo.save_evaluations_batch(rows)
+            LOGGER.info(f"Saved {saved_count} team evaluation rows to database for sprint {sprint_id}")
             
         except Exception as e:
-            LOGGER.error(f"Error updating Google Sheet: {e}")
+            LOGGER.error(f"Error saving team evaluation to database: {e}")
             raise

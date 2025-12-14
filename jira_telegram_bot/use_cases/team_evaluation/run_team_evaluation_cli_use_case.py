@@ -10,6 +10,7 @@ from jira_telegram_bot.use_cases.interfaces.google_sheet_gateway_interface impor
 from jira_telegram_bot.use_cases.interfaces.leave_repository_interface import LeaveRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import TaskManagerRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserConfigInterface
+from jira_telegram_bot.use_cases.interfaces.team_evaluation_repository_interface import TeamEvaluationRepositoryInterface
 from jira_telegram_bot.use_cases.team_evaluation.sprint_closed_team_evaluation_use_case import SprintClosedTeamEvaluationUseCase
 
 
@@ -23,6 +24,7 @@ class RunTeamEvaluationCliUseCase:
         google_sheet_gateway: GoogleSheetGatewayInterface,
         calendar_repo: CalendarRepositoryInterface,
         leave_repo: LeaveRepositoryInterface,
+        team_evaluation_repo: TeamEvaluationRepositoryInterface,
         settings: TeamEvaluationSettings
     ):
         """Initialize the CLI use case.
@@ -33,6 +35,7 @@ class RunTeamEvaluationCliUseCase:
             google_sheet_gateway: Google Sheets gateway
             calendar_repo: Calendar repository
             leave_repo: Leave repository
+            team_evaluation_repo: Team evaluation repository
             settings: Team evaluation settings
         """
         self.task_manager_repo = task_manager_repo
@@ -48,6 +51,7 @@ class RunTeamEvaluationCliUseCase:
             google_sheet_gateway=google_sheet_gateway,
             calendar_repo=calendar_repo,
             leave_repo=leave_repo,
+            team_evaluation_repo=team_evaluation_repo,
             settings=settings
         )
 
