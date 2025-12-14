@@ -186,6 +186,13 @@ class JiraDataService(JiraDataServiceInterface):
         linked_issues = self._extract_linked_issues(issue)
         status_changes = self._extract_status_changes(issue)
         
+        # Calculate reviewed_at from status changes (last time moved to Review)
+        reviewed_at = None
+        for change in reversed(status_changes):  # Start from most recent
+            if change.to_status and change.to_status.lower() == 'review':
+                reviewed_at = change.changed_at
+                break
+        
         # Extract epic link and name
         epic_link_key = getattr(issue.fields, 'customfield_10100', None)
         epic_name = None
@@ -238,6 +245,7 @@ class JiraDataService(JiraDataServiceInterface):
             created_at=self._parse_datetime(issue.fields.created),
             updated_at=self._parse_datetime(issue.fields.updated),
             resolved_at=self._parse_datetime(issue.fields.resolutiondate),
+            reviewed_at=reviewed_at,
             target_start=self._parse_datetime(
                 getattr(issue.fields, "customfield_10109", None)
             ),

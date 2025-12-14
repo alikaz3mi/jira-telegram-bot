@@ -552,7 +552,9 @@ async def handle_review_transition(
         LOGGER.warning(f"No user config found for creator: {creator_username}")
         return
     
-    notify_msg = f"""*🔍 Task Ready for Review*\n\nTask {issue_key} is now ready for review by @{creator_username}"""
+    # Escape special characters in username for Markdown
+    escaped_username = creator_username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
+    notify_msg = f"""*🔍 Task Ready for Review*\n\nTask {issue_key} is now ready for review by @{escaped_username}"""
     send_telegram_message(
         group_chat_id,
         notify_msg,
@@ -653,7 +655,7 @@ async def process_command(
             allowed_to_mark_done = True
 
         # Try to resolve user config and check roles (PCT admin or superadmin)
-        if not allowed_to_mark_done:
+        if not allowed_to_mark_done and message_from:
             try:
                 user_cfg = user_config.get_user_config(message_from)
                 # Check board_roles if present
@@ -684,7 +686,13 @@ async def process_command(
 
     elif "/review" in text.lower():
         issue = jira_repository.jira.issue(issue_key)
-        if issue.fields.assignee and issue.fields.assignee.name == jira_username:
+        # Allow review transition if:
+        # 1. User is the assignee, OR
+        # 2. User is anonymous admin (message_from is None)
+        is_assignee = issue.fields.assignee and jira_username and issue.fields.assignee.name == jira_username
+        is_anonymous_admin = message_from is None
+        
+        if is_assignee or is_anonymous_admin:
             jira_repository.transition_task(issue_key, "review")
             send_telegram_message(
                 store_entry["group_chat_id"],
@@ -1174,6 +1182,13 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
         user_cfg = user_config.get_user_config(message_from)
         jira_username = user_cfg.jira_username if user_cfg else None
     
+    # Handle commands BEFORE checking jira_username (commands work for anonymous admins)
+    # Anonymous admins can execute commands like /review and /done
+    command_result = await process_command(text, issue_key, message_from, jira_username)
+    if command_result:
+        return command_result
+    
+    # For comments (not commands), require valid jira_username
     if not jira_username:
         if is_anonymous:
             # For anonymous messages, use a generic attribution
@@ -1185,11 +1200,6 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
                 "status": "ignored",
                 "reason": "User not configured in system",
             }
-    
-    # Handle commands for both identified users and anonymous admins
-    command_result = await process_command(text, issue_key, message_from, jira_username)
-    if command_result:
-        return command_result
     
     # Format the comment based on user type
     if is_anonymous:

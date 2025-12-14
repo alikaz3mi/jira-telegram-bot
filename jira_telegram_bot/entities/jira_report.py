@@ -57,6 +57,7 @@ class JiraIssueDetail(BaseModel):
     created_at: datetime = Field(description="Creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")
     resolved_at: Optional[datetime] = Field(default=None, description="Resolution timestamp")
+    reviewed_at: Optional[datetime] = Field(default=None, description="Review timestamp")
     target_start: Optional[datetime] = Field(default=None, description="Target start date")
     target_end: Optional[datetime] = Field(default=None, description="Target end date")
     due_date: Optional[datetime] = Field(default=None, description="Due date")
