@@ -108,6 +108,7 @@ class TaskGetUsersTime:
             lambda: {
                 "total_time": 0,
                 "remote_time": 0,
+                "overtime": 0,
                 "weekend_holiday_time": 0,
             },
         )
@@ -141,9 +142,15 @@ class TaskGetUsersTime:
                 # Update total time
                 user_data_map[author_name]["total_time"] += time_spent_seconds
 
-                # Check if "remote" is in the worklog comment
-                if "remote" in comment or "remote" in issue.fields.summary.lower():
+                # Check for remote work keywords
+                remote_keywords = ["remote", "دورکاری", "دور کاری", "دور کار"]
+                if any(keyword in comment for keyword in remote_keywords):
                     user_data_map[author_name]["remote_time"] += time_spent_seconds
+
+                # Check for overtime keywords
+                overtime_keywords = ["اضافه کاری", "overtime", "overtime work"]
+                if any(keyword in comment for keyword in overtime_keywords):
+                    user_data_map[author_name]["overtime"] += time_spent_seconds
 
                 # Check if it was a weekend or holiday
                 if self._is_weekend_or_persian_holiday(started_date):
@@ -182,10 +189,11 @@ class TaskGetUsersTime:
         worksheet = workbook.add_worksheet("Users Time")
 
         headers = [
-            "Person Name",
-            "Total Time (hrs)",
-            "Remote Time (hrs)",
-            "Weekend/Holiday Time (hrs)",
+            "نام فرد",
+            "کل زمان ثبت شده در جیرا",
+            "زمان دورکاری به ساعت",
+            "زمان اضافه کاری به ساعت",
+            "زمان کار در تعطیلات به ساعت",
         ]
         for col, header in enumerate(headers):
             worksheet.write(0, col, header)
@@ -194,12 +202,14 @@ class TaskGetUsersTime:
         for person_name, data in user_data_map.items():
             total_hours = data["total_time"] / 3600
             remote_hours = data["remote_time"] / 3600
+            overtime_hours = data["overtime"] / 3600
             weekend_holiday_hours = data["weekend_holiday_time"] / 3600
 
             worksheet.write(row, 0, person_name)
             worksheet.write(row, 1, total_hours)
             worksheet.write(row, 2, remote_hours)
-            worksheet.write(row, 3, weekend_holiday_hours)
+            worksheet.write(row, 3, overtime_hours)
+            worksheet.write(row, 4, weekend_holiday_hours)
             row += 1
 
         workbook.close()

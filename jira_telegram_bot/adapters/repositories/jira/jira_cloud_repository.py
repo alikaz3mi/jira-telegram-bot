@@ -1423,10 +1423,14 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
 
         try:
             # Build JQL to get issues for the sprint
-            projects_filter = " OR ".join(
-                [f'project = "{key}"' for key in project_keys]
-            )
-            jql = f"({projects_filter}) AND sprint = {sprint_id}"
+            if project_keys:
+                projects_filter = " OR ".join(
+                    [f'project = "{key}"' for key in project_keys]
+                )
+                jql = f"({projects_filter}) AND sprint = {sprint_id}"
+            else:
+                # No project filter, just get all issues in the sprint
+                jql = f"sprint = {sprint_id}"
 
             issues = self.search_for_issues(jql)
 

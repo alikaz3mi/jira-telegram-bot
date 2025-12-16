@@ -47,6 +47,7 @@ class JiraTaskModel(Base):
     created_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
     target_start = Column(DateTime, nullable=True)
     target_end = Column(DateTime, nullable=True)
     due_date = Column(DateTime, nullable=True)
@@ -267,6 +268,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             created_at=issue.created_at,
             updated_at=issue.updated_at,
             resolved_at=issue.resolved_at,
+            reviewed_at=issue.reviewed_at,
             target_start=issue.target_start,
             target_end=issue.target_end,
             due_date=issue.due_date,

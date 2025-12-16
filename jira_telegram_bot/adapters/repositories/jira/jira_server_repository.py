@@ -109,7 +109,18 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         if result is not None:
             return result
 
-        if self.board_type == "scrum":
+        # Get board type for this specific board
+        board_type = None
+        try:
+            boards = self.jira.boards()
+            for board in boards:
+                if board.id == board_id:
+                    board_type = board.type if hasattr(board, 'type') else None
+                    break
+        except Exception as e:
+            LOGGER.warning(f"Error fetching boards to determine type for board {board_id}: {e}")
+
+        if board_type == "scrum":
             # Get all sprints with pagination to handle boards with many sprints
             result = []
             start_at = 0
@@ -1134,10 +1145,14 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
 
         try:
             # Build JQL to get issues for the sprint
-            projects_filter = " OR ".join(
-                [f'project = "{key}"' for key in project_keys],
-            )
-            jql = f"({projects_filter}) AND sprint = {sprint_id}"
+            if project_keys:
+                projects_filter = " OR ".join(
+                    [f'project = "{key}"' for key in project_keys],
+                )
+                jql = f"({projects_filter}) AND sprint = {sprint_id}"
+            else:
+                # No project filter, just get all issues in the sprint
+                jql = f"sprint = {sprint_id}"
 
             issues = self.search_for_issues(jql)
 

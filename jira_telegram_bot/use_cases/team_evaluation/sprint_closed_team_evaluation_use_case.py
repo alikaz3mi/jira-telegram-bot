@@ -13,6 +13,9 @@ from jira_telegram_bot.entities.team_evaluation import (
     ChangeLogEvent,
     Department
 )
+from jira_telegram_bot.entities.team_evaluation_calculation_log import (
+    TeamEvaluationCalculationLog
+)
 from jira_telegram_bot.entities.constants import (
     DONE_STATUSES,
     DEFAULT_WEEKLY_HOURS,
@@ -24,6 +27,10 @@ from jira_telegram_bot.use_cases.interfaces.user_config_interface import UserCon
 from jira_telegram_bot.use_cases.interfaces.google_sheet_gateway_interface import GoogleSheetGatewayInterface
 from jira_telegram_bot.use_cases.interfaces.calendar_repository_interface import CalendarRepositoryInterface
 from jira_telegram_bot.use_cases.interfaces.leave_repository_interface import LeaveRepositoryInterface
+from jira_telegram_bot.use_cases.interfaces.team_evaluation_repository_interface import TeamEvaluationRepositoryInterface
+from jira_telegram_bot.use_cases.interfaces.team_evaluation_calculation_log_repository_interface import (
+    TeamEvaluationCalculationLogRepositoryInterface
+)
 from jira_telegram_bot.use_cases.team_evaluation.services import (
     CalendarService,
     ChangelogService,
@@ -32,6 +39,7 @@ from jira_telegram_bot.use_cases.team_evaluation.services import (
     DefectService,
     ScoreService
 )
+from jira_telegram_bot.use_cases.team_evaluation.calculation_logger import CalculationLogger
 
 
 class SprintClosedTeamEvaluationUseCase:
@@ -44,6 +52,8 @@ class SprintClosedTeamEvaluationUseCase:
         google_sheet_gateway: GoogleSheetGatewayInterface,
         calendar_repo: CalendarRepositoryInterface,
         leave_repo: LeaveRepositoryInterface,
+        team_evaluation_repo: TeamEvaluationRepositoryInterface,
+        calculation_log_repo: TeamEvaluationCalculationLogRepositoryInterface,
         settings: TeamEvaluationSettings
     ):
         """Initialize the use case.
@@ -51,14 +61,18 @@ class SprintClosedTeamEvaluationUseCase:
         Args:
             task_manager_repo: Jira repository
             user_config_service: User configuration service
-            google_sheet_gateway: Google Sheets gateway
+            google_sheet_gateway: Google Sheets gateway (deprecated, kept for backward compatibility)
             calendar_repo: Calendar repository
-            leave_repo: Leave repository  
+            leave_repo: Leave repository
+            team_evaluation_repo: Team evaluation repository for database storage
+            calculation_log_repo: Calculation log repository for detailed audit trail
             settings: Team evaluation settings
         """
         self.task_manager_repo = task_manager_repo
         self.user_config_service = user_config_service
         self.google_sheet_gateway = google_sheet_gateway
+        self.team_evaluation_repo = team_evaluation_repo
+        self.calculation_log_repo = calculation_log_repo
         self.settings = settings
         
         # Initialize services
@@ -120,9 +134,9 @@ class SprintClosedTeamEvaluationUseCase:
             )
             
             if evaluation_rows:
-                # Update Google Sheet
-                await self._update_sheet(evaluation_rows)
-                LOGGER.info(f"Successfully processed {len(evaluation_rows)} evaluation rows")
+                # Save to database instead of Google Sheets
+                await self._save_to_database(evaluation_rows, event.sprint_id)
+                LOGGER.info(f"Successfully processed and saved {len(evaluation_rows)} evaluation rows")
             else:
                 LOGGER.warning("No evaluation rows generated")
                 
@@ -137,7 +151,7 @@ class SprintClosedTeamEvaluationUseCase:
         worklogs: List[WorklogSlice],
         changelogs: Dict[str, List[ChangeLogEvent]],
         event: SprintClosedEvent
-    ) -> List[TeamEvaluationRow]:
+    ) -> List[Tuple[TeamEvaluationRow, Dict]]:
         """Compute evaluation for all developers.
         
         Args:
@@ -148,7 +162,7 @@ class SprintClosedTeamEvaluationUseCase:
             event: Sprint closed event
             
         Returns:
-            List of team evaluation rows
+            List of tuples (TeamEvaluationRow, calculation_details)
         """
         # Group data by developer and department
         developer_department_data = await self._group_by_developer_and_department(sprint_issues, worklogs, changelogs)
@@ -168,7 +182,7 @@ class SprintClosedTeamEvaluationUseCase:
                         continue
                     
                     # Compute evaluation row for this developer/department/project
-                    row = await self._compute_developer_evaluation(
+                    result = await self._compute_developer_evaluation(
                         developer=developer,
                         department=department,
                         project_key=project_key,
@@ -180,8 +194,8 @@ class SprintClosedTeamEvaluationUseCase:
                         sprint_end_date=event.ended_at
                     )
                     
-                    if row:
-                        evaluation_rows.append(row)
+                    if result:
+                        evaluation_rows.append(result)
                         
             except Exception as e:
                 LOGGER.error(f"Error computing evaluation for developer {developer} in department {department}: {e}")
@@ -411,7 +425,7 @@ class SprintClosedTeamEvaluationUseCase:
         changelogs: Dict[str, List[ChangeLogEvent]],
         sprint_start_date: datetime,
         sprint_end_date: datetime
-    ) -> Optional[TeamEvaluationRow]:
+    ) -> Optional[Tuple[TeamEvaluationRow, Dict]]:
         """Compute evaluation row for a single developer.
         
         Args:
@@ -426,13 +440,11 @@ class SprintClosedTeamEvaluationUseCase:
             sprint_end_date: Sprint end date
             
         Returns:
-            Team evaluation row or None if no data
+            Tuple of (TeamEvaluationRow, calculation_details dict) or None if no data
         """
         try:
             if not issues:
                 return None
-            if developer.lower() == 'm_mousavi':
-                x = 1
             
             # Normalize sprint dates to ensure timezone consistency
             sprint_start_normalized = self.deadline_service._normalize_datetime(sprint_start_date)
@@ -568,6 +580,29 @@ class SprintClosedTeamEvaluationUseCase:
                 extra_completed_tasks_count=extra_completed_count
             )
             
+            # Collect calculation details for logging
+            calculation_details = {
+                "dev_count": len(dev_issues),
+                "bug_count": len(bug_issues),
+                "support_count": len(support_issues),
+                "high_priority_count": len(high_priority_issues),
+                "total_issues": len(issues),
+                "worklog_count": len(worklogs),
+                "filtered_worklog_count": len(worklogs) - len(sprint_worklogs),
+                "deadline_score": 100 - deadline_penalty_score,
+                "deadline_penalty": deadline_penalty_score,
+                "tasks_with_deadlines": len(tasks_with_deadlines),
+                "avg_deadline_delta": avg_deadline_delta if avg_deadline_delta is not None else 0,
+                "worklog_score": (total_hours / expected_hours * 100) if expected_hours > 0 else 0,
+                "high_priority_score": (completed_high_priority / len(high_priority_issues) * 100) if high_priority_issues else 0,
+                "required_tasks": len(high_priority_issues),
+                "completed_required": completed_high_priority,
+                "defect_score": 100,  # Default, actual calculation is complex
+                "composite_score": quality_score,
+                "penalties": deadline_penalty_score,
+                "bonuses": extra_completed_count * 5  # 5 points per extra task
+            }
+            
             # Create evaluation row
             # Translate developer username to Google Sheets display name
             user_config = self.user_config_service.get_user_config_by_jira_username(developer)
@@ -577,7 +612,7 @@ class SprintClosedTeamEvaluationUseCase:
                 else developer
             )
             
-            return TeamEvaluationRow(
+            row = TeamEvaluationRow(
                 developer_name=google_sheet_name,
                 department=department,
                 project=project_key,
@@ -604,33 +639,231 @@ class SprintClosedTeamEvaluationUseCase:
                 quality_score=quality_score
             )
             
+            return (row, calculation_details)
+            
         except Exception as e:
             LOGGER.error(f"Error computing evaluation for {developer}: {e}")
             return None
 
-    async def _update_sheet(self, rows: List[TeamEvaluationRow]) -> None:
-        """Update Google Sheet with evaluation data.
+    async def _save_to_database(self, rows_with_details: List[Tuple[TeamEvaluationRow, Dict]], sprint_id: int) -> None:
+        """Save team evaluation data to database and calculation logs.
         
         Args:
-            rows: List of evaluation rows to write
+            rows_with_details: List of tuples (evaluation row, calculation_details)
+            sprint_id: Sprint ID for tracking
         """
         try:
+            # Extract just the rows for database save
+            rows = [row for row, _ in rows_with_details]
+            
             if self.settings.dry_run:
-                LOGGER.info(f"DRY RUN: Would write {len(rows)} rows to sheet")
+                LOGGER.info(f"DRY RUN: Would save {len(rows)} rows to database")
                 for row in rows:
-                    LOGGER.info(f"DRY RUN: {row.developer_name} - {row.department} - {row.project} - {row.sprint}")
+                    LOGGER.info(f"DRY RUN: {row.developer_name} - {row.department} - {row.project} - {row.sprint} - Score: {row.quality_score}")
+                
+                # Also log calculation details in dry run
+                for row, calc_details in rows_with_details:
+                    LOGGER.info(f"DRY RUN: Would save {len(calc_details)} calculation detail keys for {row.developer_name}")
                 return
             
-            # Use developer name, department, project, and sprint as unique keys for upsert
-            upsert_keys = ("توسعه دهنده", "دپارتمان", "پروژه", "اسپرینت")
+            # Save batch to database
+            saved_count = await self.team_evaluation_repo.save_evaluations_batch(rows)
+            LOGGER.info(f"Saved {saved_count} team evaluation rows to database for sprint {sprint_id}")
             
-            await self.google_sheet_gateway.upsert_rows(
-                sheet_id=self.settings.sheet_id,
-                tab_name=self.settings.tab_name,
-                rows=rows,
-                upsert_keys=upsert_keys
-            )
+            # Save calculation logs for each evaluation (one entry per developer per sprint)
+            for row, calc_details in rows_with_details:
+                await self._save_calculation_logs_for_evaluation(
+                    sprint_id=sprint_id,
+                    row=row,
+                    calculation_details=calc_details
+                )
             
         except Exception as e:
-            LOGGER.error(f"Error updating Google Sheet: {e}")
+            LOGGER.error(f"Error saving team evaluation to database: {e}")
             raise
+
+    def _create_calculation_log(
+        self,
+        sprint_id: int,
+        sprint_name: str,
+        developer_name: str,
+        department: str,
+        project: str,
+        calculation_type: str,
+        metric_name: str,
+        metric_value: float,
+        formula: str,
+        details: str,
+        weight: Optional[float] = None,
+        contribution: Optional[float] = None
+    ) -> TeamEvaluationCalculationLog:
+        """Create a calculation log entry.
+        
+        Args:
+            sprint_id: Sprint identifier
+            sprint_name: Sprint name
+            developer_name: Developer name
+            department: Department name
+            project: Project key
+            calculation_type: Type of calculation (metric, score, penalty, bonus)
+            metric_name: Name of the metric being calculated
+            metric_value: Calculated value
+            formula: Formula used for calculation
+            details: Detailed explanation of calculation
+            weight: Weight applied to metric (if applicable)
+            contribution: Contribution to total score (if applicable)
+            
+        Returns:
+            TeamEvaluationCalculationLog entity
+        """
+        return TeamEvaluationCalculationLog(
+            sprint_id=sprint_id,
+            sprint_name=sprint_name,
+            developer_name=developer_name,
+            department=department,
+            project=project,
+            calculation_type=calculation_type,
+            metric_name=metric_name,
+            metric_value=metric_value,
+            calculation_formula=formula,
+            calculation_details=details,
+            weight=weight,
+            contribution_to_total=contribution,
+            timestamp=datetime.utcnow()
+        )
+
+    async def _save_calculation_logs_for_evaluation(
+        self,
+        sprint_id: int,
+        row: TeamEvaluationRow,
+        calculation_details: Dict
+    ) -> None:
+        """Save detailed calculation logs for an evaluation row.
+        
+        Args:
+            sprint_id: Sprint identifier
+            row: Team evaluation row with computed metrics
+            calculation_details: Dictionary with intermediate calculation values
+        """
+        try:
+            logs = []
+            
+            # Extract details from calculation_details
+            dev_count = calculation_details.get("dev_count", 0)
+            bug_count = calculation_details.get("bug_count", 0)
+            support_count = calculation_details.get("support_count", 0)
+            high_priority_count = calculation_details.get("high_priority_count", 0)
+            total_issues = calculation_details.get("total_issues", 0)
+            worklog_count = calculation_details.get("worklog_count", 0)
+            filtered_count = calculation_details.get("filtered_worklog_count", 0)
+            
+            # Task classification logs
+            logs.extend(CalculationLogger.log_task_classification(
+                sprint_id=sprint_id,
+                sprint_name=row.sprint,
+                developer=row.developer_name,
+                department=row.department,
+                project=row.project,
+                dev_count=dev_count,
+                bug_count=bug_count,
+                support_count=support_count,
+                high_priority_count=high_priority_count,
+                total_issues=total_issues
+            ))
+            
+            # Time metrics logs
+            logs.extend(CalculationLogger.log_time_metrics(
+                sprint_id=sprint_id,
+                sprint_name=row.sprint,
+                developer=row.developer_name,
+                department=row.department,
+                project=row.project,
+                total_hours=row.registered_hours_week,
+                expected_hours=row.expected_hours_week,
+                dev_hours=row.development_hours,
+                bug_hours=row.bug_hours,
+                support_hours=row.support_hours,
+                worklog_count=worklog_count,
+                filtered_count=filtered_count
+            ))
+            
+            # Score component logs
+            if "deadline_score" in calculation_details:
+                logs.append(CalculationLogger.log_deadline_score(
+                    sprint_id=sprint_id,
+                    sprint_name=row.sprint,
+                    developer=row.developer_name,
+                    department=row.department,
+                    project=row.project,
+                    deadline_penalty=calculation_details.get("deadline_penalty", 0),
+                    deadline_score=calculation_details["deadline_score"],
+                    tasks_with_deadlines=calculation_details.get("tasks_with_deadlines", 0),
+                    avg_delta_days=calculation_details.get("avg_deadline_delta", 0),
+                    weight=self.settings.score_weights.deadline
+                ))
+            
+            if "worklog_score" in calculation_details:
+                logs.append(CalculationLogger.log_worklog_score(
+                    sprint_id=sprint_id,
+                    sprint_name=row.sprint,
+                    developer=row.developer_name,
+                    department=row.department,
+                    project=row.project,
+                    registered_hours=row.registered_hours_week,
+                    expected_hours=row.expected_hours_week,
+                    worklog_score=calculation_details["worklog_score"],
+                    weight=self.settings.score_weights.worklog
+                ))
+            
+            if "high_priority_score" in calculation_details:
+                logs.append(CalculationLogger.log_high_priority_score(
+                    sprint_id=sprint_id,
+                    sprint_name=row.sprint,
+                    developer=row.developer_name,
+                    department=row.department,
+                    project=row.project,
+                    required_tasks=calculation_details.get("required_tasks", 0),
+                    completed_required=calculation_details.get("completed_required", 0),
+                    high_priority_score=calculation_details["high_priority_score"],
+                    weight=self.settings.score_weights.high_priority
+                ))
+            
+            if "defect_score" in calculation_details:
+                logs.append(CalculationLogger.log_defect_score(
+                    sprint_id=sprint_id,
+                    sprint_name=row.sprint,
+                    developer=row.developer_name,
+                    department=row.department,
+                    project=row.project,
+                    support_bugs_per_story=row.avg_support_bugs_per_story,
+                    tester_bugs_per_story=row.avg_tester_bugs_per_story,
+                    defect_score=calculation_details["defect_score"],
+                    weight=self.settings.score_weights.defects,
+                    support_threshold=self.settings.defect_thresholds.get("support_per_story", 0.3),
+                    tester_threshold=self.settings.defect_thresholds.get("tester_per_story", 0.4)
+                ))
+            
+            # Final score log
+            logs.append(CalculationLogger.log_final_score(
+                sprint_id=sprint_id,
+                sprint_name=row.sprint,
+                developer=row.developer_name,
+                department=row.department,
+                project=row.project,
+                composite_score=calculation_details.get("composite_score", row.quality_score),
+                penalties_applied=calculation_details.get("penalties", 0),
+                bonuses_applied=calculation_details.get("bonuses", 0),
+                final_score=row.quality_score
+            ))
+            
+            # Save all logs in batch
+            if logs and not self.settings.dry_run:
+                await self.calculation_log_repo.save_logs_batch(logs)
+                LOGGER.info(f"Saved {len(logs)} calculation log entries for {row.developer_name}")
+            elif self.settings.dry_run:
+                LOGGER.info(f"DRY RUN: Would save {len(logs)} calculation logs for {row.developer_name}")
+                
+        except Exception as e:
+            LOGGER.error(f"Error saving calculation logs for {row.developer_name}: {e}")
+            # Don't raise - log errors should not break evaluation
+

@@ -68,7 +68,7 @@ class UserConfig(UserConfigInterface):
         for user_config in self.user_config.values():
             if user_config.jira_username.lower() == jira_username.lower():
                 return user_config
-        LOGGER.debug(f"User config not found for JIRA username: {jira_username}")
+        LOGGER.warning(f"User config not found for JIRA username: {jira_username}")
         return None
 
     def get_user_role_for_board(
@@ -238,7 +238,7 @@ class UserConfig(UserConfigInterface):
             if user_config.email and user_config.email.lower().strip() == email_lower:
                 return user_config
         
-        LOGGER.debug(f"User config not found for email: {email}")
+        LOGGER.warning(f"User config not found for email: {email}")
         return None
 
     def list_user_emails(self):

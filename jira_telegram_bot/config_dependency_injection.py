@@ -55,6 +55,12 @@ from jira_telegram_bot.adapters.repositories.postgres.database.postgresql_connec
 from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import (
     JiraReportRepository,
 )
+from jira_telegram_bot.adapters.repositories.postgres.team_evaluation_repository import (
+    PostgresTeamEvaluationRepository,
+)
+from jira_telegram_bot.adapters.repositories.postgres.team_evaluation_calculation_log_repository import (
+    PostgreSQLTeamEvaluationCalculationLogRepository,
+)
 from jira_telegram_bot.adapters.repositories.synth_pm_repository import (
     SynthPMRepository,
 )
@@ -235,6 +241,12 @@ from jira_telegram_bot.use_cases.story_synchronization import (
 )
 from jira_telegram_bot.use_cases.interfaces.task_story_repository_interface import (
     TaskStoryRepositoryInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.team_evaluation_repository_interface import (
+    TeamEvaluationRepositoryInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.team_evaluation_calculation_log_repository_interface import (
+    TeamEvaluationCalculationLogRepositoryInterface,
 )
 from jira_telegram_bot.adapters.repositories.task_story_repository import (
     TaskStoryRepository,
@@ -426,6 +438,18 @@ def _configure_repositories(
     )
     container[JiraReportRepositoryInterface] = Singleton(
         lambda c: JiraReportRepository(c[DatabaseConnectionInterface]),
+    )
+
+    container[TeamEvaluationRepositoryInterface] = Singleton(
+        lambda c: PostgresTeamEvaluationRepository(
+            db_connection=c[DatabaseConnectionInterface]
+        ),
+    )
+
+    container[TeamEvaluationCalculationLogRepositoryInterface] = Singleton(
+        lambda c: PostgreSQLTeamEvaluationCalculationLogRepository(
+            db_connection=c[DatabaseConnectionInterface]
+        ),
     )
 
 
@@ -873,6 +897,8 @@ def configure_team_evaluation_dependencies(container: Container):
             google_sheet_gateway=c[GoogleSheetGatewayInterface],
             calendar_repo=c[CalendarRepositoryInterface],
             leave_repo=c[LeaveRepositoryInterface],
+            team_evaluation_repo=c[TeamEvaluationRepositoryInterface],
+            calculation_log_repo=c[TeamEvaluationCalculationLogRepositoryInterface],
             settings=c[TeamEvaluationSettings],
         ),
     )
