@@ -261,23 +261,35 @@ class SynthPMUseCase:
                 and feature.task_title is not None
                 and feature.developer_board_issue_key is not None
             ):  
-                # if feature.last_sprint is None:
-                #     return
+                # Create PM Board task if doesn't exist
                 if feature.jira_issue_key is None:
                     issue_key = await self.repository.create_jira_task_from_feature(feature)
+                    if issue_key:
+                        sync_results["created_jira_tasks"] += 1
+                        feature = feature.copy(update={"jira_issue_key": issue_key})
+                    else:
+                        sync_results["errors"].append(
+                            f"Failed to create Jira task for: {feature.task_title}",
+                        )
+                        return
                 else:
                     issue_key = feature.jira_issue_key
-                if issue_key:
-                    sync_results["created_jira_tasks"] += 1
-                    feature = feature.copy(update={"jira_issue_key": issue_key})
-
+                
+                # Check if status allows Developer Board task creation
+                if feature.status in [
+                    StatusDescriptions.INITIATION_AND_PRIORITIZATION.value, 
+                    StatusDescriptions.ANALYSIS_AND_RFP.value,
+                    StatusDescriptions.USER_STORY_PREPARATION.value, 
+                    StatusDescriptions.COMPLETED.value
+                ]:
+                    LOGGER.info(f"Skipping Developer Board task creation for {feature.task_title} - status is {feature.status}")
+                    return
+                
+                # Create Developer Board task if doesn't exist and status allows
+                if not feature.developer_board_issue_key:
                     sprint_info = SprintInfo.parse_sprint_string(feature.last_sprint)
                     if sprint_info and sprint_info.is_valid():
                         assignees = self._extract_assignees_from_feature(feature)
-                        if feature.status in [StatusDescriptions.INITIATION_AND_PRIORITIZATION.value, StatusDescriptions.ANALYSIS_AND_RFP.value,
-                                              StatusDescriptions.USER_STORY_PREPARATION.value, StatusDescriptions.COMPLETED.value]:
-                            return # TODO: update sync_result status
-
                         developer_board_key = await self.repository.create_developer_board_task_from_feature(
                             feature,
                             sprint_info,
@@ -292,11 +304,6 @@ class SynthPMUseCase:
                             sync_results["created_developer_board_tasks"] = (
                                 sync_results.get("created_developer_board_tasks", 0) + 1
                             )
-                else:
-                    sync_results["errors"].append(
-                        f"Failed to create Jira task for: {feature.task_title}",
-                    )
-                    return
 
             elif feature.jira_issue_key and feature.developer_board_issue_key:
                 if feature.status in [StatusDescriptions.INITIATION_AND_PRIORITIZATION.value, StatusDescriptions.ANALYSIS_AND_RFP.value,
