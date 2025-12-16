@@ -287,12 +287,11 @@ class SynthPMUseCase:
                 
                 # Create Developer Board task if doesn't exist and status allows
                 if not feature.developer_board_issue_key:
-                    sprint_info = SprintInfo.parse_sprint_string(feature.last_sprint)
-                    if sprint_info and sprint_info.is_valid():
+                    # Repository will handle sprint selection from feature.sprint_list
+                    if feature.sprint_list and len(feature.sprint_list) > 0:
                         assignees = self._extract_assignees_from_feature(feature)
                         developer_board_key = await self.repository.create_developer_board_task_from_feature(
                             feature,
-                            sprint_info,
                             assignees=assignees,
                         )
                         if developer_board_key:
@@ -304,6 +303,8 @@ class SynthPMUseCase:
                             sync_results["created_developer_board_tasks"] = (
                                 sync_results.get("created_developer_board_tasks", 0) + 1
                             )
+                    else:
+                        LOGGER.warning(f"No valid sprints found for feature {feature.task_title}, skipping Developer Board task creation")
 
             elif feature.jira_issue_key and feature.developer_board_issue_key:
                 if feature.status in [StatusDescriptions.INITIATION_AND_PRIORITIZATION.value, StatusDescriptions.ANALYSIS_AND_RFP.value,

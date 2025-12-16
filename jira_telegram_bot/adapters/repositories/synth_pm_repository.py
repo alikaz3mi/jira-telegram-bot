@@ -712,14 +712,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
     async def create_developer_board_task_from_feature(
         self,
         feature: SynthPMFeatureEntity,
-        sprint_info: SprintInfo,
         assignees: Optional[List[str]] = None,
     ) -> Optional[str]:
         """Create a Jira task from a feature with sprint.
 
         Args:
             feature: feature entity
-            sprint_info: Sprint information for board
             assignees: List of assignee usernames for the task
 
         Returns:
