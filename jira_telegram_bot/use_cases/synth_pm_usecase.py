@@ -115,11 +115,11 @@ class SynthPMUseCase:
                 # Skip test rows
                 #if feature.row_number not in [215]:
                 #    continue
-                if feature.version not in [ "04.08.09", "04.08.23"]:
+                if feature.version not in [ "04.08.09", "04.08.23", "04.09.05", "04.09.21", "04.10.05", "04.10.19", "04.11.03"]:
                     continue
                 
-                if feature.department_deps == None:
-                    continue
+                # if feature.department_deps == None:
+                #     continue
                 
                 
                 try:
@@ -237,7 +237,9 @@ class SynthPMUseCase:
         all_user_configs = self.user_config.get_all_user_configs()
         for user_config in all_user_configs.values():
             assignee = user_config.jira_username
-            if user_config.google_sheet_name in feature.involved_people:
+            if (user_config.google_sheet_name and 
+                feature.involved_people and 
+                user_config.google_sheet_name in feature.involved_people):
                 assignees.append(assignee)
 
         return assignees

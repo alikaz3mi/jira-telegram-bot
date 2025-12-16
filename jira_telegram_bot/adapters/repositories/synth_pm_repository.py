@@ -226,7 +226,54 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 target_end=feature_dates_str.get("target_end"),
             )
 
-            if feature.sprint:
+            # Smart sprint assignment for PM Board
+            if feature.sprint_list and len(feature.sprint_list) > 0:
+                # Get current Jalali year for sprint creation if needed
+                current_jalali_year = jdatetime.datetime.now().year
+                
+                # Sort sprints by sprint ID (earliest first)
+                sorted_sprints = sorted(
+                    feature.sprint_list,
+                    key=lambda s: int(s.split(':')[0]) if ':' in s else 0
+                )
+                
+                # Find the closest active or future sprint
+                selected_sprint = None
+                selected_sprint_info = None
+                
+                for s in sorted_sprints:
+                    temp_sprint_info = SprintInfo.parse_sprint_string(s)
+                    sprint_name = f"{self.settings.pm_project_key} Sprint {temp_sprint_info.sprint_id}"
+                    temp_sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
+                        self.pm_board_id,
+                    )
+                    
+                    if temp_sprint is not None:
+                        if temp_sprint.get('state') == 'active':
+                            # Found an active sprint - use it
+                            selected_sprint = temp_sprint
+                            selected_sprint_info = temp_sprint_info
+                            LOGGER.info(f"PM Board: Assigning feature {feature.task_title} to active sprint {temp_sprint_info.sprint_id}")
+                            break
+                        elif temp_sprint.get('state') == 'future' and not selected_sprint:
+                            # Found a future sprint - remember it but keep looking for active
+                            selected_sprint = temp_sprint
+                            selected_sprint_info = temp_sprint_info
+                            LOGGER.info(f"PM Board: Found future sprint {temp_sprint_info.sprint_id} for feature {feature.task_title}")
+                
+                # If no active/future sprint found, create the earliest one
+                if not selected_sprint:
+                    selected_sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
+                    LOGGER.info(f"PM Board: No active/future sprint found, will create sprint {selected_sprint_info.sprint_id} for feature {feature.task_title}")
+                    selected_sprint = self._create_sprint(selected_sprint_info, current_jalali_year)
+                
+                # Assign the sprint ID to the task
+                if selected_sprint:
+                    pm_board_task_data.sprint_id = selected_sprint.get('id')
+                    LOGGER.debug(f"PM Board: Assigned sprint ID {selected_sprint.get('id')} to task {feature.task_title}")
+            elif feature.sprint:
+                # Fallback to old logic if sprint_list is not available but sprint field is
                 pm_board_task_data.sprint_id = self._get_sprint_id(
                     "Active",
                     self.pm_board_id,
@@ -687,36 +734,44 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             components = self._map_components(feature)
 
             if len(feature.sprint_list) > 1:
-                # Sort sprints by the first number when splitting by ':'
+                # Sort sprints by sprint ID (first number when splitting by ':')
                 sorted_sprints = sorted(
                     feature.sprint_list,
                     key=lambda s: int(s.split(':')[0]) if ':' in s else 0
                 )
                 
+                # Find the closest active or future sprint
+                sprint = None
+                sprint_info = None
+                active_sprint_found = False
+                
                 for s in sorted_sprints:
-                    sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
-                    sprint = self.jira_repository.get_sprint_by_name(
+                    temp_sprint_info = SprintInfo.parse_sprint_string(s)
+                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
+                    temp_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.developer_board_id,
                     )
-                    if sprint is not None and sprint.get('state') == "closed":
-                        continue
-                    if sprint is not None and sprint.get('state') == "active":
-                        break
-
-                if sprint is not None and sprint.get('state') == "closed":
-                    LOGGER.debug(f"feature {feature.row_number}: {feature.task_title} will not be created since it is not assigned to any active sprint")
-                    return False
-                        
-                if sprint is None:
-                    sprint = sorted_sprints[0]
-                    sprint_info = SprintInfo.parse_sprint_string(sprint)
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
-                    sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.developer_board_id,
-                    )
+                    
+                    if temp_sprint is not None:
+                        if temp_sprint.get('state') == 'active':
+                            # Found an active sprint - use it
+                            sprint = temp_sprint
+                            sprint_info = temp_sprint_info
+                            active_sprint_found = True
+                            LOGGER.info(f"Assigning feature {feature.task_title} to active sprint {sprint_info.sprint_id}")
+                            break
+                        elif temp_sprint.get('state') == 'future' and not sprint:
+                            # Found a future sprint - remember it but keep looking for active
+                            sprint = temp_sprint
+                            sprint_info = temp_sprint_info
+                            LOGGER.info(f"Found future sprint {sprint_info.sprint_id} for feature {feature.task_title}")
+                
+                # If no active/future sprint found, create the earliest one
+                if not sprint:
+                    sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
+                    LOGGER.info(f"No active/future sprint found, will create sprint {sprint_info.sprint_id} for feature {feature.task_title}")
+                    sprint = None  # Will be created below
                     
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
@@ -735,6 +790,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.info(f"Creating new sprint: {sprint_info.sprint_id} for feature {feature.task_title}")
                 sprint = self._create_sprint(sprint_info, current_jalali_year)
                 LOGGER.debug(f"Created sprint: {sprint}")
+            elif sprint.get('state') == 'closed':
+                LOGGER.warning(f"Cannot create task for feature {feature.task_title} - assigned sprint is closed")
+                return None
 
             task_type = "Story" if len(assignees) > 1 else "Task"
             if task_type == "Task":
@@ -1465,7 +1523,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 except Exception:
                     return None
 
-            def parse_int(value_str: str) -> Optional[int]:
+            def parse_float(value_str: str) -> Optional[float]:
                 if not value_str or value_str.lower() in [
                     "",
                     "select",
@@ -1476,7 +1534,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 try:
                     if ":" in value_str:
                         value_str = value_str.split(":")[-1].strip()
-                    return int(float(value_str))
+                    return float(value_str)
                 except (ValueError, TypeError):
                     return None
 
@@ -1502,7 +1560,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     except (ValueError, IndexError):
                         # Fallback to last item if parsing fails
                         last_sprint = items[-1]
-            times = {key: int(get_mapped_value(key)) for key in people_mapping.keys() if get_mapped_value(key) not in ['0', '']}
+            times = {key: parse_float(get_mapped_value(key)) for key in people_mapping.keys() if parse_float(get_mapped_value(key)) is not None}
             return SynthPMFeatureEntity(
                 row_number=get_mapped_value("row_number"),
                 sheet_row_number=row_number,
@@ -1532,8 +1590,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if get_mapped_value("status") != "Select"
                     else None
                 ),
-                eta_hours=parse_int(get_mapped_value("eta_hours")),
-                total_hours=parse_int(get_mapped_value("total_hours")),
+                eta_hours=parse_float(get_mapped_value("eta_hours")),
+                total_hours=parse_float(get_mapped_value("total_hours")),
                 departments=(
                     get_mapped_value("departments")
                     if get_mapped_value("departments") != "Select"

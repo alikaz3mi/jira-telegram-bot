@@ -24,8 +24,8 @@ class SynthPMFeatureEntity(BaseModel):
     necessity: Optional[str] = Field(default=None, description="Necessity/ضرورت")
     priority: Optional[str] = Field(default=None, description="Priority/اولویت")
     status: Optional[str] = Field(default=None, description="Status/وضعیت")
-    eta_hours: Optional[int] = Field(default=None, description="ETA hours")
-    total_hours: Optional[int] = Field(default=None, description="Total hours")
+    eta_hours: Optional[float] = Field(default=None, description="ETA hours")
+    total_hours: Optional[float] = Field(default=None, description="Total hours")
     departments: Optional[str] = Field(default=None, description="Departments")
     involved_people: Optional[str] = Field(
         default=None,
@@ -88,7 +88,7 @@ class SynthPMFeatureEntity(BaseModel):
         description="Associated developer's board Jira issue key",
     )
     version: Optional[str] = Field(default=None, description="Release version number")
-    times: Dict[str, int] = Field(
+    times: Dict[str, float] = Field(
         default_factory=dict,
         description="Time estimates for each department",
     )
