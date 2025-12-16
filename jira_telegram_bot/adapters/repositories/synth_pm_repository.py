@@ -975,6 +975,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
             
+            # Update dates for the story/task (handle both setting and clearing)
+            target_start_new = feature_dates_str.get("target_start")
+            target_start_current = issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
+            if target_start_new != target_start_current:
+                update_fields[self.jira_repository.jira_target_start_id] = target_start_new
+            
+            target_end_new = feature_dates_str.get("target_end")
+            target_end_current = issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
+            if target_end_new != target_end_current:
+                update_fields[self.jira_repository.jira_target_end_id] = target_end_new
+            
+            due_date_new = feature_dates_str.get("due_date")
+            due_date_current = issue.fields.duedate
+            if due_date_new != due_date_current:
+                update_fields["duedate"] = due_date_new
+            
             # Handle epic changes
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
                 # Check if this is a subtask - subtasks cannot have epics assigned directly
@@ -1035,19 +1051,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             else:
                                 LOGGER.warning(f"Subtask {subtask.key} not found, skipping summary update")
 
-            if feature.release != None or feature.version != None:
-                if set([feature.release, feature.version]) != set(
-                    [field.name for field in issue.fields.fixVersions]
-                ):  # Replace with actual custom field ID
+            # Update fixVersions (handle both setting and clearing)
+            feature_versions = set([v for v in [feature.release, feature.version] if v])
+            current_versions = set([field.name for field in issue.fields.fixVersions])
+            if feature_versions != current_versions:
+                if feature_versions:  # Only create releases if we're setting versions
                     self._create_release_not_exist_during_update(
                         feature,
                         self.settings.developer_board_project_key,
                     )
-                    update_fields["fixVersions"] = [
-                        {"name": release}
-                        for release in [feature.release, feature.version]
-                        if release
-                    ]
+                update_fields["fixVersions"] = [
+                    {"name": release}
+                    for release in [feature.release, feature.version]
+                    if release
+                ] if feature_versions else []
 
             # Handle sprint updates using the same logic as create method
             current_jalali_year = jdatetime.datetime.now().year
@@ -2551,6 +2568,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if dates is None:
                 dates = self.extract_dates_from_feature_in_str(feature)
 
+            # Build releases list from feature
+            releases = [r for r in [feature.release, feature.version] if r]
+            
             subtask_data = TaskData(
                 project_key=self.settings.developer_board_project_key,
                 summary=f"{feature.task_title}",
@@ -2564,6 +2584,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 story_points=story_points / 8 if story_points and story_points > 0 else None,
                 target_start=dates.get("target_start"),
                 target_end=dates.get("target_end"),
+                releases=releases if releases else None,
             )
 
             subtask_issue = self.jira_repository.create_task(subtask_data)
@@ -2807,13 +2828,32 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             update_fields = {}
             
-            if due_date_str and issue.fields.duedate != due_date_str:
+            # Update dates (handle both setting and clearing)
+            if issue.fields.duedate != due_date_str:
                 update_fields["duedate"] = due_date_str
-            if target_start_str and issue.fields.__dict__.get(self.jira_repository.jira_target_start_id) != target_start_str:
+            
+            current_target_start = issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
+            if current_target_start != target_start_str:
                 update_fields[self.jira_repository.jira_target_start_id] = target_start_str
-            if target_end_str and issue.fields.__dict__.get(self.jira_repository.jira_target_end_id) != target_end_str:
+            
+            current_target_end = issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
+            if current_target_end != target_end_str:
                 update_fields[self.jira_repository.jira_target_end_id] = target_end_str
             
+            # Update fixVersions (handle both setting and clearing)
+            feature_versions = set([v for v in [feature.release, feature.version] if v])
+            current_versions = set([field.name for field in issue.fields.fixVersions])
+            if feature_versions != current_versions:
+                if feature_versions:  # Only create releases if we're setting versions
+                    self._create_release_not_exist_during_update(
+                        feature,
+                        self.settings.developer_board_project_key,
+                    )
+                update_fields["fixVersions"] = [
+                    {"name": release}
+                    for release in [feature.release, feature.version]
+                    if release
+                ] if feature_versions else []
 
             if (
                 abs(current_story_points - story_point_hour) > 0.01
@@ -2828,12 +2868,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     else 0
                 )
                 
-                # Update dates and time estimates
-                update_fields = {
-                    "timetracking": {
-                        "originalEstimate": f"{story_point_hour}h",
-                        "remainingEstimate": f"{remaining_estimate}h",
-                    },
+                # Add time tracking to existing update_fields (don't overwrite dates)
+                update_fields["timetracking"] = {
+                    "originalEstimate": f"{story_point_hour}h",
+                    "remainingEstimate": f"{remaining_estimate}h",
                 }
 
                 LOGGER.info(
@@ -2842,7 +2880,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if update_fields:
                 subtask.update(fields=update_fields)
-                LOGGER.debug(f"Updated fields for subtask {subtask.key}")
+                LOGGER.debug(f"Updated fields for subtask {subtask.key}: {update_fields}")
 
         except Exception as e:
             LOGGER.error(f"Error updating time estimate for subtask {subtask}: {e}")
