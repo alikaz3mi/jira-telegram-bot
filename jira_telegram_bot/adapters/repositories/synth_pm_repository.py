@@ -265,8 +265,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # If no active/future sprint found, create the earliest one
                 if not selected_sprint:
                     selected_sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    LOGGER.info(f"PM Board: No active/future sprint found, will create sprint {selected_sprint_info.sprint_id} for feature {feature.task_title}")
-                    selected_sprint = self._create_sprint(selected_sprint_info, current_jalali_year)
+                    sprint_name = f"{self.settings.pm_project_key} Sprint {selected_sprint_info.sprint_id}"
+                    # Double-check if sprint exists before creating
+                    selected_sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
+                        self.pm_board_id,
+                    )
+                    if not selected_sprint:
+                        LOGGER.info(f"PM Board: No active/future sprint found, will create sprint {selected_sprint_info.sprint_id} for feature {feature.task_title}")
+                        selected_sprint = self._create_sprint(
+                            selected_sprint_info, 
+                            current_jalali_year,
+                            self.pm_board_id,
+                            self.settings.pm_project_key
+                        )
+                    else:
+                        LOGGER.info(f"PM Board: Sprint {sprint_name} already exists (state: {selected_sprint.get('state')}), using it for feature {feature.task_title}")
                 
                 # Assign the sprint ID to the task
                 if selected_sprint:
@@ -770,8 +784,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # If no active/future sprint found, create the earliest one
                 if not sprint:
                     sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    LOGGER.info(f"No active/future sprint found, will create sprint {sprint_info.sprint_id} for feature {feature.task_title}")
-                    sprint = None  # Will be created below
+                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    # Double-check if sprint exists before creating
+                    sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
+                        self.developer_board_id,
+                    )
+                    if sprint:
+                        LOGGER.info(f"Sprint {sprint_name} already exists (state: {sprint.get('state')}), using it for feature {feature.task_title}")
+                    else:
+                        LOGGER.info(f"No active/future sprint found, will create sprint {sprint_info.sprint_id} for feature {feature.task_title}")
+                        sprint = None  # Will be created below
                     
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
@@ -788,7 +811,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             if sprint is None:
                 LOGGER.info(f"Creating new sprint: {sprint_info.sprint_id} for feature {feature.task_title}")
-                sprint = self._create_sprint(sprint_info, current_jalali_year)
+                sprint = self._create_sprint(
+                    sprint_info, 
+                    current_jalali_year,
+                    self.developer_board_id,
+                    self.settings.developer_board_project_key
+                )
                 LOGGER.debug(f"Created sprint: {sprint}")
             elif sprint.get('state') == 'closed':
                 LOGGER.warning(f"Cannot create task for feature {feature.task_title} - assigned sprint is closed")
@@ -879,7 +907,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error creating task for feature {feature.task_title}: {e}")
             return None
 
-    def _create_sprint(self, sprint_info, current_jalali_year):
+    def _create_sprint(self, sprint_info, current_jalali_year, board_id: int, project_key: str):
+        """Create a sprint in the specified board.
+        
+        Args:
+            sprint_info: Sprint information
+            current_jalali_year: Current Jalali year
+            board_id: Board ID where sprint should be created
+            project_key: Project key for sprint naming
+            
+        Returns:
+            Created sprint object
+        """
         start_date = sprint_info.start_date
         end_date = sprint_info.end_date
         start_date = jdatetime.JalaliToGregorian(
@@ -899,8 +938,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 )
         end_date_str = f"{end_date[0]}-{end_date[1]:02d}-{end_date[2]:02d}"
         sprint = self.jira_repository.create_sprint(
-                    board_id=self.developer_board_id,
-                    sprint_name=f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}",
+                    board_id=board_id,
+                    sprint_name=f"{project_key} Sprint {sprint_info.sprint_id}",
                     start_date=start_date_str,
                     end_date=end_date_str,
                     goal=f"{sprint_info.start_date} to {sprint_info.end_date}",
@@ -1025,7 +1064,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         key=lambda s: int(s.split(':')[0]) if ':' in s else 0
                     )
                     
-                    # Find first active or future sprint
+                    # Find first active or future sprint (don't create in loop)
                     for s in sorted_sprints:
                         sprint_info = SprintInfo.parse_sprint_string(s)
                         sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
@@ -1035,19 +1074,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             self.developer_board_id,
                         )
                         LOGGER.debug(f"Sprint lookup result: {sprint}")
-                        if sprint is not None and sprint.get('state') == "closed":
-                            LOGGER.debug(f"Sprint {sprint_name} is closed, continuing search")
-                            continue
-                        if sprint is not None and sprint.get('state') == "active":
-                            LOGGER.debug(f"Found active sprint {sprint_name}")
-                            target_sprint = sprint
-                            break
-                        elif sprint is None:
-                            # Create sprint if it doesn't exist
-                            LOGGER.info(f"Creating new sprint: {sprint_name}")
-                            target_sprint = self._create_sprint(sprint_info, current_jalali_year)
-                            LOGGER.debug(f"Created sprint: {target_sprint}")
-                            break
+                        if sprint is not None:
+                            if sprint.get('state') == "closed":
+                                LOGGER.debug(f"Sprint {sprint_name} is closed, continuing search")
+                                continue
+                            elif sprint.get('state') == "active":
+                                LOGGER.debug(f"Found active sprint {sprint_name}")
+                                target_sprint = sprint
+                                break
+                            elif sprint.get('state') == 'future' and not target_sprint:
+                                # Found a future sprint - remember it but keep looking for active
+                                LOGGER.debug(f"Found future sprint {sprint_name}")
+                                target_sprint = sprint
                     
                     # If no active sprint found, use first non-closed sprint or create first sprint
                     if target_sprint is None:
@@ -1058,7 +1096,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             self.developer_board_id,
                         )
                         if sprint is None:
-                            target_sprint = self._create_sprint(sprint_info, current_jalali_year)
+                            target_sprint = self._create_sprint(
+                                sprint_info, 
+                                current_jalali_year,
+                                self.developer_board_id,
+                                self.settings.developer_board_project_key
+                            )
                         elif sprint.get('state') != "closed":
                             target_sprint = sprint
                         
@@ -1078,7 +1121,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     elif sprint is None:
                         # Create sprint if it doesn't exist
                         LOGGER.info(f"Creating new single sprint: {sprint_name}")
-                        target_sprint = self._create_sprint(sprint_info, current_jalali_year)
+                        target_sprint = self._create_sprint(
+                            sprint_info, 
+                            current_jalali_year,
+                            self.developer_board_id,
+                            self.settings.developer_board_project_key
+                        )
                         LOGGER.debug(f"Created single sprint: {target_sprint}")
                     # If sprint is closed, target_sprint remains None (will remove sprint assignment)
             # If feature.sprint_list is empty or None, target_sprint remains None (will remove sprint assignment)
