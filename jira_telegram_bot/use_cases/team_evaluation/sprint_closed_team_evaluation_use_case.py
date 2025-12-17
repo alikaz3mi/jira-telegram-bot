@@ -31,6 +31,9 @@ from jira_telegram_bot.use_cases.interfaces.team_evaluation_repository_interface
 from jira_telegram_bot.use_cases.interfaces.team_evaluation_calculation_log_repository_interface import (
     TeamEvaluationCalculationLogRepositoryInterface
 )
+from jira_telegram_bot.adapters.repositories.postgres.manager_evaluation_repository import (
+    ManagerEvaluationRepository
+)
 from jira_telegram_bot.use_cases.team_evaluation.services import (
     CalendarService,
     ChangelogService,
@@ -54,6 +57,7 @@ class SprintClosedTeamEvaluationUseCase:
         leave_repo: LeaveRepositoryInterface,
         team_evaluation_repo: TeamEvaluationRepositoryInterface,
         calculation_log_repo: TeamEvaluationCalculationLogRepositoryInterface,
+        manager_evaluation_repo: ManagerEvaluationRepository,
         settings: TeamEvaluationSettings
     ):
         """Initialize the use case.
@@ -66,6 +70,7 @@ class SprintClosedTeamEvaluationUseCase:
             leave_repo: Leave repository
             team_evaluation_repo: Team evaluation repository for database storage
             calculation_log_repo: Calculation log repository for detailed audit trail
+            manager_evaluation_repo: Manager evaluation repository
             settings: Team evaluation settings
         """
         self.task_manager_repo = task_manager_repo
@@ -73,6 +78,7 @@ class SprintClosedTeamEvaluationUseCase:
         self.google_sheet_gateway = google_sheet_gateway
         self.team_evaluation_repo = team_evaluation_repo
         self.calculation_log_repo = calculation_log_repo
+        self.manager_evaluation_repo = manager_evaluation_repo
         self.settings = settings
         
         # Initialize services
@@ -612,6 +618,20 @@ class SprintClosedTeamEvaluationUseCase:
                 else developer
             )
             
+            # Get manager evaluation score (30% component)
+            manager_score = self.manager_evaluation_repo.get_average_manager_score(
+                sprint_id=sprint_id,
+                developer_name=developer
+            )
+            
+            # Calculate system score (70% component) - this is the quality_score
+            system_score = quality_score
+            
+            # Calculate final score (70% system + 30% manager)
+            final_score = quality_score  # Default to system score if no manager evaluation
+            if manager_score is not None:
+                final_score = int((system_score * 0.70) + (manager_score * 0.30))
+            
             row = TeamEvaluationRow(
                 developer_name=google_sheet_name,
                 department=department,
@@ -636,7 +656,10 @@ class SprintClosedTeamEvaluationUseCase:
                 development_delivered_count=len([i for i in dev_issues if i.status in DONE_STATUSES]),
                 bug_delivered_count=len([i for i in bug_issues if i.status in DONE_STATUSES]),
                 support_delivered_count=len([i for i in support_issues if i.status in DONE_STATUSES]),
-                quality_score=quality_score
+                quality_score=quality_score,
+                system_score=system_score,
+                manager_evaluation_score=int(manager_score) if manager_score else None,
+                final_score=final_score
             )
             
             return (row, calculation_details)

@@ -61,6 +61,12 @@ from jira_telegram_bot.adapters.repositories.postgres.team_evaluation_repository
 from jira_telegram_bot.adapters.repositories.postgres.team_evaluation_calculation_log_repository import (
     PostgreSQLTeamEvaluationCalculationLogRepository,
 )
+from jira_telegram_bot.adapters.repositories.postgres.manager_evaluation_repository import (
+    ManagerEvaluationRepository,
+)
+from jira_telegram_bot.adapters.repositories.postgres.member_project_role_repository import (
+    MemberProjectRoleRepository,
+)
 from jira_telegram_bot.adapters.repositories.synth_pm_repository import (
     SynthPMRepository,
 )
@@ -449,6 +455,18 @@ def _configure_repositories(
     container[TeamEvaluationCalculationLogRepositoryInterface] = Singleton(
         lambda c: PostgreSQLTeamEvaluationCalculationLogRepository(
             db_connection=c[DatabaseConnectionInterface]
+        ),
+    )
+
+    container[ManagerEvaluationRepository] = Singleton(
+        lambda c: ManagerEvaluationRepository(
+            session=c[DatabaseConnectionInterface].get_session()
+        ),
+    )
+
+    container[MemberProjectRoleRepository] = Singleton(
+        lambda c: MemberProjectRoleRepository(
+            session=c[DatabaseConnectionInterface].get_session()
         ),
     )
 
@@ -899,6 +917,7 @@ def configure_team_evaluation_dependencies(container: Container):
             leave_repo=c[LeaveRepositoryInterface],
             team_evaluation_repo=c[TeamEvaluationRepositoryInterface],
             calculation_log_repo=c[TeamEvaluationCalculationLogRepositoryInterface],
+            manager_evaluation_repo=c[ManagerEvaluationRepository],
             settings=c[TeamEvaluationSettings],
         ),
     )

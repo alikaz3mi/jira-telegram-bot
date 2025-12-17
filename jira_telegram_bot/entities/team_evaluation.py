@@ -129,7 +129,10 @@ class TeamEvaluationRow(BaseModel):
     development_delivered_count: int  # توسعه تحویل داده شده
     bug_delivered_count: int  # باگ تحویل داده شده
     support_delivered_count: int  # پشتیبانی تحویل داده شده
-    quality_score: int  # درصد حسن انجام کار
+    quality_score: int  # درصد حسن انجام کار (legacy - now system_score)
+    system_score: Optional[int] = None  # امتیاز سیستمی (70% از نمره نهایی)
+    manager_evaluation_score: Optional[int] = None  # امتیاز ارزیابی مدیر (30% از نمره نهایی)
+    final_score: Optional[int] = None  # امتیاز نهایی ترکیبی
 
     def to_sheet_row(self) -> List[str]:
         """Convert to sheet row format with Farsi headers."""
@@ -158,6 +161,9 @@ class TeamEvaluationRow(BaseModel):
             str(self.bug_delivered_count),
             str(self.support_delivered_count),
             str(self.quality_score),
+            str(self.system_score if self.system_score is not None else self.quality_score),
+            str(self.manager_evaluation_score if self.manager_evaluation_score is not None else ""),
+            str(self.final_score if self.final_score is not None else self.quality_score),
         ]
 
     @classmethod
@@ -187,5 +193,8 @@ class TeamEvaluationRow(BaseModel):
             "توسعه تحویل داده شده",
             "باگ تحویل داده شده",
             "پشتیبانی تحویل داده شده",
-            "درصد حسن انجام کار",
+            "درصد حسن انجام کار (قدیمی)",
+            "امتیاز سیستمی (70%)",
+            "امتیاز مدیر (30%)",
+            "امتیاز نهایی",
         ]
