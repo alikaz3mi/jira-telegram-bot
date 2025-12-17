@@ -105,7 +105,7 @@ class TestBaseWebhookControllerUnit(unittest.IsolatedAsyncioTestCase):
         result = self.controller._extract_basic_info(webhook_data)
 
         # Assert
-        self.assertEqual(result["event_type"], "issue_created")
+        self.assertEqual(result["event_type"], "jira:issue_created")
         self.assertEqual(result["issue_key"], "TEST-123")
         self.assertEqual(result["timestamp"], "2023-01-01T00:00:00Z")
         self.assertEqual(result["webhook_id"], "jira:issue_created")

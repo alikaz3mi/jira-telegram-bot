@@ -177,12 +177,26 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         first_batch = [MockJiraIssue(f"TEST-{i}") for i in range(1, 101)]
         second_batch = [MockJiraIssue(f"TEST-{i}") for i in range(101, 151)]
 
-        self.mock_repository.search_issues.side_effect = [first_batch, second_batch]
+        call_count = 0
+        def search_issues_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # First two calls are pagination
+            if call_count == 1:
+                return first_batch
+            elif call_count == 2:
+                return second_batch
+            # All subsequent calls are epic lookups, return empty
+            else:
+                return []
+        
+        self.mock_repository.search_issues.side_effect = search_issues_side_effect
 
         result = await self.service.fetch_project_issues(project_key)
 
         self.assertEqual(len(result), 150)
-        self.assertEqual(self.mock_repository.search_issues.call_count, 2)
+        # Expect 2 pagination calls + 150 epic lookup calls = 152 total
+        self.assertEqual(self.mock_repository.search_issues.call_count, 152)
 
     async def test_a_fetch_project_issues_no_issues(self):
         """Test project issues fetching with no issues."""

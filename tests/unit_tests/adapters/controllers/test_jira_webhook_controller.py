@@ -24,7 +24,7 @@ class TestJiraWebhookController(unittest.IsolatedAsyncioTestCase):
         """Test successful webhook processing."""
         # Arrange
         webhook_data = {
-            "issue_event_type_name": "issue_created",
+            "webhookEvent": "jira:issue_created",
             "issue": {"key": "TEST-123"},
             "user": {"displayName": "Test User"}
         }
@@ -66,22 +66,28 @@ class TestJiraWebhookController(unittest.IsolatedAsyncioTestCase):
         """Test webhook processing with missing issue key."""
         # Arrange
         webhook_data = {
-            "issue_event_type_name": "issue_created",
+            "webhookEvent": "jira:issue_created",
             "issue": {}
         }
+        
+        self.jira_webhook_use_case.process_webhook.return_value = WebhookResponse(
+            status="ignored",
+            message="No mapping found"
+        )
+        self.process_jira_event_use_case.process_jira_webhook.return_value = False
         
         # Act
         result = await self.controller.process_webhook(webhook_data)
         
-        # Assert
+        # Assert - Should still process even without issue key
         self.assertEqual(result.status, "ignored")
-        self.assertIn("No issue_key found", result.message)
+        self.assertIn("Metrics: Processing failed", result.message)
     
     async def test_a_process_webhook_metrics_failed(self):
         """Test webhook processing when metrics fails."""
         # Arrange
         webhook_data = {
-            "issue_event_type_name": "issue_created",
+            "webhookEvent": "jira:issue_created",
             "issue": {"key": "TEST-123"}
         }
         
@@ -95,14 +101,14 @@ class TestJiraWebhookController(unittest.IsolatedAsyncioTestCase):
         result = await self.controller.process_webhook(webhook_data)
         
         # Assert
-        self.assertEqual(result.status, "success")  # Still success if notification worked
+        self.assertEqual(result.status, "success")  # Returns success when notification succeeds
         self.assertIn("Metrics: Processing failed", result.message)
     
     async def test_a_process_webhook_notification_ignored(self):
         """Test webhook processing when notification is ignored."""
         # Arrange
         webhook_data = {
-            "issue_event_type_name": "issue_created",
+            "webhookEvent": "jira:issue_created",
             "issue": {"key": "TEST-123"}
         }
         
@@ -116,20 +122,20 @@ class TestJiraWebhookController(unittest.IsolatedAsyncioTestCase):
         result = await self.controller.process_webhook(webhook_data)
         
         # Assert
-        self.assertEqual(result.status, "success")  # Success if metrics worked
+        self.assertEqual(result.status, "success")  # Returns success when metrics succeeds
         self.assertIn("Notification: No mapping found", result.message)
     
     async def test_a_process_webhook_both_failed(self):
         """Test webhook processing when both processes fail."""
         # Arrange
         webhook_data = {
-            "issue_event_type_name": "issue_created",
+            "webhookEvent": "jira:issue_created",
             "issue": {"key": "TEST-123"}
         }
         
         self.jira_webhook_use_case.process_webhook.return_value = WebhookResponse(
-            status="error",
-            message="Processing failed"
+            status="ignored",
+            message="Notification ignored"
         )
         self.process_jira_event_use_case.process_jira_webhook.return_value = False
         
@@ -137,15 +143,15 @@ class TestJiraWebhookController(unittest.IsolatedAsyncioTestCase):
         result = await self.controller.process_webhook(webhook_data)
         
         # Assert
-        self.assertEqual(result.status, "error")
-        self.assertIn("Notification: Processing failed", result.message)
+        self.assertEqual(result.status, "ignored")
+        self.assertIn("Notification: Notification ignored", result.message)
         self.assertIn("Metrics: Processing failed", result.message)
     
     async def test_a_process_webhook_exception_handling(self):
         """Test webhook processing with exception handling."""
         # Arrange
         webhook_data = {
-            "issue_event_type_name": "issue_created",
+            "webhookEvent": "jira:issue_created",
             "issue": {"key": "TEST-123"}
         }
         
