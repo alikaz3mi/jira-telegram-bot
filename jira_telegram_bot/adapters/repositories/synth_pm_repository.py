@@ -24,6 +24,10 @@ from jira_telegram_bot.entities.synth_pm.constants import (
     STATUS_DESCRIPTIONS,
     SynthPMStatus,
 )
+from jira_telegram_bot.entities.synth_pm.project_config import (
+    ProjectConfig,
+    ProjectMetadata,
+)
 from jira_telegram_bot.entities.synth_pm.department_dependency_calculator import (
     DepartmentDependencyCalculator,
 )
@@ -49,6 +53,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         jira_repository: TaskManagerRepositoryInterface,
         settings: SynthPMSettings,
         user_config: UserConfigInterface,
+        project_key: Optional[str] = None,
     ):
         """Initialize the repository.
 
@@ -56,35 +61,154 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             google_sheet_client: Google Sheets client
             jira_repository: Jira repository interface
             settings: SynthPM settings
+            user_config: User configuration interface
+            project_key: Optional project key (uses current_project_key from settings if None)
         """
         self.google_sheet_client = google_sheet_client
         self.jira_repository = jira_repository
         self.settings = settings
+        self.user_config = user_config
+        
+        self.project_config = self.settings.get_project_config(project_key)
+        self.project_metadata = self.settings.get_project_metadata(
+            self.project_config.project_key,
+        )
+        
         self.sync_status_file = Path(
-            f"{DEFAULT_PATH}/data/synth_developer_board_sync_status.json",
+            f"{DEFAULT_PATH}/data/synth_{self.project_config.project_key}_sync_status.json",
         )
         self.change_tracker_file = Path(
-            f"{DEFAULT_PATH}/data/synth_pm_change_tracker.json",
+            f"{DEFAULT_PATH}/data/synth_{self.project_config.project_key}_change_tracker.json",
         )
-        self.user_config = user_config
+        
         self.developer_board_id = self.jira_repository.get_board_id(
-            self.settings.developer_board_project_key,
+            self.project_config.boards.developer_board.jira_board_key,
         )
-        self.pm_board_id = self.jira_repository.get_board_id(
-            self.settings.pm_project_key,
-        )
+        
+        self.pm_board_id = None
+        if (
+            self.project_config.boards.pm_board
+            and self.project_config.boards.pm_board.enabled
+            and self.project_config.boards.pm_board.jira_board_key
+        ):
+            self.pm_board_id = self.jira_repository.get_board_id(
+                self.project_config.boards.pm_board.jira_board_key,
+            )
 
-    async def get_developer_board_features(self) -> List[SynthPMFeatureEntity]:
-        """Get all eatures from Google Sheets.
+    @property
+    def developer_board_project_key(self) -> str:
+        """Get developer board project key.
 
         Returns:
-            List of eature entities
+            Developer board Jira project key
+        """
+        return self.project_config.boards.developer_board.jira_board_key
+
+    @property
+    def pm_project_key(self) -> Optional[str]:
+        """Get PM board project key.
+
+        Returns:
+            PM board Jira project key if configured, None otherwise
+        """
+        if (
+            self.project_config.boards.pm_board
+            and self.project_config.boards.pm_board.jira_board_key
+        ):
+            return self.project_config.boards.pm_board.jira_board_key
+        return None
+
+    def validate_feature_for_task_creation(
+        self,
+        feature: SynthPMFeatureEntity,
+        minimum_status: str = "۵. آماده پیاده سازی فنی",
+    ) -> tuple[bool, Optional[str]]:
+        """Validate if feature meets minimum requirements for task creation.
+
+        Args:
+            feature: Feature entity to validate
+            minimum_status: Minimum status required for task creation
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not feature.task_title or not feature.task_title.strip():
+            return False, f"Row {feature.row_number}: Task title is empty"
+
+        status_order = [
+            "۱. ثبت و اولویت بندی",
+            "۲. تحلیل مسئله و RFP",
+            "۳. آماده سازی یوزر استوری",
+            "۴. در مرحله طراحی",
+            "۵. آماده پیاده سازی فنی",
+            "۶. در حال پیاده سازی",
+            "۷. تست فنی",
+            "۸. آماده تحویل",
+            "۹. مستندسازی فنی",
+            "۱۰. تکمیل شده",
+        ]
+
+        try:
+            if feature.status not in status_order:
+                return False, f"Row {feature.row_number}: Invalid status '{feature.status}'"
+
+            current_status_index = status_order.index(feature.status)
+            minimum_status_index = status_order.index(minimum_status)
+
+            if current_status_index < minimum_status_index:
+                return (
+                    False,
+                    f"Row {feature.row_number} ('{feature.task_title}'): Status '{feature.status}' is below minimum required status '{minimum_status}'",
+                )
+        except ValueError:
+            return False, f"Row {feature.row_number}: Status '{feature.status}' not found in status order"
+
+        if not feature.involved_people or not feature.involved_people.strip():
+            return (
+                False,
+                f"Row {feature.row_number} ('{feature.task_title}'): No assignees/involved people defined",
+            )
+
+        if not feature.sprint_list and not feature.sprint:
+            return (
+                False,
+                f"Row {feature.row_number} ('{feature.task_title}'): No sprint defined",
+            )
+
+        has_department = any([
+            feature.ai,
+            feature.backend,
+            feature.frontend,
+            feature.devops,
+            feature.ui_ux,
+        ])
+
+        if not has_department:
+            return (
+                False,
+                f"Row {feature.row_number} ('{feature.task_title}'): No department/component defined (AI, Backend, Frontend, DevOps, UI/UX)",
+            )
+
+        feature_dates = self.extract_dates_from_feature_in_str(feature)
+        if not feature_dates.get("target_start") and not feature_dates.get("target_end") and not feature_dates.get("due_date"):
+            return (
+                False,
+                f"Row {feature.row_number} ('{feature.task_title}'): No dates defined (implementation start date or deadline required)",
+            )
+
+        return True, None
+
+    async def get_developer_board_features(self) -> List[SynthPMFeatureEntity]:
+        """Get all features from Google Sheets.
+
+        Returns:
+            List of feature entities
         """
         try:
-            # TODO: get the range of headers dynamically.
+            board_config = self.project_config.boards.developer_board
             values = await self.google_sheet_client.get_values(
-                self.settings.google_sheets_id,
-                f"{self.settings.developer_board_worksheet_name}!A:AY",
+                self.project_config.spreadsheet_id,
+                f"{board_config.sheet_name}!{board_config.data_range}",
             )
 
             if not values or len(values) < 2:
@@ -134,9 +258,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            headers_range = f"{self.settings.developer_board_worksheet_name}!1:1"
+            board_config = self.project_config.boards.developer_board
+            headers_range = f"{board_config.sheet_name}!1:1"
             headers_values = await self.google_sheet_client.get_values(
-                self.settings.google_sheets_id,
+                self.project_config.spreadsheet_id,
                 headers_range,
             )
 
@@ -153,10 +278,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     col_letter = self._number_to_column_letter(
                         col_idx + 1,
                     )
-                    range_name = f"{self.settings.developer_board_worksheet_name}!{col_letter}{row_number}"
+                    range_name = f"{board_config.sheet_name}!{col_letter}{row_number}"
 
                     success = await self.google_sheet_client.update_cells(
-                        self.settings.google_sheets_id,
+                        self.project_config.spreadsheet_id,
                         range_name,
                         [[str(value) if value is not None else ""]],
                     )
@@ -585,15 +710,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             return False
 
     async def get_release_notes(self) -> List[ReleaseNoteEntity]:
-        """Get all release notes from Google Sheets.
+        """Get all release notes from Google Sheets PM board.
 
         Returns:
             List of release note entities
         """
         try:
+            if not self.project_config.boards.pm_board or not self.project_config.boards.pm_board.enabled:
+                LOGGER.warning("PM board not configured or disabled")
+                return []
+
+            pm_board_config = self.project_config.boards.pm_board
             values = await self.google_sheet_client.get_values(
-                self.settings.google_sheets_id,
-                f"{self.settings.release_notes_worksheet_name}!A:AG",
+                self.project_config.spreadsheet_id,
+                f"{pm_board_config.sheet_name}!{pm_board_config.data_range}",
             )
 
             if not values or len(values) < 2:
@@ -663,9 +793,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            headers_range = f"{self.settings.release_notes_worksheet_name}!1:1"
+            if not self.project_config.boards.pm_board or not self.project_config.boards.pm_board.enabled:
+                LOGGER.error("PM board not configured or disabled")
+                return False
+
+            pm_board_config = self.project_config.boards.pm_board
+            headers_range = f"{pm_board_config.sheet_name}!1:1"
             headers_values = await self.google_sheet_client.get_values(
-                self.settings.google_sheets_id,
+                self.project_config.spreadsheet_id,
                 headers_range,
             )
 
@@ -682,10 +817,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if field in column_mapping:
                     col_idx = column_mapping[field]
                     col_letter = self._number_to_column_letter(col_idx + 1)
-                    range_name = f"{self.settings.release_notes_worksheet_name}!{col_letter}{row_number}"
+                    range_name = f"{pm_board_config.sheet_name}!{col_letter}{row_number}"
 
                     success = await self.google_sheet_client.update_cells(
-                        self.settings.google_sheets_id,
+                        self.project_config.spreadsheet_id,
                         range_name,
                         [[str(value) if value is not None else ""]],
                     )
@@ -1490,8 +1625,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         # Column name mappings - TODO: Make this configurable through database/settings
         column_name_mappings = {
             "row_number": ["ردیف", "Row", "ردیف"],
-            "task_title": ["وظیفه", "Task", "وظیفه"],
-            "epic": ["Epic", "Epic"],
+            "task_title": ["وظیفه", "Task", "وظیفه", "Summary"],
+            "epic": ["Epic", "Epic Name"],
             "necessity": ["ضرورت", "Necessity", "ضرورت"],
             "priority": ["اولویت", "Priority", "اولویت"],
             "status": ["وضعیت", "Status", "وضعیت"],
@@ -1499,7 +1634,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "eta_hours": ["ETA(h)", "ETA", "ETA(h)"],
             "total_hours": ["Total (h)", "Total", "Total (h)"],
             "departments": ["Departments", "Departments"],
-            "involved_people": ["افراد درگیر", "Involved People", "افراد درگیر"],
+            "involved_people": ["افراد درگیر", "Involved People", "افراد درگیر", "Assignee", "Assignees"],
             "ai": ["AI", "AI"],
             "backend": ["Backend", "Backend"],
             "frontend": ["Front-end", "Frontend", "Front-end"],
@@ -1510,8 +1645,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "تاریخ شروع پیاده سازی",
             "Implementation Start",
             "تاریخ شروع پیاده سازی",
+            "Target Start", "target_start"
             ],
-            "deadline": ["ددلاین", "Deadline", "ددلاین"],
+            "deadline": ["ددلاین", "Deadline", "ددلاین", "Due Date", "due_date"],
+            "implementation_end_date": [
+            "تاریخ پایان پیاده سازی",
+            "Implementation End",
+            "تاریخ پایان پیاده سازی",
+            "Target End", "target_end"
+            ],
             "sprint": ["اسپرینت", "Sprint", "اسپرینت"],
             "dependencies": ["وابستگی ها", "Dependencies", "وابستگی ها"],
             "department_deps": ["Department Deps", "Department Dependencies", "وابستگی های دپارتمان"],
@@ -1524,9 +1666,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "acceptance_criteria": ["معیارهای پذیرش", "Acceptance Criteria", "معیارهای پذیرش"],
             "test_cases": ["تست ها", "Test Cases", "تست ها"],
             "po_notes": ["علل تغییر یا توقف", "PO Notes", "علل تغییر یا توقف"],
-            "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key"],
-            "developer_board_issue_key": ["developer_board_issue_key"],
-            "version": ["version", "ریلیز اصلی"],
+            "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key", "pm_board_key", "PM Board Key"],
+            "developer_board_issue_key": ["developer_board_issue_key", "developer_board_key", "Developer Board Key"],
+            "version": ["version", "ریلیز اصلی", "Fix Version", "Fix Version/s", "FixVersion"],
             
         }
         people_mapping = {}
@@ -1851,23 +1993,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         return components
 
     def _get_status_mapping(self) -> Dict[str, str]:
-        """Get mapping of sheet status to Jira status.
+        """Get mapping of sheet status to Jira status for current project.
 
         Returns:
             Dictionary mapping sheet status to Jira status
         """
-        return {
-            "۱. ثبت و اولویت بندی": "BACKLOG",
-            "۲. تحلیل مسئله و RFP": "SELECTED FOR DEVELOPMENT",
-            "۳. آماده سازی یوزر استوری": "TO DO",
-            "۴. در مرحله طراحی": "IN REVIEW",
-            "۵. آماده پیاده سازی فنی": "OPEN",
-            "۶. در حال پیاده سازی": "IN PROGRESS",
-            "۷. تست فنی": "REVIEW",
-            "۸. آماده تحویل": "RESOLVED",
-            "۹. مستندسازی فنی": "DONE",
-            "۱۰. تکمیل شده": "CLOSED",
-        }
+        return self.project_metadata.status_mapping.google_sheet_to_jira
+
+    def get_reverse_status_mapping(self) -> Dict[str, str]:
+        """Get mapping of Jira status to sheet status for current project.
+
+        Returns:
+            Dictionary mapping Jira status to sheet status
+        """
+        return self.project_metadata.status_mapping.jira_to_google_sheet
 
     def _create_epic_if_not_exists(
         self,
@@ -2009,15 +2148,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.warning(f"No transition found to {target_status} for {issue_key}")
         except Exception as e:
             LOGGER.error(f"Error transitioning {issue_key} to {target_status}: {e}")
-
-    def get_reverse_status_mapping(self) -> Dict[str, str]:
-        """Get mapping of Jira status to sheet status.
-
-        Returns:
-            Dictionary mapping Jira status to sheet status
-        """
-        key_values = self._get_status_mapping()
-        return {value: key for key, value in key_values.items()}
 
     async def _create_subtasks_for_assignees(
         self,
