@@ -1,8 +1,6 @@
 """Multi-project synchronization service for SynthPM."""
 from __future__ import annotations
 
-import asyncio
-import contextlib
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -10,28 +8,30 @@ from typing import Optional
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.app_container import get_container
 from jira_telegram_bot.entities.synth_pm.project_config import ProjectConfig
+from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 
 class SynthPMMultiProjectSyncService:
-    """Service for managing multi-project synchronization."""
+    """Service for managing multi-project synchronization using APScheduler."""
 
     def __init__(
         self,
         settings: SynthPMSettings,
+        scheduler: Optional[APSchedulerService] = None,
         project_keys: Optional[List[str]] = None,
     ):
         """Initialize the multi-project sync service.
 
         Args:
             settings: SynthPM settings
+            scheduler: Optional APScheduler service (will be created if not provided)
             project_keys: Optional list of project keys to sync (None = all projects)
         """
         self.settings = settings
         self.project_keys = project_keys
-        self.running = False
-        self.tasks: Dict[str, asyncio.Task] = {}
+        self.scheduler = scheduler or APSchedulerService()
         self.use_cases: Dict[str, SynthPMUseCase] = {}
 
     async def initialize(self):
@@ -109,111 +109,93 @@ class SynthPMMultiProjectSyncService:
                 LOGGER.error(f"Failed to initialize project {project.project_key}: {e}", exc_info=True)
 
     async def start(self):
-        """Start synchronization for all projects."""
-        if self.running:
-            LOGGER.warning("Multi-project sync service is already running")
-            return
-        
-        await self.initialize()
+        """Start synchronization for all projects using APScheduler."""
+        if not self.use_cases:
+            await self.initialize()
         
         if not self.use_cases:
             LOGGER.error("No projects initialized for synchronization")
             return
         
-        self.running = True
-        
-        # Start sync loop for each project with its own interval
+        # Schedule each project's sync job
         for project_key, use_case in self.use_cases.items():
             project_config = use_case.repository.project_config
-            task = asyncio.create_task(
-                self._project_sync_loop(project_key, use_case, project_config)
+            sync_interval_minutes = project_config.sync_settings.sync_interval_minutes
+            
+            # Create async wrapper for the sync job
+            async def sync_job(pk=project_key, uc=use_case, pc=project_config):
+                await self._execute_project_sync(pk, uc, pc)
+            
+            # Schedule the job
+            await self.scheduler.schedule_recurring_job(
+                job_func=sync_job,
+                interval_minutes=sync_interval_minutes,
+                job_name=f"synth_pm_sync_{project_key}",
             )
-            self.tasks[project_key] = task
         
+        # Start the scheduler
         LOGGER.info(
-            f"Started multi-project SynthPM sync for {len(self.use_cases)} project(s): "
+            f"Starting APScheduler for {len(self.use_cases)} project(s): "
             f"{', '.join(self.use_cases.keys())}"
         )
+        await self.scheduler.start_scheduler()
 
     async def stop(self):
         """Stop all synchronization tasks."""
-        if not self.running:
-            return
-        
-        self.running = False
-        
-        # Cancel all tasks
-        for project_key, task in self.tasks.items():
-            LOGGER.info(f"Stopping sync for project: {project_key}")
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        
-        self.tasks.clear()
+        LOGGER.info("Stopping multi-project SynthPM sync service...")
+        await self.scheduler.stop_scheduler()
         LOGGER.info("Stopped all multi-project SynthPM sync tasks")
 
-    async def _project_sync_loop(
+    async def _execute_project_sync(
         self,
         project_key: str,
         use_case: SynthPMUseCase,
         project_config: ProjectConfig,
     ):
-        """Sync loop for a single project.
+        """Execute sync for a single project.
 
         Args:
             project_key: Project key
             use_case: Project-specific use case
             project_config: Project configuration
         """
-        sync_interval_minutes = project_config.sync_settings.sync_interval_minutes
-        
-        while self.running:
-            try:
-                LOGGER.info(f"[{project_key}] Starting sync cycle")
-                
-                # Sync features
-                result = await use_case.sync_developer_board_features()
-                
-                if result["status"] == "success":
-                    results = result.get("results", {})
-                    LOGGER.info(
-                        f"[{project_key}] Sync completed - "
-                        f"Created: {results.get('created_jira_tasks', 0)} PM, "
-                        f"{results.get('created_developer_board_tasks', 0)} dev | "
-                        f"Updated: {results.get('updated_jira_tasks', 0)} PM, "
-                        f"{results.get('updated_developer_board_tasks', 0)} dev | "
-                        f"Skipped: {len(results.get('skipped', []))} | "
-                        f"Errors: {len(results.get('errors', []))}"
-                    )
-                else:
-                    LOGGER.error(f"[{project_key}] Sync failed: {result.get('message')}")
-                
-                # Sync release notes if PM board is enabled
-                if project_config.boards.pm_board and project_config.boards.pm_board.enabled:
-                    try:
-                        release_result = await use_case.sync_release_notes()
-                        if release_result["status"] == "success":
-                            LOGGER.info(
-                                f"[{project_key}] Release notes sync completed: "
-                                f"{release_result.get('results', {})}"
-                            )
-                    except Exception as e:
-                        LOGGER.error(f"[{project_key}] Release notes sync error: {e}")
-                
-                # Wait for next sync interval
-                LOGGER.debug(f"[{project_key}] Next sync in {sync_interval_minutes} minutes")
-                await asyncio.sleep(sync_interval_minutes * 60)
-                
-            except asyncio.CancelledError:
-                LOGGER.info(f"[{project_key}] Sync task cancelled")
-                break
-            except Exception as e:
-                LOGGER.error(
-                    f"[{project_key}] Error in sync loop: {e}",
-                    exc_info=True,
+        try:
+            LOGGER.info(f"[{project_key}] Starting sync cycle")
+            
+            # Sync features
+            result = await use_case.sync_developer_board_features()
+            
+            if result["status"] == "success":
+                results = result.get("results", {})
+                LOGGER.info(
+                    f"[{project_key}] Sync completed - "
+                    f"Created: {results.get('created_jira_tasks', 0)} PM, "
+                    f"{results.get('created_developer_board_tasks', 0)} dev | "
+                    f"Updated: {results.get('updated_jira_tasks', 0)} PM, "
+                    f"{results.get('updated_developer_board_tasks', 0)} dev | "
+                    f"Skipped: {len(results.get('skipped', []))} | "
+                    f"Errors: {len(results.get('errors', []))}"
                 )
-                # Wait before retrying to avoid rapid error loops
-                await asyncio.sleep(60)
+            else:
+                LOGGER.error(f"[{project_key}] Sync failed: {result.get('message')}")
+            
+            # Sync release notes if PM board is enabled
+            if project_config.boards.pm_board and project_config.boards.pm_board.enabled:
+                try:
+                    release_result = await use_case.sync_release_notes()
+                    if release_result["status"] == "success":
+                        LOGGER.info(
+                            f"[{project_key}] Release notes sync completed: "
+                            f"{release_result.get('results', {})}"
+                        )
+                except Exception as e:
+                    LOGGER.error(f"[{project_key}] Release notes sync error: {e}")
+                    
+        except Exception as e:
+            LOGGER.error(
+                f"[{project_key}] Error in sync execution: {e}",
+                exc_info=True,
+            )
 
     async def trigger_sync(self, project_key: Optional[str] = None) -> Dict[str, dict]:
         """Manually trigger sync for one or all projects.
@@ -267,18 +249,17 @@ class SynthPMMultiProjectSyncService:
             Status information for each project
         """
         status = {
-            "running": self.running,
+            "running": self.scheduler._is_running,
             "projects": {},
         }
         
         for project_key, use_case in self.use_cases.items():
             project_config = use_case.repository.project_config
-            task = self.tasks.get(project_key)
             
             status["projects"][project_key] = {
                 "enabled": project_config.boards.developer_board.enabled,
                 "sync_interval_minutes": project_config.sync_settings.sync_interval_minutes,
-                "task_running": task is not None and not task.done() if task else False,
+                "scheduled": self.scheduler._is_running,
                 "pm_board_enabled": (
                     project_config.boards.pm_board.enabled
                     if project_config.boards.pm_board

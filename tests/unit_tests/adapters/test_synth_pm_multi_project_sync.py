@@ -30,6 +30,13 @@ class TestMultiProjectSyncService(unittest.TestCase):
         # Create mock settings
         self.settings = Mock(spec=SynthPMSettings)
         
+        # Create mock scheduler
+        self.mock_scheduler = MagicMock()
+        self.mock_scheduler.schedule_recurring_job = AsyncMock()
+        self.mock_scheduler.start_scheduler = AsyncMock()
+        self.mock_scheduler.stop_scheduler = AsyncMock()
+        self.mock_scheduler._is_running = False
+        
         # Create test projects
         self.project1 = ProjectConfig(
             project_key="PROJECT1",
@@ -84,6 +91,7 @@ class TestMultiProjectSyncService(unittest.TestCase):
         # Create service without specific projects
         service = SynthPMMultiProjectSyncService(
             settings=self.settings,
+            scheduler=self.mock_scheduler,
             project_keys=None,
         )
         
@@ -110,6 +118,7 @@ class TestMultiProjectSyncService(unittest.TestCase):
         # Create service with specific project
         service = SynthPMMultiProjectSyncService(
             settings=self.settings,
+            scheduler=self.mock_scheduler,
             project_keys=["PROJECT1"],
         )
         
@@ -128,9 +137,10 @@ class TestMultiProjectSyncService(unittest.TestCase):
         self.assertNotIn("PROJECT2", service.use_cases)
 
     async def test_start_creates_tasks_for_each_project(self):
-        """Test that start creates sync tasks for each project."""
+        """Test that start creates scheduled jobs for each project."""
         service = SynthPMMultiProjectSyncService(
             settings=self.settings,
+            scheduler=self.mock_scheduler,
             project_keys=None,
         )
         
@@ -147,28 +157,33 @@ class TestMultiProjectSyncService(unittest.TestCase):
             return_value={"status": "success", "results": {}}
         )
         
-        # Directly set use_cases
+        # Directly set use_cases to bypass initialize()
         service.use_cases = {
             "PROJECT1": mock_use_case1,
             "PROJECT2": mock_use_case2,
         }
         
+        # Mock the scheduler to not actually start
+        async def mock_start():
+            pass
+        self.mock_scheduler.start_scheduler = AsyncMock(side_effect=mock_start)
+        
         # Start the service
         await service.start()
         
-        # Should have tasks for both projects
-        self.assertEqual(len(service.tasks), 2)
-        self.assertIn("PROJECT1", service.tasks)
-        self.assertIn("PROJECT2", service.tasks)
-        self.assertTrue(service.running)
+        # Verify scheduler was called for both projects
+        self.assertEqual(self.mock_scheduler.schedule_recurring_job.call_count, 2)
+        self.mock_scheduler.start_scheduler.assert_called_once()
         
         # Cleanup
         await service.stop()
+        self.mock_scheduler.stop_scheduler.assert_called_once()
 
     async def test_get_status(self):
         """Test status reporting."""
         service = SynthPMMultiProjectSyncService(
             settings=self.settings,
+            scheduler=self.mock_scheduler,
             project_keys=None,
         )
         
@@ -198,6 +213,7 @@ class TestMultiProjectSyncService(unittest.TestCase):
         """Test manual sync trigger for specific project."""
         service = SynthPMMultiProjectSyncService(
             settings=self.settings,
+            scheduler=self.mock_scheduler,
             project_keys=None,
         )
         
@@ -222,6 +238,7 @@ class TestMultiProjectSyncService(unittest.TestCase):
         """Test manual sync trigger for all projects."""
         service = SynthPMMultiProjectSyncService(
             settings=self.settings,
+            scheduler=self.mock_scheduler,
             project_keys=None,
         )
         
@@ -251,34 +268,18 @@ class TestMultiProjectSyncService(unittest.TestCase):
         mock_use_case2.sync_developer_board_features.assert_called_once()
 
     async def test_stop_cancels_all_tasks(self):
-        """Test that stop cancels all running tasks."""
+        """Test that stop calls scheduler.stop_scheduler."""
         service = SynthPMMultiProjectSyncService(
             settings=self.settings,
+            scheduler=self.mock_scheduler,
             project_keys=None,
         )
         
-        # Create real async tasks for testing
-        async def dummy_task():
-            try:
-                await asyncio.sleep(1000)  # Long sleep to ensure it's running
-            except asyncio.CancelledError:
-                pass  # Expected when task is cancelled
-        
-        task1 = asyncio.create_task(dummy_task())
-        task2 = asyncio.create_task(dummy_task())
-        
-        service.tasks = {
-            "PROJECT1": task1,
-            "PROJECT2": task2,
-        }
-        service.running = True
-        
+        # Call stop
         await service.stop()
         
-        self.assertFalse(service.running)
-        self.assertTrue(task1.cancelled() or task1.done())
-        self.assertTrue(task2.cancelled() or task2.done())
-        self.assertEqual(len(service.tasks), 0)
+        # Verify scheduler.stop_scheduler was called
+        self.mock_scheduler.stop_scheduler.assert_called_once()
 
 
 def async_test(coro):

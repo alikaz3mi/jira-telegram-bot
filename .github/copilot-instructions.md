@@ -88,8 +88,50 @@ Use cases represent the core application logic and should:
 - Both sync and async versions of methods are provided where needed
 - Properly manage and clean up async resources
 
+## 9 . Scheduling & Background Tasks
 
-## 7 . Function template
+**NEVER use while loops with asyncio.sleep() for recurring tasks.** Always use the proper scheduling infrastructure:
+
+### APSchedulerService (Preferred)
+* Located: `jira_telegram_bot/frameworks/scheduler/ap_scheduler_service.py`
+* Already in dependency injection container
+* Use for interval-based recurring tasks
+* Example:
+  ```python
+  from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
+  
+  scheduler = APSchedulerService()
+  await scheduler.schedule_recurring_job(
+      job_func=my_async_function,
+      interval_minutes=5,
+      job_name="unique_job_name"
+  )
+  await scheduler.start_scheduler()
+  ```
+
+### CronJob (For Cron Expressions)
+* Located: `jira_telegram_bot/frameworks/scheduler/cron_job.py`
+* Use when you need cron-style scheduling (e.g., "0 9 * * *" for daily at 9 AM)
+* Wraps `croniter` for cron expression parsing
+* Example: See `scripts/run_deadline_notifier.py`
+
+### Anti-Pattern (DO NOT USE)
+```python
+# ❌ WRONG - Do not use while loops for scheduling
+while self.running:
+    await do_work()
+    await asyncio.sleep(interval * 60)
+```
+
+### Correct Pattern
+```python
+# ✅ CORRECT - Use APSchedulerService
+scheduler = APSchedulerService()
+await scheduler.schedule_recurring_job(do_work, interval, "job_name")
+await scheduler.start_scheduler()
+```
+
+## 10 . Function template
 
 Copilot, when completing a new function, use this skeleton:
 
@@ -98,7 +140,7 @@ def example(name: str) -> str:
     """Return a polite greeting.
 
     Args:
-        name: Person’s display name.
+        name: Person's display name.
 
     Returns:
         A greeting string.
@@ -108,7 +150,7 @@ def example(name: str) -> str:
 
 *(No inline comments, full typing, single concise docstring.)*
 
-## 8. Prompt Template. 
+## 11. Prompt Template.
 
 Always write prompts in this template:
 
@@ -118,7 +160,7 @@ Always write prompts in this template:
 
 Then, when creating the chain in the related class in `ai_agents`, import it, and create the chain. I.e `chain = SamplePrompt.prompt | llm | SamplePrompt.parser`
 
-## 9 . Things to avoid
+## 12 . Things to avoid
 * No `# ` comments in committed code; open an issue instead.
 * Never use `print` for logging — rely on `LOGGER` configured in `__init__`.
 * Skip magic numbers/strings — extract to `constants.py` or Enum. And must be in entities 

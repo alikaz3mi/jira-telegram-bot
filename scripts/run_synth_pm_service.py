@@ -73,13 +73,12 @@ async def main():
         def signal_handler(sig):
             LOGGER.info(f"Received signal {sig}, initiating graceful shutdown...")
             asyncio.create_task(sync_service.stop())
-            loop.stop()
         
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))
         
-        # Start the service
-        await sync_service.start()
+        # Initialize and check projects
+        await sync_service.initialize()
         
         if not sync_service.use_cases:
             LOGGER.error("No projects were initialized. Exiting.")
@@ -87,7 +86,7 @@ async def main():
         
         # Log initial status
         status = sync_service.get_status()
-        LOGGER.info("Service Status:")
+        LOGGER.info("Service Configuration:")
         for project_key, project_status in status["projects"].items():
             LOGGER.info(
                 f"  - {project_key}: "
@@ -96,26 +95,11 @@ async def main():
             )
         
         LOGGER.info("=" * 80)
-        LOGGER.info("Service started successfully. Running continuous sync...")
+        LOGGER.info("Starting APScheduler-based continuous sync...")
         LOGGER.info("=" * 80)
         
-        # Keep the service running
-        try:
-            while sync_service.running:
-                await asyncio.sleep(60)
-                
-                # Periodic status check
-                if int(asyncio.get_event_loop().time()) % 3600 < 60:  # Log every hour
-                    status = sync_service.get_status()
-                    running_count = sum(
-                        1 for p in status["projects"].values() if p["task_running"]
-                    )
-                    LOGGER.info(
-                        f"Heartbeat: {running_count}/{len(status['projects'])} "
-                        f"projects actively syncing"
-                    )
-        except asyncio.CancelledError:
-            LOGGER.info("Main loop cancelled")
+        # Start the service (this will block until stopped)
+        await sync_service.start()
         
     except KeyboardInterrupt:
         LOGGER.info("Keyboard interrupt received")
