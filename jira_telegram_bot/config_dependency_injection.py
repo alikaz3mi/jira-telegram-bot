@@ -823,7 +823,7 @@ def _configure_synth_pm_board(container: Container) -> None:
             repository=c[SynthPMRepositoryInterface],
             settings=c[SynthPMSettings],
             user_config=c[UserConfigInterface],
-            notification_gateway=NotificationGateway(token=c[SynthPMSettings].telegram_bot_token),
+            notification_gateway=NotificationGateway(token=c[SynthPMSettings].get_telegram_bot_token()),
             generate_acceptance_criteria_use_case=c[GenerateAcceptanceCriteriaUseCase],
             generate_test_scenarios_use_case=c[GenerateTestScenariosUseCase],
         )

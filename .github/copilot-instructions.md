@@ -38,8 +38,7 @@ _These guidelines apply to every suggestion Copilot makes in this repository._
 
 ## 3 . Domain & settings
 * **Entities** are Pydantic `BaseModel` subclasses — immutable where possible.
-* **Settings** classes inherit from `pydantic_settings.BaseSettings`; keep all environment configuration in `settings/`. Settings must be injected to class via dependency injection. 
-
+* **Settings** classes inherit from `pydantic_settings.BaseSettings`; keep all environment configuration in `settings/`. Settings must be injected to class via dependency injection. * **Scripts must use dependency injection**: All scripts in `scripts/` directory must use `get_container()` from `app_container.py` to obtain dependencies (settings, repositories, services, use cases). Never instantiate settings, repositories, or services directly in scripts.
 ## 4 . Tests
 * Write tests **only with `unittest`**, located under `tests/` (mirroring package structure when practical).
 * Main tests for use cases are in `tests/use_cases`
