@@ -825,6 +825,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 labels = None
                 description = feature.description
                 story_points = feature.total_hours / 8 if feature.total_hours else 0
+                assignee = assignees[0] if assignees else None
             else:
                 labels = [f"PM-{feature.jira_issue_key}", feature.involved_people]
                 description = (
@@ -834,6 +835,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     f"✍️ *Description*: {feature.description}"
                 )
                 story_points = None
+                assignee = None  # Stories don't have direct assignee, use subtasks
 
             developer_board_task_data = TaskData(
                 project_key=self.settings.developer_board_project_key,
@@ -844,6 +846,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 epic_link=epic_link,
                 labels=labels,
                 components=components,
+                assignee=assignee,
                 due_date=feature_dates_str.get("due_date"),
                 story_points=story_points,
                 target_start=feature_dates_str.get("target_start"),
