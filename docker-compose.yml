@@ -48,7 +48,7 @@ services:
       - "2315:2315"
 
 
-  jira-sync-service:
+  jira-sync-service: # Sync Jira to PostGres Table every 10 minutes
     build:
       context: .
       dockerfile: Dockerfile
@@ -98,23 +98,23 @@ services:
   #     - POSTGRES_HOST=postgres
   #     - POSTGRES_PORT=5432
 
-  synth-pm-multi-project-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: synth_pm_multi_project
-    image: jira_telegram_bot:v3
-    volumes:
-      - .:/app
-    command: >
-      python3 scripts/run_synth_pm_service.py
-    restart: always
-    environment:
-      # Comma-separated project keys or JSON array: ["PARSCHAT","PROJECT2"]
-      # Leave empty to sync all projects
-      - SYNTH_PM_PROJECT_KEYS=
-    networks:
-      - jira-bot-network
+  # synth-pm-multi-project-service:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: synth_pm_multi_project
+  #   image: jira_telegram_bot:v3
+  #   volumes:
+  #     - .:/app
+  #   command: >
+  #     python3 scripts/run_synth_pm_service.py
+  #   restart: always
+  #   environment:
+  #     # Comma-separated project keys or JSON array: ["PARSCHAT","PROJECT2"]
+  #     # Leave empty to sync all projects
+  #     - SYNTH_PM_PROJECT_KEYS=
+  #   networks:
+  #     - jira-bot-network
   
 
   # deadline-notifier:

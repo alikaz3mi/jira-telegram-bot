@@ -44,6 +44,20 @@ class SynthPMSettings(BaseSettings):
         default=None,
         description="Current active project key (defaults to first in config)",
     )
+    
+    # Telegram configuration (loaded from environment)
+    telegram_bot_token: Optional[str] = Field(
+        default=None,
+        description="Telegram bot token for SynthPM notifications",
+    )
+    telegram_channel_id: Optional[str] = Field(
+        default=None,
+        description="Telegram channel ID for SynthPM notifications",
+    )
+    telegram_group_id: Optional[str] = Field(
+        default=None,
+        description="Telegram group ID for SynthPM notifications",
+    )
 
     # Filtering Configuration (optional for targeted synchronization)
     default_filter_sprints: Optional[List[str]] = Field(
@@ -76,6 +90,7 @@ class SynthPMSettings(BaseSettings):
         env_file_encoding="utf-8",
         env_prefix="synth_pm_",
         extra="ignore",
+        case_sensitive=False,
     )
 
     _multi_project_config: Optional[SynthPMMultiProjectConfig] = None
@@ -174,57 +189,6 @@ class SynthPMSettings(BaseSettings):
         """
         multi_config = self.load_multi_project_config()
         return multi_config.projects
-
-    def get_telegram_bot_token(self, project_key: Optional[str] = None) -> str:
-        """Get Telegram bot token for a project from environment.
-
-        Args:
-            project_key: Project key
-
-        Returns:
-            Telegram bot token
-        """
-        project = self.get_project_config(project_key)
-        token = os.getenv(project.telegram.bot_token_env)
-        if not token:
-            raise ValueError(
-                f"Telegram bot token not found in env: {project.telegram.bot_token_env}",
-            )
-        return token
-
-    def get_telegram_channel_id(self, project_key: Optional[str] = None) -> str:
-        """Get Telegram channel ID for a project from environment.
-
-        Args:
-            project_key: Project key
-
-        Returns:
-            Telegram channel ID
-        """
-        project = self.get_project_config(project_key)
-        channel_id = os.getenv(project.telegram.channel_id_env)
-        if not channel_id:
-            raise ValueError(
-                f"Telegram channel ID not found in env: {project.telegram.channel_id_env}",
-            )
-        return channel_id
-
-    def get_telegram_group_id(self, project_key: Optional[str] = None) -> str:
-        """Get Telegram group ID for a project from environment.
-
-        Args:
-            project_key: Project key
-
-        Returns:
-            Telegram group ID
-        """
-        project = self.get_project_config(project_key)
-        group_id = os.getenv(project.telegram.group_id_env)
-        if not group_id:
-            raise ValueError(
-                f"Telegram group ID not found in env: {project.telegram.group_id_env}",
-            )
-        return group_id
 
     def get_default_filter_criteria(self) -> Optional["SynthPMSyncFilterCriteria"]:
         """Get default filter criteria from settings.

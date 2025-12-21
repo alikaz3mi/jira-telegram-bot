@@ -724,7 +724,7 @@ class SynthPMUseCase:
 
             # Get project-specific Telegram configuration
             project_config = self.repository.project_config
-            channel_id = self.settings.get_telegram_channel_id(project_config.project_key)
+            channel_id = self.settings.telegram_channel_id
 
             # Post to channel using dedicated bot
             await self.notification_gateway.send_message_async(
