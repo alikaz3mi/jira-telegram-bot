@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from typing import Optional
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.services.synth_pm_sync_task import SynthPMSyncTask
@@ -14,12 +15,63 @@ from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 
-async def setup_components():
-    """Set up all required components for SynthPM using dependency injection."""
+async def setup_components(project_key: Optional[str] = None):
+    """Set up all required components for SynthPM using dependency injection.
+    
+    Args:
+        project_key: Optional project key to use (defaults to first project in config)
+    
+    Returns:
+        Configured SynthPM use case instance
+    """
     try:
         container = get_container()
 
-        synth_developer_board_use_case = container[SynthPMUseCase]
+        # If project_key is specified, create a new repository instance for that project
+        if project_key:
+            from jira_telegram_bot.adapters.google_sheet import GoogleSheetClient
+            from jira_telegram_bot.adapters.repositories.synth_pm_repository import (
+                SynthPMRepository,
+            )
+            from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
+                TaskManagerRepositoryInterface,
+            )
+            from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
+                UserConfigInterface,
+            )
+
+            settings = container[SynthPMSettings]
+            repository = SynthPMRepository(
+                google_sheet_client=container[GoogleSheetClient],
+                jira_repository=container[TaskManagerRepositoryInterface],
+                settings=settings,
+                user_config=container[UserConfigInterface],
+                project_key=project_key,
+            )
+
+            # Create use case with project-specific repository
+            from jira_telegram_bot.use_cases.interfaces.notification_gateway_interface import (
+                NotificationGatewayInterface,
+            )
+            from jira_telegram_bot.use_cases.ai_agents.generate_acceptance_criteria import (
+                GenerateAcceptanceCriteriaUseCase,
+            )
+            from jira_telegram_bot.use_cases.ai_agents.generate_test_scenarios import (
+                GenerateTestScenariosUseCase,
+            )
+
+            synth_developer_board_use_case = SynthPMUseCase(
+                repository=repository,
+                settings=settings,
+                user_config=container[UserConfigInterface],
+                notification_gateway=container[NotificationGatewayInterface],
+                generate_acceptance_criteria_use_case=container[
+                    GenerateAcceptanceCriteriaUseCase
+                ],
+                generate_test_scenarios_use_case=container[GenerateTestScenariosUseCase],
+            )
+        else:
+            synth_developer_board_use_case = container[SynthPMUseCase]
 
         return synth_developer_board_use_case
 
@@ -138,13 +190,20 @@ async def test_connection(use_case: SynthPMUseCase):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="SynthPM synchronization tool with filtering support",
+        description="SynthPM synchronization tool with multi-project and filtering support",
     )
     parser.add_argument(
         "command",
-        choices=["sync", "service", "test"],
+        choices=["sync", "service", "test", "list-projects"],
         default="service",
-        help="Command to run: sync (one-time), service (background), or test (connections)",
+        help="Command to run: sync (one-time), service (background), test (connections), or list-projects",
+    )
+
+    # Project selection
+    parser.add_argument(
+        "--project",
+        "-p",
+        help="Project key to sync (e.g., PARSCHAT). If not specified, uses first project in config.",
     )
 
     # Filtering options
@@ -176,6 +235,11 @@ def main():
 
     args = parser.parse_args()
 
+    # Handle list-projects command
+    if args.command == "list-projects":
+        asyncio.run(list_projects())
+        return
+
     # Create filter criteria from arguments
     filter_criteria = None
     if args.sprints or args.releases or args.versions:
@@ -189,11 +253,11 @@ def main():
 
     try:
         if args.command == "sync":
-            asyncio.run(async_main_sync(filter_criteria))
+            asyncio.run(async_main_sync(args.project, filter_criteria))
         elif args.command == "service":
-            asyncio.run(async_main_service())
+            asyncio.run(async_main_service(args.project))
         elif args.command == "test":
-            asyncio.run(async_main_test())
+            asyncio.run(async_main_test(args.project))
     except KeyboardInterrupt:
         LOGGER.info("Operation cancelled by user")
         sys.exit(0)
@@ -202,25 +266,64 @@ def main():
         sys.exit(1)
 
 
-async def async_main_sync(filter_criteria=None):
+async def list_projects():
+    """List all available projects."""
+    try:
+        container = get_container()
+        settings = container[SynthPMSettings]
+        
+        multi_config = settings.load_multi_project_config()
+        
+        print("\n📋 Available Projects:\n")
+        print(f"{'Project Key':<15} {'Developer Board':<20} {'PM Board':<20} {'Enabled'}")
+        print("=" * 80)
+        
+        for project in multi_config.projects:
+            dev_board = project.boards.developer_board.jira_board_key
+            pm_board = (
+                project.boards.pm_board.jira_board_key
+                if project.boards.pm_board and project.boards.pm_board.enabled
+                else "N/A"
+            )
+            enabled = "✓" if project.boards.developer_board.enabled else "✗"
+            
+            print(f"{project.project_key:<15} {dev_board:<20} {pm_board:<20} {enabled}")
+        
+        print(f"\n Total: {len(multi_config.projects)} project(s)\n")
+        
+    except Exception as e:
+        LOGGER.error(f"Error listing projects: {e}")
+        sys.exit(1)
+
+
+async def async_main_sync(project_key: Optional[str] = None, filter_criteria=None):
     """Async main for sync command.
 
     Args:
+        project_key: Optional project key
         filter_criteria: Optional filter criteria for sync
     """
-    use_case = await setup_components()
+    use_case = await setup_components(project_key)
     await run_sync_once(use_case, filter_criteria)
 
 
-async def async_main_service():
-    """Async main for service command."""
-    use_case = await setup_components()
+async def async_main_service(project_key: Optional[str] = None):
+    """Async main for service command.
+    
+    Args:
+        project_key: Optional project key
+    """
+    use_case = await setup_components(project_key)
     await run_background_service(use_case)
 
 
-async def async_main_test():
-    """Async main for test command."""
-    use_case = await setup_components()
+async def async_main_test(project_key: Optional[str] = None):
+    """Async main for test command.
+    
+    Args:
+        project_key: Optional project key
+    """
+    use_case = await setup_components(project_key)
     await test_connection(use_case)
 
 

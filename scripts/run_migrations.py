@@ -16,7 +16,7 @@ def main() -> None:
         container = get_container()
         database_connection = container[DatabaseConnectionInterface]
         
-        # Get database engine
+        # Get database engine   
         engine = database_connection.get_engine()
         
         # Run migrations

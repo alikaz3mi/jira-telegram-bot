@@ -99,6 +99,7 @@ class SynthPMUseCase:
                 "updated_developer_board_tasks": 0,
                 "deleted_tasks": 0,
                 "generated_documentation": 0,
+                "skipped": [],
                 "errors": [],
             }
 
@@ -156,9 +157,10 @@ class SynthPMUseCase:
             )
 
             # Update sync status
+            project_config = self.repository.project_config
             sync_status = SynthPMSheetSyncStatus(
-                sheet_id=self.settings.google_sheets_id,
-                worksheet_name=self.settings.developer_board_worksheet_name,
+                sheet_id=project_config.spreadsheet_id,
+                worksheet_name=project_config.boards.developer_board.sheet_name,
                 last_sync_time=datetime.now(),
                 total_rows_synced=len(features),
                 errors=sync_results["errors"],
@@ -166,7 +168,25 @@ class SynthPMUseCase:
 
             await self.repository.update_sync_status(sync_status)
 
-            LOGGER.info(f"SynthPM sync completed: {sync_results}")
+            # Log summary
+            LOGGER.info(
+                f"SynthPM sync completed - "
+                f"Created: {sync_results['created_jira_tasks']} PM tasks, "
+                f"{sync_results['created_developer_board_tasks']} dev tasks | "
+                f"Updated: {sync_results['updated_jira_tasks']} PM tasks, "
+                f"{sync_results['updated_developer_board_tasks']} dev tasks | "
+                f"Deleted: {sync_results['deleted_tasks']} | "
+                f"Skipped: {len(sync_results['skipped'])} | "
+                f"Errors: {len(sync_results['errors'])}"
+            )
+            
+            if sync_results["skipped"]:
+                LOGGER.info(f"Skipped items summary: {len(sync_results['skipped'])} features did not meet requirements")
+                for skip_msg in sync_results["skipped"][:5]:  # Show first 5
+                    LOGGER.debug(f"  - {skip_msg}")
+                if len(sync_results["skipped"]) > 5:
+                    LOGGER.debug(f"  ... and {len(sync_results['skipped']) - 5} more")
+            
             return {
                 "status": "success",
                 "message": "Sync completed successfully",
@@ -254,8 +274,27 @@ class SynthPMUseCase:
         Args:
             feature: feature entity
             sync_results: Dictionary to track sync results
-        """  # TODO: creation of jira task in pm, in developer board conditional checking must become separated. 
+        """
         try:
+            # Skip completely empty rows
+            if not feature.task_title or not feature.task_title.strip():
+                LOGGER.debug(f"Row {feature.row_number}: Empty row, skipping")
+                return
+
+            # Validate feature meets minimum requirements for task creation
+            project_config = self.repository.project_config
+            minimum_status = project_config.sync_settings.minimum_status_for_task_creation
+            
+            is_valid, error_message = self.repository.validate_feature_for_task_creation(
+                feature,
+                minimum_status=minimum_status,
+            )
+
+            if not is_valid:
+                LOGGER.warning(error_message)
+                sync_results["skipped"].append(error_message)
+                return
+
             if not (
                 feature.jira_issue_key
                 and feature.task_title is not None
@@ -661,7 +700,8 @@ class SynthPMUseCase:
         Returns:
             True if should post, False otherwise
         """
-        if feature.status == self.settings.status_trigger_value:
+        project_config = self.repository.project_config
+        if feature.status == project_config.sync_settings.status_trigger_value:
             return True
 
         important_statuses = ["۶", "۷", "۸"]
@@ -682,9 +722,13 @@ class SynthPMUseCase:
         try:
             message = self._format_telegram_message(feature)
 
+            # Get project-specific Telegram configuration
+            project_config = self.repository.project_config
+            channel_id = self.settings.telegram_channel_id
+
             # Post to channel using dedicated bot
             await self.notification_gateway.send_message_async(
-                chat_id=int(self.settings.telegram_channel_id),
+                chat_id=int(channel_id),
                 text=message,
                 parse_mode="Markdown",
             )

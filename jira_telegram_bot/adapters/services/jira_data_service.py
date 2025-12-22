@@ -267,6 +267,7 @@ class JiraDataService(JiraDataServiceInterface):
             original_estimate=original_estimate,
             remaining_estimate=remaining_estimate,
             root_cause=str(getattr(issue.fields, "customfield_10601", None)) if getattr(issue.fields, "customfield_10601", None) else None,
+            delay_reason=getattr(getattr(issue.fields, "customfield_10600", None), "value", None),
             fix_versions=[
                 v.name for v in getattr(issue.fields, "fixVersions", []) or []
             ],

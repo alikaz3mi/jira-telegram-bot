@@ -49,6 +49,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         self.jira_epic_name_id = "customfield_10102"
         self.jira_target_end_id = "customfield_10110"
         self.jira_target_start_id = "customfield_10109"
+        self.jira_delay_reason_id = "customfield_10600"
 
     def _get_from_cache(self, cache_key, max_age_seconds):
         entry = self.cache.get(cache_key)
