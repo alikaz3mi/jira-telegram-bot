@@ -106,49 +106,36 @@ class SynthPMUseCase:
             # Handle task cleanup - check for tasks that no longer exist in sheet
             await self._cleanup_deleted_tasks(features, sync_results)
 
+            # Group features by release column
+            release_groups = self._group_features_by_release(features)
+            LOGGER.info(f"Grouped features into {len(release_groups)} releases: {list(release_groups.keys())}")
+
             # Process features efficiently based on change detection
             processed_features = []
             doc_generated_rows = []
 
-            # Process new and modified features
-            new_features = features
-            for feature in new_features: #  + modified_features: TODO. Find issue of task creation duplication and modified hash
-                # Skip test rows
-                #if feature.row_number not in [215]:
-                #    continue
-                if feature.version not in [ "04.10.05",]:
-                    continue
-                
-                # if feature.department_deps == None:
-                #     continue
-                
-                
+            # Process each release group
+            for release_name, release_features in release_groups.items():
                 try:
-                    await self._process_feature(feature, sync_results)
-                    processed_features.append(feature)
-
-                    # Generate documentation for new features
-                    if False and feature in new_features and await self._generate_and_update_documentation(feature):
-                        sync_results["generated_documentation"] += 1
-                        doc_generated_rows.append(feature.sheet_row_number)
-
+                    LOGGER.info(f"Processing release '{release_name}' with {len(release_features)} features")
+                    
+                    # Create release story with subtasks
+                    story_key = await self._create_release_story_with_subtasks(
+                        release_name,
+                        release_features,
+                        sync_results
+                    )
+                    
+                    if story_key:
+                        LOGGER.info(f"Successfully processed release '{release_name}' with story {story_key}")
+                        processed_features.extend(release_features)
+                    else:
+                        LOGGER.warning(f"Failed to process release '{release_name}'")
+                
                 except Exception as e:
-                    error_msg = f"Error processing feature {feature.task_title}: {e}"
+                    error_msg = f"Error processing release '{release_name}': {e}"
                     LOGGER.error(error_msg)
                     sync_results["errors"].append(error_msg)
-
-            # Generate documentation for existing features that need it
-            for feature in []:
-                if feature not in new_features and feature.row_number in [225]:
-                    try:
-                        if await self._generate_and_update_documentation(feature):
-                            sync_results["generated_documentation"] += 1
-                            doc_generated_rows.append(feature.sheet_row_number)
-                            processed_features.append(feature)
-                    except Exception as e:
-                        error_msg = f"Error generating docs for {feature.task_title}: {e}"
-                        LOGGER.error(error_msg)
-                        sync_results["errors"].append(error_msg)
 
             # Update change tracker
             await self.repository.update_change_tracker(
@@ -240,6 +227,26 @@ class SynthPMUseCase:
             LOGGER.error(f"Error during task cleanup: {e}")
             sync_results["errors"].append(f"Task cleanup error: {e}")
 
+    def _group_features_by_release(
+        self,
+        features: List[SynthPMFeatureEntity],
+    ) -> Dict[str, List[SynthPMFeatureEntity]]:
+        """Group features by their release column value.
+
+        Args:
+            features: List of feature entities
+
+        Returns:
+            Dictionary mapping release names to lists of features
+        """
+        release_groups = {}
+        for feature in features:
+            release_name = feature.release if feature.release and feature.release.strip() else "No Release"
+            if release_name not in release_groups:
+                release_groups[release_name] = []
+            release_groups[release_name].append(feature)
+        return release_groups
+
     def _extract_assignees_from_feature(
         self,
         feature: SynthPMFeatureEntity,
@@ -263,6 +270,123 @@ class SynthPMUseCase:
                 assignees.append(assignee)
 
         return assignees
+
+    async def _create_release_story_with_subtasks(
+        self,
+        release_name: str,
+        features: List[SynthPMFeatureEntity],
+        sync_results: Dict[str, Any],
+    ) -> Optional[str]:
+        """Create a story for a release and add features as subtasks.
+
+        Args:
+            release_name: Name of the release
+            features: List of features in this release
+            sync_results: Dictionary to track sync results
+
+        Returns:
+            Story issue key if created successfully, None otherwise
+        """
+        try:
+            # Get the first feature to extract common data
+            if not features:
+                return None
+            
+            first_feature = features[0]
+            
+            # Validate if any feature needs to be created
+            project_config = self.repository.project_config
+            minimum_status = project_config.sync_settings.minimum_status_for_task_creation
+            
+            valid_features = []
+            for feature in features:
+                is_valid, error_message = self.repository.validate_feature_for_task_creation(
+                    feature,
+                    minimum_status=minimum_status,
+                )
+                if is_valid:
+                    valid_features.append(feature)
+                else:
+                    sync_results["skipped"].append(error_message)
+            
+            if not valid_features:
+                LOGGER.info(f"No valid features found for release {release_name}")
+                return None
+            
+            # Check if story already exists for this release
+            # We'll use the release name as a unique identifier
+            existing_story_key = await self.repository.get_story_by_release_name(release_name)
+            if existing_story_key:
+                LOGGER.info(f"Story already exists for release {release_name}: {existing_story_key}")
+                story_key = existing_story_key
+            else:
+                # Create the story
+                story_key = await self.repository.create_release_story(
+                    release_name=release_name,
+                    features=valid_features,
+                )
+                if story_key:
+                    LOGGER.info(f"Created release story {story_key} for {release_name}")
+                    sync_results["created_developer_board_tasks"] = (
+                        sync_results.get("created_developer_board_tasks", 0) + 1
+                    )
+                else:
+                    sync_results["errors"].append(f"Failed to create story for release: {release_name}")
+                    return None
+            
+            # Create subtasks for each feature
+            for feature in valid_features:
+                if not feature.developer_board_issue_key:
+                    # Check if status allows Developer Board task creation
+                    if feature.status in [
+                        StatusDescriptions.INITIATION_AND_PRIORITIZATION.value,
+                        StatusDescriptions.ANALYSIS_AND_RFP.value,
+                        StatusDescriptions.USER_STORY_PREPARATION.value,
+                        StatusDescriptions.COMPLETED.value
+                    ]:
+                        LOGGER.info(f"Skipping subtask creation for {feature.task_title} - status is {feature.status}")
+                        continue
+                    
+                    # Create PM Board task first if needed
+                    if not feature.jira_issue_key:
+                        issue_key = await self.repository.create_jira_task_from_feature(feature)
+                        if issue_key:
+                            sync_results["created_jira_tasks"] += 1
+                            feature = feature.copy(update={"jira_issue_key": issue_key})
+                        else:
+                            sync_results["errors"].append(
+                                f"Failed to create PM task for: {feature.task_title}",
+                            )
+                            continue
+                    
+                    # Create subtask for this feature
+                    assignees = self._extract_assignees_from_feature(feature)
+                    subtask_key = await self.repository.create_subtask_for_release(
+                        parent_story_key=story_key,
+                        feature=feature,
+                        assignees=assignees,
+                    )
+                    
+                    if subtask_key:
+                        LOGGER.info(f"Created subtask {subtask_key} for feature {feature.task_title}")
+                        feature = feature.copy(
+                            update={"developer_board_issue_key": subtask_key}
+                        )
+                        sync_results["created_developer_board_tasks"] = (
+                            sync_results.get("created_developer_board_tasks", 0) + 1
+                        )
+                    else:
+                        sync_results["errors"].append(
+                            f"Failed to create subtask for: {feature.task_title}",
+                        )
+            
+            return story_key
+            
+        except Exception as e:
+            error_msg = f"Error creating release story for {release_name}: {e}"
+            LOGGER.error(error_msg)
+            sync_results["errors"].append(error_msg)
+            return None
 
     async def _process_feature(
         self,

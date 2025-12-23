@@ -4,6 +4,8 @@
 
 SynthPM is a comprehensive feature that provides bidirectional synchronization between Google Sheets, Jira boards (PM Board and Developer), and Telegram notifications. This feature enables seamless project management across multiple platforms with automatic task creation, status synchronization, and team notifications.
 
+**NEW: Release-Based Task Organization** - Tasks are now automatically grouped by their Release column ("ریلیز") and organized under release stories with features as subtasks, providing better structure and visibility for release management.
+
 ## Architecture
 
 The SynthPM feature follows Clean Architecture principles with proper dependency injection:
@@ -13,12 +15,13 @@ The SynthPM feature follows Clean Architecture principles with proper dependency
 1. **Repository Layer** (`SynthPMRepository`)
    - Handles Google Sheets ↔ Jira ↔ Telegram synchronization
    - Implements header-based column mapping for flexibility
-   - Manages dual board creation (PM Board + Developer)
+   - Manages release-based story creation with subtasks
 
 2. **Use Case Layer** (`SynthPMUseCase`)
    - Contains business logic for feature synchronization
+   - Groups features by release column
+   - Creates hierarchical structure (Release Story → Feature Subtasks)
    - Manages Telegram notifications with enhanced formatting
-   - Handles status change triggers and epic hashtags
 
 3. **Entities Layer** (`constants.py`)
    - Centralized status/priority mappings
@@ -31,10 +34,21 @@ The SynthPM feature follows Clean Architecture principles with proper dependency
 
 ## Key Features
 
+### ✅ **Release-Based Task Organization** (NEW)
+- **Automatic Grouping**: Tasks are grouped by their "ریلیز" (Release) column value
+- **Release Stories**: A Story is created for each release with descriptive summary
+- **Feature Subtasks**: Individual tasks become subtasks under their release story
+- **Hierarchy Benefits**:
+  - Better release visibility and tracking
+  - Cleaner backlog organization
+  - Easy sprint planning by release
+  - Natural dependency management within releases
+
 ### ✅ **Dual Board Creation**
 - Tasks are automatically created in both **PM Board** and **Developer** boards
 - Developer tasks are linked to PM Board tasks via Jira issue linking
 - Both issue keys are stored in Google Sheet for tracking
+- Release stories maintain epic and sprint associations
 
 ### ✅ **Smart Status Mapping**
 - **Persian Google Sheet Status** ↔ **Jira Status** mapping:
@@ -60,7 +74,120 @@ The SynthPM feature follows Clean Architecture principles with proper dependency
 - **Jira → Google Sheets**: Updates sheet when Jira tasks change
 - **Status Tracking**: Maintains sync status for each row
 
+## Release-Based Workflow
+
+### How It Works
+
+1. **Feature Extraction**: System reads all features from the developer board sheet
+2. **Release Grouping**: Features are grouped by their "ریلیز" (Release) column value
+3. **Story Creation**: For each release group:
+   - Check if a release story already exists
+   - If not, create a new Story with release name as title
+   - Story includes summary of all features in the release
+   - Story inherits sprint, epic, and component settings from features
+4. **Subtask Creation**: For each feature in the release:
+   - Create as subtask under the release story
+   - Assign to appropriate team members
+   - Link to PM Board task
+   - Include all feature details (dates, components, story points)
+5. **Sheet Update**: Update Google Sheet with created issue keys
+
+### Example Structure
+
+```
+📦 Release: Version 2.5.0 (Story)
+├── 🔨 Implement user authentication (Sub-task) → Assignee: john.doe
+├── 🔨 Add dashboard analytics (Sub-task) → Assignee: jane.smith  
+├── 🔨 Optimize database queries (Sub-task) → Assignees: multiple → creates further subtasks
+│   ├── Backend optimization (Sub-task) → Assignee: backend.dev
+│   └── Query indexing (Sub-task) → Assignee: db.admin
+└── 🔨 Update API documentation (Sub-task) → Assignee: tech.writer
+```
+
+### Benefits
+
+1. **Better Organization**: Clear release-level visibility in backlogs
+2. **Sprint Planning**: Easy to pull entire releases into sprints
+3. **Progress Tracking**: See completion status at release level
+4. **Dependency Management**: Related features naturally grouped together
+5. **Reporting**: Generate release reports from story level
+6. **Team Coordination**: All team members see full release context
+
 ## Implementation Details
+
+### Release Grouping Logic
+
+```python
+def _group_features_by_release(
+    features: List[SynthPMFeatureEntity]
+) -> Dict[str, List[SynthPMFeatureEntity]]:
+    """Group features by their release column value."""
+    release_groups = {}
+    for feature in features:
+        release_name = feature.release if feature.release else "No Release"
+        if release_name not in release_groups:
+            release_groups[release_name] = []
+        release_groups[release_name].append(feature)
+    return release_groups
+```
+
+### Release Story Creation
+
+```python
+async def create_release_story(
+    release_name: str,
+    features: List[SynthPMFeatureEntity]
+) -> Optional[str]:
+    """Create a story for a release based on features."""
+    # Calculate total effort
+    total_hours = sum(f.total_hours for f in features)
+    
+    # Get all team members
+    all_assignees = extract_all_assignees(features)
+    
+    # Build feature list for description
+    feature_list = "\\n".join([f"• {f.task_title}" for f in features])
+    
+    # Create story
+    story_data = TaskData(
+        project_key=developer_board_project_key,
+        summary=f"📦 Release: {release_name}",
+        description=f"Release grouping for {release_name}\\n\\n{feature_list}",
+        task_type="Story",
+        labels=[f"release:{release_name}"],
+        # ... sprint, epic, components from first feature
+    )
+    
+    return create_task(story_data)
+```
+
+### Subtask Creation
+
+```python
+async def create_subtask_for_release(
+    parent_story_key: str,
+    feature: SynthPMFeatureEntity,
+    assignees: List[str]
+) -> Optional[str]:
+    """Create a subtask for a feature under a release story."""
+    subtask_data = TaskData(
+        project_key=developer_board_project_key,
+        summary=feature.task_title,
+        description=feature.description,
+        task_type="Sub-task",
+        parent_key=parent_story_key,
+        assignee=assignees[0] if len(assignees) == 1 else None,
+        # ... dates, components, story points
+    )
+    
+    subtask = create_task(subtask_data)
+    
+    # For multiple assignees, create individual subtasks
+    if len(assignees) > 1:
+        create_subtasks_for_assignees(subtask.key, assignees, feature)
+    
+    return subtask.key
+```
 
 ### Status Mapping Constants
 

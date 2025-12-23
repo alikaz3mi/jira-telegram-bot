@@ -3334,3 +3334,278 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         custom_fields: Dict[str, Any]
         ):
         pass
+
+    async def get_story_by_release_name(self, release_name: str) -> Optional[str]:
+        """Check if a story already exists for the given release name.
+
+        Args:
+            release_name: Name of the release to search for
+
+        Returns:
+            Story issue key if found, None otherwise
+        """
+        try:
+            # Search for stories with the release name in the summary
+            jql = f'project = "{self.settings.developer_board_project_key}" AND issuetype = Story AND summary ~ "{release_name}"'
+            issues = self.jira_repository.search_issues(jql, maxResults=1)
+            
+            if issues:
+                LOGGER.info(f"Found existing story for release {release_name}: {issues[0].key}")
+                return issues[0].key
+            return None
+            
+        except Exception as e:
+            LOGGER.error(f"Error searching for story by release name: {e}")
+            return None
+
+    async def create_release_story(
+        self,
+        release_name: str,
+        features: List[SynthPMFeatureEntity],
+    ) -> Optional[str]:
+        """Create a story for a release based on features.
+
+        Args:
+            release_name: Name of the release
+            features: List of features in this release
+
+        Returns:
+            Story issue key if successful, None otherwise
+        """
+        try:
+            if not features:
+                return None
+            
+            # Use first feature to get common data like sprint, epic, etc.
+            first_feature = features[0]
+            
+            # Get current Persian/Jalali year for dynamic date handling
+            current_jalali_year = jdatetime.datetime.now().year
+            
+            # Calculate total hours and get all assignees
+            total_hours = sum(f.total_hours for f in features if f.total_hours)
+            all_assignees = set()
+            for feature in features:
+                assignees = []
+                all_user_configs = self.user_config.get_all_user_configs()
+                for user_config in all_user_configs.values():
+                    if (user_config.google_sheet_name and 
+                        feature.involved_people and 
+                        user_config.google_sheet_name in feature.involved_people):
+                        all_assignees.add(user_config.jira_username)
+            
+            # Get sprint information from first feature
+            sprint = None
+            sprint_info = None
+            if first_feature.sprint_list and len(first_feature.sprint_list) > 0:
+                # Use the same sprint logic as in create_developer_board_task_from_feature
+                if len(first_feature.sprint_list) > 1:
+                    sorted_sprints = sorted(
+                        first_feature.sprint_list,
+                        key=lambda s: int(s.split(':')[0]) if ':' in s else 0
+                    )
+                    for s in sorted_sprints:
+                        temp_sprint_info = SprintInfo.parse_sprint_string(s)
+                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
+                        temp_sprint = self.jira_repository.get_sprint_by_name(
+                            sprint_name,
+                            self.developer_board_id,
+                        )
+                        if temp_sprint and temp_sprint.get('state') == 'active':
+                            sprint = temp_sprint
+                            sprint_info = temp_sprint_info
+                            break
+                        elif temp_sprint and temp_sprint.get('state') == 'future' and not sprint:
+                            sprint = temp_sprint
+                            sprint_info = temp_sprint_info
+                    
+                    if not sprint:
+                        sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
+                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint = self.jira_repository.get_sprint_by_name(
+                            sprint_name,
+                            self.developer_board_id,
+                        )
+                else:
+                    sprint_info = SprintInfo.parse_sprint_string(first_feature.sprint_list[0])
+                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
+                        self.developer_board_id,
+                    )
+                
+                # Create sprint if it doesn't exist
+                if sprint is None and sprint_info:
+                    sprint = self._create_sprint(
+                        sprint_info,
+                        current_jalali_year,
+                        self.developer_board_id,
+                        self.settings.developer_board_project_key
+                    )
+            
+            # Get epic link
+            epic_link = None
+            if first_feature.epic and first_feature.epic.strip() and first_feature.epic != "Select":
+                _, epic_key = self._create_epic_if_not_exists(
+                    first_feature.epic,
+                    self.settings.developer_board_project_key,
+                )
+                epic_link = epic_key
+            
+            # Build description with list of features
+            feature_list = "\\n".join([f"• {f.task_title}" for f in features])
+            description = (
+                f"📦 *Release Story: {release_name}*\\n\\n"
+                f"This story groups all tasks for the {release_name} release.\\n\\n"
+                f"*Included Features:*\\n{feature_list}\\n\\n"
+                f"*Total Effort*: {total_hours}h\\n"
+                f"*Team Members*: {', '.join(sorted(all_assignees)) if all_assignees else 'Not assigned'}"
+            )
+            
+            # Get components from first feature
+            components = self._map_components(first_feature)
+            
+            # Create the story
+            story_data = TaskData(
+                project_key=self.settings.developer_board_project_key,
+                summary=f"📦 Release: {release_name}",
+                description=description,
+                task_type="Story",
+                priority=self._map_priority(first_feature.priority) if first_feature.priority else "Medium",
+                epic_link=epic_link,
+                labels=[f"release:{release_name.replace(' ', '_')}"],
+                components=components,
+                assignee=None,  # Stories don't have direct assignees
+                story_points=None,
+            )
+            
+            if sprint and sprint.get("state") != "closed":
+                story_data.sprint_id = sprint.get("id")
+                story_data.sprint_name = sprint.get("name")
+            
+            # Add release as fixVersion
+            self._create_release_not_exist(
+                first_feature,
+                story_data,
+                self.settings.developer_board_project_key,
+            )
+            
+            # Create the story issue
+            story_issue = self.jira_repository.create_task(story_data)
+            LOGGER.info(
+                f"Created release story {self.jira_repository.get_issue_url_by_key(story_issue.key)} "
+                f"for release: {release_name}"
+            )
+            
+            return story_issue.key
+            
+        except Exception as e:
+            LOGGER.error(f"Error creating release story for {release_name}: {e}")
+            return None
+
+    async def create_subtask_for_release(
+        self,
+        parent_story_key: str,
+        feature: SynthPMFeatureEntity,
+        assignees: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        """Create a subtask for a feature under a release story.
+
+        Args:
+            parent_story_key: Parent story issue key
+            feature: Feature entity
+            assignees: List of assignee usernames
+
+        Returns:
+            Subtask issue key if successful, None otherwise
+        """
+        try:
+            # Extract dates
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+            
+            # Get components
+            components = self._map_components(feature)
+            
+            # Determine story points and assignee based on number of assignees
+            if assignees and len(assignees) == 1:
+                story_points = feature.total_hours / 8 if feature.total_hours else 0
+                assignee = assignees[0]
+                description = feature.description
+            else:
+                # Multiple assignees - will create individual subtasks
+                story_points = None
+                assignee = None
+                pm_board_url = self.jira_repository.get_issue_url_by_key(feature.jira_issue_key) if feature.jira_issue_key else "N/A"
+                description = (
+                    f"🔗 *Linked to PM Board*: {pm_board_url}\\n\\n"
+                    f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\\n\\n"
+                    f"📝 *Original Time*: {feature.total_hours}h\\n\\n"
+                    f"✍️ *Description*: {feature.description}"
+                )
+            
+            # Create subtask
+            subtask_data = TaskData(
+                project_key=self.settings.developer_board_project_key,
+                summary=feature.task_title,
+                description=description,
+                task_type="Sub-task",
+                priority=self._map_priority(feature.priority),
+                parent_issue_key=parent_story_key,
+                components=components,
+                assignee=assignee,
+                due_date=feature_dates_str.get("due_date"),
+                story_points=story_points,
+                target_start=feature_dates_str.get("target_start"),
+                target_end=feature_dates_str.get("target_end"),
+            )
+            
+            subtask_issue = self.jira_repository.create_task(subtask_data)
+            LOGGER.info(
+                f"Created subtask {self.jira_repository.get_issue_url_by_key(subtask_issue.key)} "
+                f"for feature: {feature.task_title}"
+            )
+            
+            # If multiple assignees, create individual subtasks for each
+            if assignees and len(assignees) > 1:
+                try:
+                    # Get sprint info from feature
+                    sprint_info = None
+                    if feature.sprint_list and len(feature.sprint_list) > 0:
+                        sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
+                    
+                    subtask_keys = await self._create_subtasks_for_assignees(
+                        subtask_issue.key,
+                        assignees,
+                        feature,
+                        sprint_info,
+                        feature_dates_str
+                    )
+                    if subtask_keys:
+                        LOGGER.info(
+                            f"Created {len(subtask_keys)} individual subtasks under {subtask_issue.key}: {subtask_keys}"
+                        )
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Could not create individual subtasks for {subtask_issue.key}: {e}"
+                    )
+            
+            # Link to PM Board task if exists
+            if feature.jira_issue_key:
+                try:
+                    self._link_issues(feature.jira_issue_key, subtask_issue.key)
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Could not link issues {feature.jira_issue_key} and {subtask_issue.key}: {e}"
+                    )
+            
+            # Update the sheet with subtask key
+            await self.update_developer_board_feature(
+                feature.sheet_row_number,
+                {"developer_board_issue_key": subtask_issue.key},
+            )
+            
+            return subtask_issue.key
+            
+        except Exception as e:
+            LOGGER.error(f"Error creating subtask for feature {feature.task_title}: {e}")
+            return None

@@ -2,7 +2,28 @@
 
 ## Overview
 
-Successfully transformed SynthPM from a static single-project system to a dynamic multi-project synchronization platform with comprehensive validation, Docker service automation, and test coverage.
+Successfully transformed SynthPM from a static single-project system to a dynamic multi-project synchronization platform with comprehensive validation, Docker service automation, test coverage, and **release-based task organization**.
+
+## Latest Updates
+
+### 🆕 Release-Based Task Organization (December 2025)
+
+**Major Workflow Enhancement:**
+- Tasks are now automatically grouped by their **"ریلیز" (Release)** column
+- Release Stories are created as parent issues
+- Individual features become subtasks under release stories
+- Provides hierarchical structure for better organization and tracking
+
+**Key Benefits:**
+- 📦 Better release visibility and management
+- 🎯 Cleaner backlog organization
+- 📊 Improved progress tracking at release level
+- 🔗 Natural grouping of related features
+- ✅ Easier sprint planning by release
+
+**Documentation:**
+- [Release-Based Workflow Guide](features/synth-pm/release_based_workflow.md) - Complete workflow documentation
+- [SynthPM Documentation](features/synth-pm/synth_pm_documentation.md) - Updated with release workflow
 
 ## What Was Implemented
 
