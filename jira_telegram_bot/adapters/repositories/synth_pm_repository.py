@@ -216,7 +216,24 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return []
 
             headers = values[0]
+            
+            # Validate required columns
+            required_fields = ["task_title", "status", "departments"]
             column_mapping, people_mapping = self._create_column_mapping(headers)
+            
+            missing_fields = [field for field in required_fields if field not in column_mapping]
+            if missing_fields:
+                LOGGER.error(
+                    f"❌ Cannot retrieve features - Missing required columns: {missing_fields}\n"
+                    f"Available headers: {headers}\n"
+                    f"Mapped fields: {list(column_mapping.keys())}\n"
+                    f"Required fields and their possible names:\n"
+                    f"  - task_title: ['وظیفه', 'Task', 'Summary']\n"
+                    f"  - status: ['وضعیت', 'Status']\n"
+                    f"  - departments: ['Departments']\n"
+                    f"Please check your sheet and ensure these columns exist."
+                )
+                return []
 
             data_rows = values[1:]
             features = []
@@ -224,8 +241,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             for idx, row in enumerate(data_rows, start=2):
                 if len(row) < 2:
                     continue
-
-
 
                 feature = self._parse_row_to_feature_with_mapping(
                     idx,
@@ -1633,10 +1648,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "necessity": ["ضرورت", "Necessity", "ضرورت"],
             "priority": ["اولویت", "Priority", "اولویت"],
             "status": ["وضعیت", "Status", "وضعیت"],
-            "release": ["ریلیز", "Release", "ریلیز"],
+            "release": ["ریلیز", "Release", "ریلیز", "feature", "Feature"],  # FIXME: biggest bug
             "eta_hours": ["ETA(h)", "ETA", "ETA(h)"],
             "total_hours": ["Total (h)", "Total", "Total (h)"],
-            "departments": ["Departments", "Departments"],
+            "departments": ["Departments", "Departments", "Components"],
             "involved_people": ["افراد درگیر", "Involved People", "افراد درگیر", "Assignee", "Assignees"],
             "ai": ["AI", "AI"],
             "backend": ["Backend", "Backend"],

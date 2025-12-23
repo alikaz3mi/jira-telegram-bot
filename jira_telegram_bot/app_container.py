@@ -2,7 +2,6 @@
 
 import os
 import asyncio
-from telegram.ext import Application
 
 from lagom import Container, Singleton
 from lagom.integrations.fast_api import FastApiIntegration
@@ -231,12 +230,14 @@ def setup_container() -> Container:
     return child_container
 
 
-def create_telegram_application() -> Application:
+def create_telegram_application():
     """Create and configure a Telegram bot application.
     
     Returns:
         Configured Telegram Application instance
     """
+    from telegram.ext import Application
+    
     global _application
     
     if _application is None:

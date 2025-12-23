@@ -122,13 +122,15 @@ class SynthPMMultiProjectSyncService:
             project_config = use_case.repository.project_config
             sync_interval_minutes = project_config.sync_settings.sync_interval_minutes
             
-            # Create async wrapper for the sync job
-            async def sync_job(pk=project_key, uc=use_case, pc=project_config):
-                await self._execute_project_sync(pk, uc, pc)
+            # Create async wrapper for the sync job with proper closure
+            def create_sync_job(pk: str, uc: SynthPMUseCase, pc: ProjectConfig):
+                async def sync_job():
+                    await self._execute_project_sync(pk, uc, pc)
+                return sync_job
             
             # Schedule the job
             await self.scheduler.schedule_recurring_job(
-                job_func=sync_job,
+                job_func=create_sync_job(project_key, use_case, project_config),
                 interval_minutes=sync_interval_minutes,
                 job_name=f"synth_pm_sync_{project_key}",
             )
