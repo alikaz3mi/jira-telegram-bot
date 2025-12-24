@@ -45,6 +45,12 @@ class SynthPMSettings(BaseSettings):
         description="Current active project key (defaults to first in config)",
     )
     
+    # Multi-project synchronization
+    project_keys: Optional[List[str]] = Field(
+        default=None,
+        description="Comma-separated list of project keys to sync (syncs all if None)",
+    )
+    
     # Telegram configuration (loaded from environment)
     telegram_bot_token: Optional[str] = Field(
         default=None,
@@ -92,6 +98,33 @@ class SynthPMSettings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
     )
+
+    @field_validator('project_keys', mode='before')
+    @classmethod
+    def parse_project_keys(cls, v):
+        """Parse project keys from comma-separated string or list.
+
+        Args:
+            v: Input value (string, list, or None)
+
+        Returns:
+            List of project keys or None
+        """
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Try JSON array first
+            if v.strip().startswith('['):
+                try:
+                    import json
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    pass
+            # Fallback to comma-separated
+            return [key.strip() for key in v.split(',') if key.strip()]
+        return None
 
     _multi_project_config: Optional[SynthPMMultiProjectConfig] = None
     _projects_metadata: Optional[Dict[str, ProjectMetadata]] = None

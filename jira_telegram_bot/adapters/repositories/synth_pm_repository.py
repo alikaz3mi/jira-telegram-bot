@@ -889,7 +889,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
                 _, epic_key = self._create_epic_if_not_exists(
                     feature.epic,
-                    self.settings.developer_board_project_key,
+                    self.project_config.project_key,
                 )
                 epic_link = epic_key
 
@@ -909,7 +909,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 
                 for s in sorted_sprints:
                     temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
+                    sprint_name = f"{self.project_config.project_key} Sprint {temp_sprint_info.sprint_id}"
                     temp_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.developer_board_id,
@@ -932,7 +932,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # If no active/future sprint found, create the earliest one
                 if not sprint:
                     sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint_name = f"{self.project_config.project_key} Sprint {sprint_info.sprint_id}"
                     # Double-check if sprint exists before creating
                     sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
@@ -946,7 +946,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                sprint_name = f"{self.project_config.project_key} Sprint {sprint_info.sprint_id}"
                 sprint = self.jira_repository.get_sprint_by_name(
                     sprint_name,
                     self.developer_board_id,
@@ -963,7 +963,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     sprint_info, 
                     current_jalali_year,
                     self.developer_board_id,
-                    self.settings.developer_board_project_key
+                    self.project_config.project_key
                 )
                 LOGGER.debug(f"Created sprint: {sprint}")
             elif sprint.get('state') == 'closed':
@@ -988,7 +988,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 assignee = None  # Stories don't have direct assignee, use subtasks
 
             developer_board_task_data = TaskData(
-                project_key=self.settings.developer_board_project_key,
+                project_key=self.project_config.project_key,
                 summary=f"{feature.task_title}",
                 description=description,
                 task_type=task_type,
@@ -1009,7 +1009,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             self._create_release_not_exist(
                 feature,
                 developer_board_task_data,
-                self.settings.developer_board_project_key,
+                self.project_config.project_key,
             )
 
             developer_board_issue = self.jira_repository.create_task(
@@ -1152,7 +1152,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 else:
                     _, epic_key = self._create_epic_if_not_exists(
                         feature.epic,
-                        self.settings.developer_board_project_key,
+                        self.project_config.project_key,
                     )
                     
                     current_epic = getattr(issue.fields, self.jira_repository.jira_epic_link_id, None)
@@ -1211,7 +1211,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if feature_versions:  # Only create releases if we're setting versions
                     self._create_release_not_exist_during_update(
                         feature,
-                        self.settings.developer_board_project_key,
+                        self.project_config.project_key,
                     )
                 update_fields["fixVersions"] = [
                     {"name": release}
@@ -1235,7 +1235,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # Find first active or future sprint (don't create in loop)
                     for s in sorted_sprints:
                         sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.project_config.project_key} Sprint {sprint_info.sprint_id}"
                         LOGGER.debug(f"Looking for sprint: '{sprint_name}' on board {self.developer_board_id}")
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
@@ -1258,7 +1258,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # If no active sprint found, use first non-closed sprint or create first sprint
                     if target_sprint is None:
                         sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.project_config.project_key} Sprint {sprint_info.sprint_id}"
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
@@ -1268,14 +1268,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                                 sprint_info, 
                                 current_jalali_year,
                                 self.developer_board_id,
-                                self.settings.developer_board_project_key
+                                self.project_config.project_key
                             )
                         elif sprint.get('state') != "closed":
                             target_sprint = sprint
                         
                 elif len(feature.sprint_list) == 1:
                     sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint_name = f"{self.project_config.project_key} Sprint {sprint_info.sprint_id}"
                     LOGGER.debug(f"Looking for single sprint: '{sprint_name}' on board {self.developer_board_id}")
                     sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
@@ -1293,7 +1293,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             sprint_info, 
                             current_jalali_year,
                             self.developer_board_id,
-                            self.settings.developer_board_project_key
+                            self.project_config.project_key
                         )
                         LOGGER.debug(f"Created single sprint: {target_sprint}")
                     # If sprint is closed, target_sprint remains None (will remove sprint assignment)
@@ -2190,7 +2190,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         if not assignees:
             return []
 
-        project_key = self.settings.developer_board_project_key
+        project_key = self.project_config.project_key
         created_subtasks = {}
 
         # Parse department dependencies
@@ -2205,7 +2205,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         for assignee in assignees:
             component = self.user_config.get_user_component(
                 assignee,
-                self.settings.developer_board_project_key,
+                self.project_config.project_key,
             )
             if component:
                 dept_name = DepartmentDependencyCalculator.get_department_from_component(component)
@@ -2239,7 +2239,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             try:
                 component = self.user_config.get_user_component(
                     assignee,
-                    self.settings.developer_board_project_key,
+                    self.project_config.project_key,
                 )
                 if not component:
                     LOGGER.warning(
@@ -2702,7 +2702,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             component = self.user_config.get_user_component(
                 assignee,
-                self.settings.developer_board_project_key,
+                self.project_config.project_key,
             )
             if not component:
                 LOGGER.warning(
@@ -2720,7 +2720,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             releases = [r for r in [feature.release, feature.version] if r]
             
             subtask_data = TaskData(
-                project_key=self.settings.developer_board_project_key,
+                project_key=self.project_config.project_key,
                 summary=f"{feature.task_title}",
                 description=f"{feature.description or ''}",
                 task_type="Sub-task",
@@ -2942,7 +2942,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             component = self.user_config.get_user_component(
                 assignee,
-                self.settings.developer_board_project_key,
+                self.project_config.project_key,
             )
 
             story_point_hour = self._get_assignee_story_points(
@@ -2995,7 +2995,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if feature_versions:  # Only create releases if we're setting versions
                     self._create_release_not_exist_during_update(
                         feature,
-                        self.settings.developer_board_project_key,
+                        self.project_config.project_key,
                     )
                 update_fields["fixVersions"] = [
                     {"name": release}
@@ -3361,7 +3361,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         try:
             # Search for stories with the release name in the summary
-            jql = f'project = "{self.settings.developer_board_project_key}" AND issuetype = Story AND summary ~ "{release_name}"'
+            jql = f'project = "{self.project_config.project_key}" AND issuetype = Story AND summary ~ "{release_name}"'
             issues = self.jira_repository.search_issues(jql, maxResults=1)
             
             if issues:
@@ -3421,7 +3421,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     )
                     for s in sorted_sprints:
                         temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
+                        sprint_name = f"{self.project_config.project_key} Sprint {temp_sprint_info.sprint_id}"
                         temp_sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
@@ -3436,14 +3436,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     
                     if not sprint:
                         sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.project_config.project_key} Sprint {sprint_info.sprint_id}"
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
                         )
                 else:
                     sprint_info = SprintInfo.parse_sprint_string(first_feature.sprint_list[0])
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint_name = f"{self.project_config.project_key} Sprint {sprint_info.sprint_id}"
                     sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.developer_board_id,
@@ -3455,7 +3455,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         sprint_info,
                         current_jalali_year,
                         self.developer_board_id,
-                        self.settings.developer_board_project_key
+                        self.project_config.project_key
                     )
             
             # Get epic link
@@ -3463,7 +3463,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if first_feature.epic and first_feature.epic.strip() and first_feature.epic != "Select":
                 _, epic_key = self._create_epic_if_not_exists(
                     first_feature.epic,
-                    self.settings.developer_board_project_key,
+                    self.project_config.project_key,
                 )
                 epic_link = epic_key
             
@@ -3482,7 +3482,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Create the story
             story_data = TaskData(
-                project_key=self.settings.developer_board_project_key,
+                project_key=self.project_config.project_key,
                 summary=f"📦 Release: {release_name}",
                 description=description,
                 task_type="Story",
@@ -3502,7 +3502,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             self._create_release_not_exist(
                 first_feature,
                 story_data,
-                self.settings.developer_board_project_key,
+                self.project_config.project_key,
             )
             
             # Create the story issue
@@ -3560,7 +3560,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Create subtask
             subtask_data = TaskData(
-                project_key=self.settings.developer_board_project_key,
+                project_key=self.project_config.project_key,
                 summary=feature.task_title,
                 description=description,
                 task_type="Sub-task",
