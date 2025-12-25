@@ -248,15 +248,61 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     column_mapping,
                     people_mapping
                 )
-                if feature:
+                if feature and self._passes_date_filter(feature):
                     features.append(feature)
 
-            LOGGER.info(f"Retrieved {len(features)} features")
+            LOGGER.info(f"Retrieved {len(features)} features (after date filtering)")
             return features
 
         except Exception as e:
             LOGGER.error(f"Error retrieving features: {e}")
             return []
+
+    def _passes_date_filter(self, feature: SynthPMFeatureEntity) -> bool:
+        """Check if feature passes date filter criteria.
+
+        Args:
+            feature: Feature to check
+
+        Returns:
+            True if feature passes date filter or no filter configured
+        """
+        date_filter_start = self.project_config.sync_settings.date_filter_start
+        date_filter_end = self.project_config.sync_settings.date_filter_end
+
+        # No filter configured - pass all
+        if not date_filter_start and not date_filter_end:
+            return True
+
+        try:
+            # Parse filter dates
+            filter_start = datetime.strptime(date_filter_start, "%Y-%m-%d") if date_filter_start else None
+            filter_end = datetime.strptime(date_filter_end, "%Y-%m-%d") if date_filter_end else None
+
+            # Check implementation_start_date if available
+            if feature.implementation_start_date:
+                if filter_start and feature.implementation_start_date < filter_start.date():
+                    return False
+                if filter_end and feature.implementation_start_date > filter_end.date():
+                    return False
+
+            # Check deadline if available
+            if feature.deadline:
+                if filter_start and feature.deadline < filter_start.date():
+                    return False
+                if filter_end and feature.deadline > filter_end.date():
+                    return False
+
+            # If neither date is set, include the feature
+            if not feature.implementation_start_date and not feature.deadline:
+                LOGGER.debug(f"Feature '{feature.task_title}' has no dates, including it")
+                return True
+
+            return True
+
+        except Exception as e:
+            LOGGER.warning(f"Error applying date filter to feature '{feature.task_title}': {e}")
+            return True  # Include feature if filter fails
 
     async def update_developer_board_feature(
         self,
@@ -1768,6 +1814,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 except (ValueError, TypeError):
                     return None
 
+            def parse_int(value_str: str) -> Optional[int]:
+                """Parse integer value from string, return None if empty or invalid."""
+                if not value_str or value_str.strip() == "":
+                    return None
+                try:
+                    return int(value_str)
+                except (ValueError, TypeError):
+                    return None
+
             task_title = get_mapped_value("task_title")
             if not task_title:
                 return None
@@ -1791,8 +1846,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         # Fallback to last item if parsing fails
                         last_sprint = items[-1]
             times = {key: parse_float(get_mapped_value(key)) for key in people_mapping.keys() if parse_float(get_mapped_value(key)) is not None}
+            
+            # Parse row_number, use sheet_row_number as fallback if empty
+            parsed_row_number = parse_int(get_mapped_value("row_number"))
+            if parsed_row_number is None:
+                parsed_row_number = row_number
+            
             return SynthPMFeatureEntity(
-                row_number=get_mapped_value("row_number"),
+                row_number=parsed_row_number,
                 sheet_row_number=row_number,
                 task_title=task_title,
                 epic=(

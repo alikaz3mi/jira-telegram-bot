@@ -58,6 +58,14 @@ class SyncSettings(BaseModel):
         default="۵. آماده پیاده سازی فنی",
         description="Minimum status required before creating Jira tasks",
     )
+    date_filter_start: Optional[str] = Field(
+        default=None,
+        description="Filter tasks with dates >= this date (YYYY-MM-DD format). Applies to implementation_start_date and deadline.",
+    )
+    date_filter_end: Optional[str] = Field(
+        default=None,
+        description="Filter tasks with dates <= this date (YYYY-MM-DD format). Applies to implementation_start_date and deadline.",
+    )
 
 
 class ProjectBoardsConfig(BaseModel):
