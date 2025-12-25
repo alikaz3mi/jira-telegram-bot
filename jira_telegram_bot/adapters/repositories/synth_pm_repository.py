@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 from typing import List
@@ -1033,6 +1033,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if subtask_keys:
                         LOGGER.info(
                             f"Created {len(subtask_keys)} subtasks for story {developer_board_issue.key}: {subtask_keys}",
+                        )
+                        
+                        # Update story deadline based on unique assignees
+                        await self._update_story_deadline_after_subtasks(
+                            developer_board_issue.key,
+                            assignees,
+                            feature_dates_str.get("target_end"),
                         )
                 except Exception as e:
                     LOGGER.warning(
@@ -2166,6 +2173,107 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.warning(f"No transition found to {target_status} for {issue_key}")
         except Exception as e:
             LOGGER.error(f"Error transitioning {issue_key} to {target_status}: {e}")
+
+    def _calculate_story_dates_based_on_assignees(
+        self,
+        last_subtask_target_end: Optional[datetime],
+        unique_assignee_count: int,
+    ) -> Optional[datetime]:
+        """Calculate story target_end and deadline based on subtasks and assignees.
+
+        Both target_end and deadline will be equal in the final result.
+        Formula: 
+        - target_end = deadline = last_subtask_target_end + (unique_assignee_count - 2) days
+
+        Args:
+            last_subtask_target_end: Latest target_end from all subtasks
+            unique_assignee_count: Number of unique people working on the story
+
+        Returns:
+            Calculated target_end (which equals deadline)
+        """
+        if not last_subtask_target_end or unique_assignee_count <= 0:
+            return last_subtask_target_end
+        
+        # Calculate: target_end = deadline = last_subtask_target_end + (N - 2) days
+        days_to_add = unique_assignee_count - 2
+        target_end_and_deadline = last_subtask_target_end + timedelta(days=days_to_add)
+
+        return target_end_and_deadline
+
+    async def _update_story_deadline_after_subtasks(
+        self,
+        story_key: str,
+        assignees: List[str],
+        original_target_end_str: Optional[str],
+    ):
+        """Update story target_end and deadline based on subtasks and unique assignees.
+        
+        Both target_end and deadline will be set to the same value.
+
+        Args:
+            story_key: Story issue key
+            assignees: List of assignee usernames
+            original_target_end_str: Original target end date string (YYYY-MM-DD format) - not used in calculation but kept for logging
+        """
+        try:
+            if not assignees:
+                return
+
+            # Get all subtasks and find the last target_end
+            story_issue = self.jira_repository.get_issue(story_key)
+            subtasks = story_issue.fields.subtasks
+            
+            if not subtasks:
+                LOGGER.warning(f"No subtasks found for story {story_key}, skipping deadline update")
+                return
+            
+            # Find the latest target_end among all subtasks
+            last_target_end = None
+            for subtask in subtasks:
+                subtask_detail = self.jira_repository.get_issue(subtask.key)
+                target_end_value = getattr(
+                    subtask_detail.fields,
+                    self.jira_repository.jira_target_end_id,
+                    None
+                )
+                if target_end_value:
+                    try:
+                        subtask_target_end = datetime.strptime(target_end_value, "%Y-%m-%d")
+                        if last_target_end is None or subtask_target_end > last_target_end:
+                            last_target_end = subtask_target_end
+                    except ValueError:
+                        continue
+            
+            if not last_target_end:
+                LOGGER.warning(f"No valid target_end found in subtasks for story {story_key}")
+                return
+            
+            # Calculate target_end and deadline (they are equal)
+            unique_assignee_count = len(set(assignees))
+            target_end_and_deadline = self._calculate_story_dates_based_on_assignees(
+                last_target_end,
+                unique_assignee_count,
+            )
+
+            if target_end_and_deadline:
+                date_str = target_end_and_deadline.strftime("%Y-%m-%d")
+                
+                # Update both target_end and deadline to the same value
+                update_fields = {
+                    "duedate": date_str,
+                    self.jira_repository.jira_target_end_id: date_str,
+                }
+                self.jira_repository.update_issue(story_key, update_fields)
+                
+                LOGGER.info(
+                    f"Updated story {story_key}: target_end=deadline={date_str} "
+                    f"(last_subtask_target_end={last_target_end.strftime('%Y-%m-%d')}, "
+                    f"unique_assignees={unique_assignee_count})"
+                )
+
+        except Exception as e:
+            LOGGER.error(f"Error updating story deadline for {story_key}: {e}")
 
     async def _create_subtasks_for_assignees(
         self,
