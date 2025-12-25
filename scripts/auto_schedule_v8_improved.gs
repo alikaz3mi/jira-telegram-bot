@@ -378,23 +378,42 @@ function getHiddenRows_(sheet, numRows) {
   const hiddenRows = new Set();
   
   try {
-    // Fast batch check using filter
+    // Check if there's an active filter
     const filter = sheet.getFilter();
+    
     if (filter) {
-      // If filter exists, check visible rows
-      const range = sheet.getDataRange();
-      const values = range.getValues();
+      // Filter exists - need to check which rows are visible
+      // Strategy: Assume all rows are hidden, then mark visible ones
+      const allRows = new Set();
+      for (let i = 2; i <= numRows; i++) { // Start from 2 (skip header)
+        allRows.add(i);
+      }
       
-      // Get all row numbers that should be visible based on data
-      for (let i = 1; i < values.length; i++) {
-        const rowNum = i + 1;
+      // Get the visible range by checking a sample cell in each row
+      const dataRange = sheet.getDataRange();
+      const firstCol = dataRange.getColumn();
+      
+      // Check each row - if we can't read it, it's likely hidden
+      for (let i = 2; i <= numRows; i++) {
         try {
-          if (sheet.isRowHiddenByUser(rowNum)) {
-            hiddenRows.add(rowNum);
+          // Try to check if row is hidden by filter
+          if (sheet.isRowHiddenByFilter(i)) {
+            hiddenRows.add(i);
           }
         } catch (e) {
-          // Skip errors for individual rows
+          // If check fails, assume visible
         }
+      }
+    }
+    
+    // Also check for manually hidden rows
+    for (let i = 2; i <= numRows; i++) {
+      try {
+        if (sheet.isRowHiddenByUser(i)) {
+          hiddenRows.add(i);
+        }
+      } catch (e) {
+        // Ignore errors
       }
     }
   } catch (e) {
