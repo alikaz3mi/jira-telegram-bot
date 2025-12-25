@@ -185,6 +185,11 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
                 task_title="Feature A",
                 jira_issue_key="PM-101",
             ),
+            create_test_feature(
+                row_number=2,
+                task_title="Feature B",
+                jira_issue_key="PM-102",
+            ),
         ]
         
         # Mock validation
@@ -194,6 +199,7 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
         self.repository.create_release_story = AsyncMock()
         self.repository.create_subtask_for_release = AsyncMock(return_value="DEV-101")
+        self.repository.create_jira_task_from_feature = AsyncMock(return_value="PM-101")
         
         # Mock user config
         self.user_config.get_all_user_configs.return_value = {}
@@ -215,15 +221,15 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(story_key, "DEV-100")
         self.repository.create_release_story.assert_not_awaited()
         
-        # Verify subtask still created
-        self.repository.create_subtask_for_release.assert_awaited_once()
+        # Verify subtasks created for both features
+        self.assertEqual(self.repository.create_subtask_for_release.await_count, 2)
 
     async def test_create_release_story_with_subtasks_skips_invalid_features(self):
         """Test that invalid features are skipped."""
         features = [
             create_test_feature(
                 row_number=1,
-                task_title="Valid Feature",
+                task_title="Valid Feature 1",
                 jira_issue_key="PM-101",
             ),
             create_test_feature(
@@ -231,11 +237,16 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
                 task_title="Invalid Feature",
                 status="۲. تحلیل مسئله و RFP",  # Below minimum
             ),
+            create_test_feature(
+                row_number=3,
+                task_title="Valid Feature 2",
+                jira_issue_key="PM-102",
+            ),
         ]
         
         # Mock validation
         def validate_side_effect(feature, minimum_status):
-            if feature.row_number == 1:
+            if feature.row_number in [1, 3]:
                 return (True, None)
             return (False, "Row 2: Status below minimum")
         
@@ -245,6 +256,7 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.repository.get_story_by_release_name = AsyncMock(return_value=None)
         self.repository.create_release_story = AsyncMock(return_value="DEV-100")
         self.repository.create_subtask_for_release = AsyncMock(return_value="DEV-101")
+        self.repository.create_jira_task_from_feature = AsyncMock(return_value="PM-101")
         
         # Mock user config
         self.user_config.get_all_user_configs.return_value = {}
@@ -265,8 +277,8 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         # Verify story created
         self.assertEqual(story_key, "DEV-100")
         
-        # Verify only one subtask created (for valid feature)
-        self.assertEqual(self.repository.create_subtask_for_release.await_count, 1)
+        # Verify only two subtasks created (for valid features)
+        self.assertEqual(self.repository.create_subtask_for_release.await_count, 2)
         
         # Check skipped
         self.assertEqual(len(sync_results["skipped"]), 1)
@@ -311,6 +323,13 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
                 row_number=1,
                 task_title="Feature A",
                 jira_issue_key=None,  # No PM task yet
+                release="Version 2.5.0",
+            ),
+            create_test_feature(
+                row_number=2,
+                task_title="Feature B",
+                jira_issue_key="PM-102",  # Already has PM task
+                release="Version 2.5.0",
             ),
         ]
         
@@ -325,7 +344,9 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.repository.create_jira_task_from_feature = AsyncMock(return_value="PM-101")
         
         # Mock subtask creation
-        self.repository.create_subtask_for_release = AsyncMock(return_value="DEV-101")
+        self.repository.create_subtask_for_release = AsyncMock(
+            side_effect=["DEV-101", "DEV-102"]
+        )
         
         # Mock user config
         self.user_config.get_all_user_configs.return_value = {}
@@ -343,12 +364,12 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
             sync_results,
         )
         
-        # Verify PM task created first
+        # Verify PM task created first for Feature A
         self.repository.create_jira_task_from_feature.assert_awaited_once()
         self.assertEqual(sync_results["created_jira_tasks"], 1)
         
-        # Verify subtask created after
-        self.repository.create_subtask_for_release.assert_awaited_once()
+        # Verify subtasks created for both features
+        self.assertEqual(self.repository.create_subtask_for_release.await_count, 2)
         
         # Check story key
         self.assertEqual(story_key, "DEV-100")
@@ -357,6 +378,7 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         """Test error handling in release story creation."""
         features = [
             create_test_feature(row_number=1, jira_issue_key="PM-101"),
+            create_test_feature(row_number=2, jira_issue_key="PM-102"),
         ]
         
         # Mock validation
@@ -365,6 +387,7 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         # Mock story creation fails
         self.repository.get_story_by_release_name = AsyncMock(return_value=None)
         self.repository.create_release_story = AsyncMock(return_value=None)
+        self.repository.create_jira_task_from_feature = AsyncMock(return_value="PM-101")
         
         sync_results = {
             "created_jira_tasks": 0,
@@ -489,6 +512,12 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
                 release="Version 2.6.0",
                 jira_issue_key="PM-103",
             ),
+            create_test_feature(
+                row_number=4,
+                task_title="Feature D",
+                release="Version 2.6.0",
+                jira_issue_key="PM-104",
+            ),
         ]
         
         # Mock repository methods
@@ -505,11 +534,12 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
             side_effect=["DEV-100", "DEV-103"]
         )
         self.repository.create_subtask_for_release = AsyncMock(
-            side_effect=["DEV-101", "DEV-102", "DEV-104"]
+            side_effect=["DEV-101", "DEV-102", "DEV-104", "DEV-105"]
         )
         self.repository.update_change_tracker = AsyncMock(return_value=True)
         self.repository.update_sync_status = AsyncMock()
         self.repository.get_sync_status = AsyncMock(return_value=None)
+        self.repository.create_jira_task_from_feature = AsyncMock(return_value="PM-101")
         
         # Mock user config
         self.user_config.get_all_user_configs.return_value = {}
@@ -523,8 +553,117 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         # Verify stories created (2 releases)
         self.assertEqual(self.repository.create_release_story.await_count, 2)
         
-        # Verify subtasks created (3 features)
-        self.assertEqual(self.repository.create_subtask_for_release.await_count, 3)
+        # Verify subtasks created (4 features)
+        self.assertEqual(self.repository.create_subtask_for_release.await_count, 4)
+
+    async def test_update_existing_subtasks(self):
+        """Test that existing subtasks are updated, not recreated."""
+        feature_with_key = create_test_feature(
+            row_number=1,
+            task_title="Existing Feature",
+            release="Version 2.5.0",
+            jira_issue_key="PM-101",
+            developer_board_issue_key="DEV-101",  # Already exists
+        )
+        
+        # Mock validation
+        self.repository.validate_feature_for_task_creation.return_value = (True, None)
+        
+        # Mock story exists
+        self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
+        
+        # Mock update succeeds
+        self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        
+        # User config
+        self.user_config.get_all_user_configs.return_value = {}
+        
+        sync_results = {
+            "updated_developer_board_tasks": 0,
+            "created_developer_board_tasks": 0,
+            "errors": [],
+            "skipped": [],
+        }
+        
+        # Execute
+        await self.use_case._create_release_story_with_subtasks(
+            "Version 2.5.0",
+            [feature_with_key],
+            sync_results,
+        )
+        
+        # Verify update was called instead of create
+        self.repository.update_developer_board_task_from_feature.assert_awaited_once()
+        self.assertEqual(sync_results["updated_developer_board_tasks"], 1)
+        self.assertEqual(sync_results["created_developer_board_tasks"], 0)
+
+    async def test_update_regular_task_existing(self):
+        """Test updating regular task when it already exists."""
+        feature = create_test_feature(
+            row_number=1,
+            task_title="Regular Task",
+            release="",  # No release
+            jira_issue_key="PM-101",
+            developer_board_issue_key="DEV-101",  # Already exists
+        )
+        
+        # Mock update succeeds
+        self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        
+        # User config
+        self.user_config.get_all_user_configs.return_value = {}
+        
+        sync_results = {
+            "updated_developer_board_tasks": 0,
+            "errors": [],
+        }
+        
+        # Execute
+        await self.use_case._create_regular_tasks_for_features([feature], sync_results)
+        
+        # Verify update was called
+        self.repository.update_developer_board_task_from_feature.assert_awaited_once()
+        self.assertEqual(sync_results["updated_developer_board_tasks"], 1)
+
+    async def test_singular_release_creates_regular_task(self):
+        """Test that a release with only 1 feature creates a regular task."""
+        feature = create_test_feature(
+            row_number=1,
+            task_title="Single Feature",
+            release="Version 2.5.0",
+            jira_issue_key="PM-101",
+        )
+        
+        # Mock validation
+        self.repository.validate_feature_for_task_creation.return_value = (True, None)
+        
+        # Mock regular task creation
+        self.repository.create_developer_board_task_from_feature = AsyncMock(
+            return_value="DEV-101"
+        )
+        
+        # User config
+        self.user_config.get_all_user_configs.return_value = {}
+        
+        sync_results = {
+            "created_developer_board_tasks": 0,
+            "errors": [],
+            "skipped": [],
+        }
+        
+        # Execute
+        result = await self.use_case._create_release_story_with_subtasks(
+            "Version 2.5.0",
+            [feature],
+            sync_results,
+        )
+        
+        # Verify no story created (returns None)
+        self.assertIsNone(result)
+        
+        # Verify regular task was created
+        self.repository.create_developer_board_task_from_feature.assert_awaited_once()
+        self.assertEqual(sync_results["created_developer_board_tasks"], 1)
 
 
 if __name__ == "__main__":
