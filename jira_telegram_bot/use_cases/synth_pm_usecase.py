@@ -330,6 +330,13 @@ class SynthPMUseCase:
             if existing_story_key:
                 LOGGER.info(f"Story already exists for release {release_name}: {existing_story_key}")
                 story_key = existing_story_key
+                
+                # Update story description to empty string (stories should have no description)
+                try:
+                    await self.repository.update_jira_task_description(existing_story_key, "")
+                    LOGGER.debug(f"Updated description for story {existing_story_key} to empty string")
+                except Exception as e:
+                    LOGGER.warning(f"Could not update description for story {existing_story_key}: {e}")
             else:
                 # Create the story
                 story_key = await self.repository.create_release_story(
@@ -421,6 +428,14 @@ class SynthPMUseCase:
                     sync_results["errors"].append(
                         f"Failed to create subtask for: {feature.task_title}",
                     )
+            
+            # Update story with components and dates from subtasks
+            if story_key:
+                try:
+                    await self.repository.update_story_from_subtasks(story_key)
+                    LOGGER.info(f"Updated story {story_key} metadata from subtasks")
+                except Exception as e:
+                    LOGGER.warning(f"Could not update story {story_key} metadata: {e}")
             
             return story_key
             
