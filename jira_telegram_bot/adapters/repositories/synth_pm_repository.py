@@ -186,7 +186,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         if not has_department:
             return (
                 False,
-                f"Row {feature.row_number} ('{feature.task_title}'): No department/component defined (AI, Backend, Frontend, DevOps, UI/UX)",
+                f"Row {feature.row_number} ('{feature.task_title}'): No department/component defined (AI, Backend, Frontend, DevOps, UI/UX, QA/PM)",
             )
 
         feature_dates = self.extract_dates_from_feature_in_str(feature)
@@ -1431,6 +1431,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 and len(feature_assignees) == 1
                 and issue.fields.issuetype.name == "Task"
             )
+            check_for_subtask_assignee_change = (
+                feature_assignees
+                and len(feature_assignees) == 1
+                and issue.fields.issuetype.name == "Sub-task"
+            )
             check_for_change_from_story_to_task = (
                 feature_assignees
                 and len(feature_assignees) == 1
@@ -1456,6 +1461,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 assignee_name = issue.fields.assignee.name if issue.fields.assignee else None
                 if assignee_name != feature_assignees[0]:
                     update_fields["assignee"] = {"name": feature_assignees[0]}
+            elif check_for_subtask_assignee_change:
+                # Update subtask assignee
+                assignee_name = issue.fields.assignee.name if issue.fields.assignee else None
+                if assignee_name != feature_assignees[0]:
+                    update_fields["assignee"] = {"name": feature_assignees[0]}
+                    LOGGER.info(f"Updating subtask {issue.key} assignee from {assignee_name} to {feature_assignees[0]}")
             elif check_for_change_from_story_to_task:
                 # Story to task conversion
                 update_fields["issuetype"] = {"name": "Task"}
@@ -1580,8 +1591,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         combined_label = "---".join(sorted([name.replace(" ", "-") for name in sheet_usernames]))
                         update_fields["labels"] = list(existing_labels) + [combined_label]
 
-            else:
-                LOGGER.warning(f"Invalid update. Not handled for {feature} and {issue}")
+            elif issue.fields.issuetype.name == "Sub-task":
+                # Sub-tasks don't use labels for assignee tracking - they use assignee field directly
+                # All other updates (dates, components, time tracking) are handled above
+                LOGGER.debug(f"Skipping label updates for subtask {issue.key} - subtasks use assignee field directly")
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -2104,6 +2117,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     components.append("DevOps")
                 elif dept.lower() in ["ui/ux", "ui", "ux", "design"]:
                     components.append("UI/UX")
+                elif dept.lower() in ["qa/pm", "qa", "pm", "quality assurance", "project management"]:
+                    components.append("QA/PM")
         else:
             # Fallback to individual department fields
             if feature.ai != "" and float(feature.ai) > 0:
@@ -3583,6 +3598,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # Collect all components and dates from subtasks
             all_components = set()
             all_assignees = set()
+            all_fix_versions = set()
             earliest_start = None
             latest_end = None
             
@@ -3599,6 +3615,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # Collect assignees
                 if subtask_issue.fields.assignee:
                     all_assignees.add(subtask_issue.fields.assignee.name)
+                
+                # Collect fix versions
+                if subtask_issue.fields.fixVersions:
+                    for version in subtask_issue.fields.fixVersions:
+                        all_fix_versions.add(version.name)
                 
                 # Collect dates
                 target_start_str = subtask_issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
@@ -3628,6 +3649,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if all_components != current_components:
                 update_fields["components"] = [{"name": comp} for comp in sorted(all_components)]
             
+            # Update fix versions
+            current_fix_versions = set([v.name for v in story_issue.fields.fixVersions])
+            if all_fix_versions != current_fix_versions:
+                update_fields["fixVersions"] = [{"name": version} for version in sorted(all_fix_versions)]
+            
             # Update dates
             if earliest_start:
                 target_start_str = earliest_start.strftime("%Y-%m-%d")
@@ -3650,6 +3676,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 story_issue.update(fields=update_fields)
                 LOGGER.info(
                     f"Updated story {story_key}: components={sorted(all_components)}, "
+                    f"fix_versions={sorted(all_fix_versions)}, "
                     f"start={earliest_start.strftime('%Y-%m-%d') if earliest_start else None}, "
                     f"end={final_target_end.strftime('%Y-%m-%d') if final_target_end else None}, "
                     f"assignees={unique_assignee_count}"

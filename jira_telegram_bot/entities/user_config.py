@@ -63,7 +63,7 @@ class UserConfig(BaseModel):
     # Advanced task creation settings
     advanced_task: FieldConfig = FieldConfig(
         set_field=True,
-        values=["AI", "Backend", "Frontend", "DevOps", "UI/UX"],  # Default components
+        values=["AI", "Backend", "Frontend", "DevOps", "UI/UX", "QA/PM"],  # Default components
     )
     story_splitting: FieldConfig = FieldConfig(
         set_field=True,

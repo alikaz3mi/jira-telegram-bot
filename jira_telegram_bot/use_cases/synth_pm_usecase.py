@@ -118,7 +118,7 @@ class SynthPMUseCase:
             for release_name, release_features in release_groups.items():
                 try:
                     LOGGER.info(f"Processing release '{release_name}' with {len(release_features)} features")
-                    if release_name == "اتصال به سایت ساز ها از طریق پرستاشاپ":
+                    if release_name == "اتصال به سایت سازها از طریق API ها":
                         x = 1
                     # Create release story with subtasks
                     story_key = await self._create_release_story_with_subtasks(
@@ -265,11 +265,18 @@ class SynthPMUseCase:
         assignees = []
 
         all_user_configs = self.user_config.get_all_user_configs()
+        seen_users = set()
         for user_config in all_user_configs.values():
             assignee = user_config.jira_username
             if (user_config.google_sheet_name and 
                 feature.involved_people and 
                 user_config.google_sheet_name in feature.involved_people):
+                user_identifier = user_config.email or user_config.telegram_id
+                if user_identifier and user_identifier in seen_users:
+                    LOGGER.debug(f"Skipping duplicate user {assignee} with identifier {user_identifier}")
+                    continue
+                if user_identifier:
+                    seen_users.add(user_identifier)
                 assignees.append(assignee)
 
         return assignees
@@ -331,7 +338,7 @@ class SynthPMUseCase:
                 LOGGER.info(f"Story already exists for release {release_name}: {existing_story_key}")
                 story_key = existing_story_key
                 
-                # Update story description to empty string (stories should have no description)
+                # Update story description to empty string (stories should have no description) # TODO: add the google doc link with a short description
                 try:
                     await self.repository.update_jira_task_description(existing_story_key, "")
                     LOGGER.debug(f"Updated description for story {existing_story_key} to empty string")
@@ -370,6 +377,9 @@ class SynthPMUseCase:
                     
                     # Update the existing subtask
                     assignees = self._extract_assignees_from_feature(feature)
+                    if feature.task_title == 'طراحی وایرفریم و UI بخش اتصال API':
+                        x = 1
+
                     update_success = await self.repository.update_developer_board_task_from_feature(
                         feature,
                         feature_assignees=assignees,

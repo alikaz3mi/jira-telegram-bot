@@ -1415,6 +1415,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             "frontend_hours": 0.0,
             "devops_hours": 0.0,
             "ui_ux_hours": 0.0,
+            "qa_pm_hours": 0.0,
         }
         individual_hours = {}
 
