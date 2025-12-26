@@ -385,6 +385,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             PM Board Jira issue key if successful, None otherwise
         """
+        # Check if PM board is enabled
+        if not (
+            self.project_config.boards.pm_board
+            and self.project_config.boards.pm_board.enabled
+        ):
+            LOGGER.info(f"PM Board is disabled for {self.project_config.project_key}, skipping task creation for {feature.task_title}")
+            return None
+        
         # Start and target end dates are extracted and set for each task
         try:
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
@@ -602,6 +610,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             True if successful, False otherwise
         """
+        # Check if PM board is enabled
+        if not (
+            self.project_config.boards.pm_board
+            and self.project_config.boards.pm_board.enabled
+        ):
+            LOGGER.info(f"PM Board is disabled for {self.project_config.project_key}, skipping task update for {feature.task_title}")
+            return True  # Return True to not treat as error
+        
         try:
             if not feature.jira_issue_key:
                 LOGGER.warning(f"No Jira issue key for feature: {feature.task_title}")
