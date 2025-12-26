@@ -281,22 +281,28 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Check implementation_start_date if available
             if feature.implementation_start_date:
-                if filter_start and feature.implementation_start_date < filter_start.date():
+                impl_start = feature.implementation_start_date.date() if hasattr(feature.implementation_start_date, 'date') else feature.implementation_start_date
+                if filter_start and impl_start < filter_start.date():
                     return False
-                if filter_end and feature.implementation_start_date > filter_end.date():
+                if filter_end and impl_start > filter_end.date():
                     return False
 
             # Check deadline if available
             if feature.deadline:
-                if filter_start and feature.deadline < filter_start.date():
+                deadline = feature.deadline.date() if hasattr(feature.deadline, 'date') else feature.deadline
+                if filter_start and deadline < filter_start.date():
                     return False
-                if filter_end and feature.deadline > filter_end.date():
+                if filter_end and deadline > filter_end.date():
                     return False
 
-            # If neither date is set, include the feature
+            # If neither date is set, check sprint
             if not feature.implementation_start_date and not feature.deadline:
-                LOGGER.debug(f"Feature '{feature.task_title}' has no dates, including it")
-                return True
+                if feature.sprint_list and len(feature.sprint_list) > 0:
+                    LOGGER.debug(f"Feature '{feature.task_title}' has no dates but has sprint, including it")
+                    return True
+                else:
+                    LOGGER.debug(f"Feature '{feature.task_title}' has no dates and no sprint, excluding it")
+                    return False
 
             return True
 
@@ -942,17 +948,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             components = self._map_components(feature)
 
             if len(feature.sprint_list) > 1:
-                # Sort sprints by sprint ID (first number when splitting by ':')
+                # Sort sprints by sprint ID (earliest first)
                 sorted_sprints = sorted(
                     feature.sprint_list,
                     key=lambda s: int(s.split(':')[0]) if ':' in s else 0
                 )
                 
-                # Find the closest active or future sprint
                 sprint = None
                 sprint_info = None
-                active_sprint_found = False
                 
+                # Iterate through sprints to find first non-closed sprint
                 for s in sorted_sprints:
                     temp_sprint_info = SprintInfo.parse_sprint_string(s)
                     sprint_name = f"{self.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
@@ -962,33 +967,33 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     )
                     
                     if temp_sprint is not None:
-                        if temp_sprint.get('state') == 'active':
-                            # Found an active sprint - use it
+                        if temp_sprint.get('state') == 'closed':
+                            # Skip closed sprints
+                            LOGGER.debug(f"Skipping closed sprint {temp_sprint_info.sprint_id}")
+                            continue
+                        elif temp_sprint.get('state') == 'active':
+                            # Found an active sprint - use it immediately
                             sprint = temp_sprint
                             sprint_info = temp_sprint_info
-                            active_sprint_found = True
                             LOGGER.info(f"Assigning feature {feature.task_title} to active sprint {sprint_info.sprint_id}")
                             break
-                        elif temp_sprint.get('state') == 'future' and not sprint:
-                            # Found a future sprint - remember it but keep looking for active
-                            sprint = temp_sprint
-                            sprint_info = temp_sprint_info
-                            LOGGER.info(f"Found future sprint {sprint_info.sprint_id} for feature {feature.task_title}")
-                
-                # If no active/future sprint found, create the earliest one
-                if not sprint:
-                    sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    sprint_name = f"{self.developer_board_project_key} Sprint {sprint_info.sprint_id}"
-                    # Double-check if sprint exists before creating
-                    sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.developer_board_id,
-                    )
-                    if sprint:
-                        LOGGER.info(f"Sprint {sprint_name} already exists (state: {sprint.get('state')}), using it for feature {feature.task_title}")
+                        elif temp_sprint.get('state') == 'future':
+                            # Found a future sprint - use it but keep looking for active
+                            if not sprint:
+                                sprint = temp_sprint
+                                sprint_info = temp_sprint_info
+                                LOGGER.info(f"Found future sprint {sprint_info.sprint_id} for feature {feature.task_title}")
                     else:
-                        LOGGER.info(f"No active/future sprint found, will create sprint {sprint_info.sprint_id} for feature {feature.task_title}")
-                        sprint = None  # Will be created below
+                        # Sprint doesn't exist - create it
+                        LOGGER.info(f"Sprint {sprint_name} doesn't exist, will create it for feature {feature.task_title}")
+                        sprint = None
+                        sprint_info = temp_sprint_info
+                        break
+                
+                # If all sprints are closed, cannot create task
+                if sprint is None and sprint_info is None:
+                    LOGGER.warning(f"All sprints for feature {feature.task_title} are closed - cannot create task")
+                    return None
                     
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
@@ -998,12 +1003,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     self.developer_board_id,
                 )
                 if sprint is not None and sprint.get('state') == "closed":
-                    return None # TODO test it. In this state, issue must not be created
+                    LOGGER.warning(f"Cannot create task for feature {feature.task_title} - sprint is closed")
+                    return None
                 
             else:
+                LOGGER.warning(f"No sprints defined for feature {feature.task_title}")
                 return None
 
-            if sprint is None:
+            # Create sprint if it doesn't exist
+            if sprint is None and sprint_info is not None:
                 LOGGER.info(f"Creating new sprint: {sprint_info.sprint_id} for feature {feature.task_title}")
                 sprint = self._create_sprint(
                     sprint_info, 
@@ -1012,8 +1020,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     self.developer_board_project_key
                 )
                 LOGGER.debug(f"Created sprint: {sprint}")
-            elif sprint.get('state') == 'closed':
-                LOGGER.warning(f"Cannot create task for feature {feature.task_title} - assigned sprint is closed")
+            
+            # Final validation
+            if sprint is None or sprint.get('state') == 'closed':
+                LOGGER.warning(f"Cannot create task for feature {feature.task_title} - no valid sprint available")
                 return None
 
             task_type = "Story" if len(assignees) > 1 else "Task"

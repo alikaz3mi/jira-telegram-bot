@@ -66,6 +66,14 @@ class SyncSettings(BaseModel):
         default=None,
         description="Filter tasks with dates <= this date (YYYY-MM-DD format). Applies to implementation_start_date and deadline.",
     )
+    sprint_filter: Optional[list[str]] = Field(
+        default=None,
+        description="Filter tasks by sprint names. Only tasks in these sprints will be synced. Example: ['Sprint 1', 'Sprint 2']",
+    )
+    version_filter: Optional[list[str]] = Field(
+        default=None,
+        description="Filter tasks by fix version. Only tasks with these versions will be synced. Example: ['04.10.05', '04.11.06']",
+    )
 
 
 class ProjectBoardsConfig(BaseModel):

@@ -118,7 +118,8 @@ class SynthPMUseCase:
             for release_name, release_features in release_groups.items():
                 try:
                     LOGGER.info(f"Processing release '{release_name}' with {len(release_features)} features")
-                    
+                    if release_name == "اتصال به سایت ساز ها از طریق پرستاشاپ":
+                        x = 1
                     # Create release story with subtasks
                     story_key = await self._create_release_story_with_subtasks(
                         release_name,
@@ -299,7 +300,7 @@ class SynthPMUseCase:
             first_feature = features[0]
             
             # Validate if any feature needs to be created
-            project_config = self.repository.project_config
+            project_config = self.repository.project_config # BIG TODO
             minimum_status = project_config.sync_settings.minimum_status_for_task_creation
             
             valid_features = []
