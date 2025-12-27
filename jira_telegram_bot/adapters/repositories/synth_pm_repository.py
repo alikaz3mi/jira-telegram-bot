@@ -635,13 +635,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     update_fields["summary"] = feature.task_title
 
             if feature.release != None or feature.version != None:
-                if set([feature.release, feature.version]) != set(
-                    issue.fields.fixVersions,
-                ):  # Replace with actual custom field ID
+                # Get current fix version names
+                current_versions = set([v.name for v in issue.fields.fixVersions])
+                # Get desired fix versions from feature
+                feature_versions = set([v for v in [feature.release, feature.version] if v])
+                
+                if feature_versions != current_versions:
+                    # Create releases if they don't exist
                     self._create_release_not_exist_during_update(
                         feature,
                         self.pm_project_key,
                     )
+                    # Replace all fix versions with the new ones (not append)
                     update_fields["fixVersions"] = [
                         {"name": release}
                         for release in [feature.release, feature.version]
@@ -1306,13 +1311,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Update fixVersions (handle both setting and clearing)
             feature_versions = set([v for v in [feature.release, feature.version] if v])
-            current_versions = set([field.name for field in issue.fields.fixVersions])
+            current_versions = set([v.name for v in issue.fields.fixVersions])
             if feature_versions != current_versions:
                 if feature_versions:  # Only create releases if we're setting versions
                     self._create_release_not_exist_during_update(
                         feature,
                         self.developer_board_project_key,
                     )
+                # Replace all fix versions with the new ones (not append)
                 update_fields["fixVersions"] = [
                     {"name": release}
                     for release in [feature.release, feature.version]
@@ -3231,13 +3237,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Update fixVersions (handle both setting and clearing)
             feature_versions = set([v for v in [feature.release, feature.version] if v])
-            current_versions = set([field.name for field in issue.fields.fixVersions])
+            current_versions = set([v.name for v in issue.fields.fixVersions])
             if feature_versions != current_versions:
                 if feature_versions:  # Only create releases if we're setting versions
                     self._create_release_not_exist_during_update(
                         feature,
                         self.developer_board_project_key,
                     )
+                # Replace all fix versions with the new ones (not append)
                 update_fields["fixVersions"] = [
                     {"name": release}
                     for release in [feature.release, feature.version]
