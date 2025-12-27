@@ -268,26 +268,68 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
             data_store[str(message["message_id"])]["issue_key"] = issue.key
     telegram_post_data_store.save_data_store(data_store)
     
-    # Wait for auto-forward to update group_chat_id (retry with timeout)
-    max_retries = 10
-    retry_delay = 1.0  # seconds
+    # For media groups, the auto-forward may have already arrived before finalization
+    # or may arrive later. Check immediately, then wait with retries.
+    max_retries = 15  # Increased for media groups
+    retry_delay = 1.0
     group_chat_id = None
     reply_message_id = None
     
-    for attempt in range(max_retries):
-        data_store = telegram_post_data_store.load_data_store()
-        post = data_store.get(str(messages[-1]["message_id"]), {})
-        potential_group_id = post.get("group_chat_id")
+    # First, check all messages in the group for any that already have group_chat_id
+    # Also check forward aliases (original message IDs) since auto-forwards reference those
+    data_store = telegram_post_data_store.load_data_store()
+    for message in messages:
+        msg_id = str(message["message_id"])
+        original_msg_id = str(message.get("forward_from_message_id", ""))
         
-        # Check if group_chat_id is different from channel_chat_id (meaning it was updated)
-        if potential_group_id and potential_group_id != channel_chat_id:
-            group_chat_id = potential_group_id
-            reply_message_id = post.get("reply_message_id")
-            LOGGER.info(f"Found group_chat_id={group_chat_id} for media group after {attempt + 1} attempts")
+        # Check both the actual message ID and the forward alias
+        for check_id in [msg_id, original_msg_id]:
+            if not check_id or check_id not in data_store:
+                continue
+                
+            entry = data_store[check_id]
+            potential_group_id = entry.get("group_chat_id")
+            potential_reply_id = entry.get("reply_message_id")
+            # Check if this entry has been updated with group info
+            if potential_group_id and potential_group_id != channel_chat_id and potential_reply_id:
+                group_chat_id = potential_group_id
+                reply_message_id = potential_reply_id
+                LOGGER.info(f"Found existing group_chat_id={group_chat_id} for media group (checked ID: {check_id})")
+                break
+        
+        if group_chat_id:
             break
-        
-        if attempt < max_retries - 1:
+    
+    # If not found immediately, wait for auto-forward with retries
+    if not group_chat_id:
+        for attempt in range(max_retries):
             await asyncio.sleep(retry_delay)
+            data_store = telegram_post_data_store.load_data_store()
+            
+            # Check all messages in the group and their forward aliases
+            for message in messages:
+                msg_id = str(message["message_id"])
+                original_msg_id = str(message.get("forward_from_message_id", ""))
+                
+                # Check both the actual message ID and the forward alias
+                for check_id in [msg_id, original_msg_id]:
+                    if not check_id or check_id not in data_store:
+                        continue
+                        
+                    entry = data_store[check_id]
+                    potential_group_id = entry.get("group_chat_id")
+                    potential_reply_id = entry.get("reply_message_id")
+                    if potential_group_id and potential_group_id != channel_chat_id and potential_reply_id:
+                        group_chat_id = potential_group_id
+                        reply_message_id = potential_reply_id
+                        LOGGER.info(f"Found group_chat_id={group_chat_id} for media group after {attempt + 1} attempts (checked ID: {check_id})")
+                        break
+                
+                if group_chat_id:
+                    break
+            
+            if group_chat_id:
+                break
     
     # Send message to group if we found the group_chat_id
     if group_chat_id and reply_message_id:
@@ -297,9 +339,11 @@ async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskDat
             reply_message_id=reply_message_id,
             token=TELEGRAM_SETTINGS.HOOK_TOKEN
         )
+        LOGGER.info(f"Sent Jira link to group {group_chat_id} for media group {issue.key}")
     else:
         LOGGER.warning(
-            f"Could not send Jira link for media group {issue.key} - group_chat_id not found after {max_retries} attempts"
+            f"Could not send Jira link for media group {issue.key} - group_chat_id not found after {max_retries} attempts. "
+            f"Checked messages: {[msg['message_id'] for msg in messages]}"
         )
 
 
@@ -387,6 +431,18 @@ async def process_single_message(channel_post: Dict[str, Any], task_data: TaskDa
         chat_id,
         message_data=channel_post,
     )
+    
+    # If this is a forwarded message in the channel, also create a mapping for the original message ID
+    original_message_id = channel_post.get("forward_from_message_id")
+    if original_message_id:
+        LOGGER.info(f"Single channel post {channel_post_id} is a forward of message {original_message_id}, creating alias with issue {issue.key}")
+        await telegram_post_data_store.save_mapping(
+            original_message_id,
+            issue.key,
+            channel_post["chat"]["id"],
+            chat_id,
+            message_data=channel_post,
+        )
 
 
 async def handle_comment_event(
@@ -858,7 +914,14 @@ async def handle_channel_post(channel_post: Dict[str, Any]) -> Dict[str, Any]:
     username = channel_post.get("from", {}).get("username", "UnknownUser")
     text = channel_post.get("text") or channel_post.get("caption") or ""
 
-    parsed_fields = parse_jira_prompt(text)
+    # Try AI parsing with fallback to basic parsing if it fails
+    try:
+        parsed_fields = parse_jira_prompt(text)
+        LOGGER.debug(f"Successfully parsed Jira prompt with AI for message {channel_post.get('message_id')}")
+    except Exception as e:
+        LOGGER.warning(f"AI parsing failed for channel post {channel_post.get('message_id')}: {e}. Using fallback.")
+        parsed_fields = create_fallback_parsed_fields(text)
+    
     task_data = create_task_data(username, parsed_fields, original_text=text)
 
     media_group_id = channel_post.get("media_group_id")
@@ -875,17 +938,40 @@ async def handle_media_group_message(
     """Handle messages that are part of a media group."""
     MEDIA_GROUP_STORE[media_group_id].append(channel_post)
     MEDIA_GROUP_METADATA[media_group_id] = time.time()
+    message_id = channel_post["message_id"]
     LOGGER.info(
-        f"Stored media_group_id={media_group_id} update. Total so far: {len(MEDIA_GROUP_STORE[media_group_id])} messages.",
+        f"Stored media_group_id={media_group_id} message_id={message_id}. Total so far: {len(MEDIA_GROUP_STORE[media_group_id])} messages.",
     )
-    for message in MEDIA_GROUP_STORE[media_group_id]:
-        await telegram_post_data_store.save_mapping(
-            message["message_id"],
-            "pending",  # Will be updated when issue is created
-            message["chat"]["id"],
-            message["chat"]["id"],  # Initially set to channel ID, will be updated on auto-forward
-            message_data=message,
-        )
+    
+    # Immediately save all messages in this group to data store to prevent race condition
+    # with auto-forward arriving before finalization
+    try:
+        for message in MEDIA_GROUP_STORE[media_group_id]:
+            await telegram_post_data_store.save_mapping(
+                message["message_id"],
+                "pending",  # Will be updated when issue is created
+                message["chat"]["id"],
+                message["chat"]["id"],  # Initially set to channel ID, will be updated on auto-forward
+                message_data=message,
+            )
+            
+            # If this is a forwarded message in the channel, also create a mapping for the original message ID
+            # This is needed because auto-forwards to group will reference the original message, not the forward
+            original_message_id = message.get("forward_from_message_id")
+            if original_message_id:
+                LOGGER.info(f"Channel post {message['message_id']} is a forward of message {original_message_id}, creating alias")
+                await telegram_post_data_store.save_mapping(
+                    original_message_id,
+                    "pending",
+                    message["chat"]["id"],
+                    message["chat"]["id"],
+                    message_data=message,
+                )
+        
+        LOGGER.info(f"Saved {len(MEDIA_GROUP_STORE[media_group_id])} message(s) to data store for media_group_id={media_group_id}")
+    except Exception as e:
+        LOGGER.error(f"Failed to save media group messages to data store: {e}", exc_info=True)
+    
     return {
         "status": "success",
         "message": "Media group update stored. Awaiting more.",
@@ -967,8 +1053,20 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
     issue_key = telegram_post_data_store.get_issue_key_from_channel_post(
         original_message_id,
     )
+    LOGGER.debug(f"Looked up issue_key for message_id={original_message_id}: {issue_key if issue_key else 'NOT FOUND'}")
     group_chat_id = message["chat"]["id"]
 
+    # Fallback: Check if message is in MEDIA_GROUP_STORE (pending finalization)
+    if not issue_key:
+        for group_id, messages in MEDIA_GROUP_STORE.items():
+            for msg in messages:
+                if msg["message_id"] == original_message_id:
+                    issue_key = "pending"
+                    LOGGER.info(f"Found message_id={original_message_id} in MEDIA_GROUP_STORE (group_id={group_id}), treating as pending")
+                    break
+            if issue_key:
+                break
+    
     if issue_key:
         # Always update the group_chat_id and reply_message_id in the data store
         data_local = telegram_post_data_store.load_data_store()
@@ -980,6 +1078,21 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
             entry["metadata"]["forwarded_at_str"] = datetime.fromtimestamp(forwarded_time).strftime("%Y/%m/%d %H:%M")
             entry["reply_message_id"] = message_id
             telegram_post_data_store.save_data_store(data_local)
+        else:
+            # Message not in data store yet, save it now with pending status and group info
+            LOGGER.info(f"Message {original_message_id} not in data store yet, saving with group_chat_id={group_chat_id}")
+            await telegram_post_data_store.save_mapping(
+                original_message_id,
+                "pending",
+                channel_chat_id if channel_chat_id else group_chat_id,
+                group_chat_id,
+                message_data={"message_id": original_message_id, "chat": {"id": channel_chat_id if channel_chat_id else group_chat_id}},
+            )
+            # Update reply_message_id
+            data_local = telegram_post_data_store.load_data_store()
+            if str(original_message_id) in data_local:
+                data_local[str(original_message_id)]["reply_message_id"] = message_id
+                telegram_post_data_store.save_data_store(data_local)
         
         # Send message only if issue is not pending
         if issue_key != "pending":
@@ -1335,6 +1448,28 @@ def get_user_assignee_and_reporter(username: str) -> tuple[str | None, str | Non
         return None, None
 
 
+def create_fallback_parsed_fields(text: str) -> Dict[str, str]:
+    """Create fallback parsed fields when AI parsing fails.
+    
+    Args:
+        text: The original message text
+        
+    Returns:
+        Dictionary with default field values
+    """
+    # Use first 60 chars as summary, or a generic title if text is empty
+    summary = text[:60] if text else "New Task from Telegram"
+    if len(text) > 60:
+        summary += "..."
+    
+    return {
+        "summary": summary,
+        "description": text if text else "No description provided",
+        "task_type": "Task",
+        "labels": "telegram-auto"
+    }
+
+
 def create_task_data(username: str, parsed_fields: Dict[str, str], original_text: str = "") -> TaskData:
     """Create TaskData object from parsed fields."""
     assignee, reporter = get_user_assignee_and_reporter(username)
@@ -1405,11 +1540,64 @@ async def telegram_webhook(request: Request):
         return {"status": "error", "message": str(e)}
 
 
+async def retry_pending_jira_links():
+    """Background task to retry sending Jira links for issues that were created but never sent to group.
+    
+    This handles cases where auto-forward messages from channel to group are delayed or never arrive.
+    Checks periodically for entries that have an issue_key but group_chat_id still equals channel_chat_id.
+    """
+    await asyncio.sleep(30)  # Wait 30 seconds on startup before first check
+    
+    while True:
+        try:
+            data_store = telegram_post_data_store.load_data_store()
+            
+            for message_id, entry in data_store.items():
+                # Skip non-jira mappings or entries without issue keys
+                if entry.get("type") != "jira_issue_mapping" or not entry.get("issue_key"):
+                    continue
+                
+                # Skip pending issues (not yet created)
+                issue_key = entry.get("issue_key")
+                if issue_key == "pending":
+                    continue
+                
+                # Check if this entry hasn't been forwarded to group yet
+                channel_chat_id = entry.get("channel_chat_id")
+                group_chat_id = entry.get("group_chat_id")
+                reply_message_id = entry.get("reply_message_id")
+                
+                # If group_chat_id equals channel_chat_id, it means auto-forward hasn't updated it yet
+                if channel_chat_id and group_chat_id == channel_chat_id:
+                    # Check age - only retry if created more than 60 seconds ago
+                    created_at = entry.get("metadata", {}).get("created_at", 0)
+                    age_seconds = time.time() - created_at
+                    
+                    if age_seconds > 60 and age_seconds < 3600:  # Between 1 minute and 1 hour old
+                        LOGGER.info(f"Found orphaned issue {issue_key} (message {message_id}, age {age_seconds:.0f}s) - group_chat_id not updated")
+                        # Note: We can't send to group without group_chat_id, so just log it
+                        # The user will need to manually check or we need the group ID from config
+                
+                # Also check if we have group_chat_id but no reply_message_id (incomplete forward)
+                if group_chat_id and group_chat_id != channel_chat_id and not reply_message_id:
+                    created_at = entry.get("metadata", {}).get("created_at", 0)
+                    age_seconds = time.time() - created_at
+                    
+                    if age_seconds > 60 and age_seconds < 3600:
+                        LOGGER.warning(f"Issue {issue_key} has group_chat_id={group_chat_id} but no reply_message_id (age {age_seconds:.0f}s)")
+                        
+        except Exception as e:
+            LOGGER.error(f"Error in retry_pending_jira_links: {e}", exc_info=True)
+        
+        await asyncio.sleep(120)  # Check every 2 minutes
+
+
 @app.on_event("startup")
 async def on_startup():
     """Initialize webhook and start background tasks on application startup."""
     set_telegram_webhook()
     asyncio.create_task(finalize_media_groups())
+    asyncio.create_task(retry_pending_jira_links())
 
 
 @app.on_event("shutdown")
@@ -1473,8 +1661,13 @@ async def finalize_media_groups():
                 username = first_message.get("from", {}).get("username", "UnknownUser")
                 text = first_message.get("text") or first_message.get("caption") or ""
 
-                # Use LangChain to parse the text
-                parsed_fields = parse_jira_prompt(text)
+                # Try AI parsing with fallback to basic parsing if it fails
+                try:
+                    parsed_fields = parse_jira_prompt(text)
+                    LOGGER.debug(f"Successfully parsed Jira prompt with AI for media group {group_id}")
+                except Exception as e:
+                    LOGGER.warning(f"AI parsing failed for media group {group_id}: {e}. Using fallback.")
+                    parsed_fields = create_fallback_parsed_fields(text)
 
                 # Get assignee and reporter for the user
                 assignee, reporter = get_user_assignee_and_reporter(username)
@@ -1502,6 +1695,26 @@ async def finalize_media_groups():
                 )
 
                 await process_media_group(messages, task_data)
+                
+                # After processing, create aliases for any forwarded messages
+                # This ensures auto-forwards referencing original message IDs can find the issue
+                try:
+                    data_store = telegram_post_data_store.load_data_store()
+                    for message in messages:
+                        msg_id = str(message["message_id"])
+                        if msg_id in data_store:
+                            issue_key = data_store[msg_id].get("issue_key")
+                            original_msg_id = message.get("forward_from_message_id")
+                            
+                            if original_msg_id and issue_key and issue_key != "pending":
+                                # Update the alias with the actual issue_key
+                                if str(original_msg_id) in data_store:
+                                    data_store[str(original_msg_id)]["issue_key"] = issue_key
+                                    LOGGER.info(f"Updated alias {original_msg_id} with issue_key={issue_key}")
+                    telegram_post_data_store.save_data_store(data_store)
+                except Exception as alias_error:
+                    LOGGER.warning(f"Failed to update forward aliases: {alias_error}")
+                    
             except Exception as e:
                 LOGGER.error(
                     f"Error finalizing media_group_id={group_id}: {e}",
