@@ -229,19 +229,42 @@ function autoSchedule() {
   const booked = {};
   team.names.forEach(n => booked[n] = {});
 
-  // Priorities (CxV, Priority, Dependencies)
+  // Priorities (CxV, Priority) - RESPECT topological order for dependencies
   const singlePerson = (t) => (t.assignees && t.assignees.length === 1);
   const explicitStartRank = (t) => (!EXPLICIT_START_EARLIER_IS_BETTER || !(t.startDate instanceof Date)) ? 99999999 : t.startDate.getTime();
   const cxvRank = (t) => (t.cxv > 0 ? (10000 - t.cxv) : 99999);
+  
+  // Assign dependency depth (how many dependencies deep is this task?)
+  const depthMap = {};
+  function getDepth(task) {
+    if (depthMap[task.id] !== undefined) return depthMap[task.id];
+    if (!task.depends || task.depends.length === 0) {
+      depthMap[task.id] = 0;
+      return 0;
+    }
+    let maxDepth = 0;
+    task.depends.forEach(did => {
+      const dep = byId[String(did)];
+      if (dep) {
+        const d = getDepth(dep);
+        if (d >= maxDepth) maxDepth = d + 1;
+      }
+    });
+    depthMap[task.id] = maxDepth;
+    return maxDepth;
+  }
+  
+  order.list.forEach(t => getDepth(t));
 
   const sortKey = (t) => {
-    const a = cxvRank(t);
-    const b = priorityRank_(t.pri);
-    const c = (PRIORITIZE_SINGLE_PERSON_TASKS && singlePerson(t)) ? 0 : 1;
-    const d = t.assignees ? t.assignees.length : 999;
-    const e = explicitStartRank(t);
-    const f = statusRank_(t.status);
-    return [a,b,c,d,e,f].join('-');
+    const a = depthMap[t.id] || 0;  // FIRST: Sort by dependency depth
+    const b = cxvRank(t);
+    const c = priorityRank_(t.pri);
+    const d = (PRIORITIZE_SINGLE_PERSON_TASKS && singlePerson(t)) ? 0 : 1;
+    const e = t.assignees ? t.assignees.length : 999;
+    const f = explicitStartRank(t);
+    const g = statusRank_(t.status);
+    return [a,b,c,d,e,f,g].join('-');
   };
   order.list.sort((x,y)=> sortKey(x).localeCompare(sortKey(y)));
 

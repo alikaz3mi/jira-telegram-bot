@@ -1487,12 +1487,16 @@ def create_task_data(username: str, parsed_fields: Dict[str, str], original_text
     else:
         description = ""
     
+    labels = parsed_fields.get("labels", [])
+    if isinstance(labels, str):
+        labels = [labels] if labels else []
+    
     return TaskData(
         project_key=JIRA_PROJECT_KEY,
         summary=parsed_fields["summary"],
         description=description,
         task_type=parsed_fields["task_type"],
-        labels=[parsed_fields.get("labels", "")],
+        labels=labels,
         assignee=assignee,
         reporter=reporter,
     )
@@ -1684,12 +1688,17 @@ async def finalize_media_groups():
                     description = f'h3. AI Analysis:\n{parsed_description}'
                 else:
                     description = ""
+                
+                labels = parsed_fields.get("labels", [])
+                if isinstance(labels, str):
+                    labels = [labels] if labels else []
 
                 task_data = TaskData(
                     project_key=JIRA_PROJECT_KEY,
                     summary=parsed_fields["summary"],
                     description=description,
                     task_type=parsed_fields["task_type"],
+                    labels=labels,
                     assignee=assignee,
                     reporter=reporter,
                 )

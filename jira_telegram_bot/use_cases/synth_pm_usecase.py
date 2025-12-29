@@ -406,17 +406,18 @@ class SynthPMUseCase:
                     LOGGER.info(f"Skipping subtask creation for {feature.task_title} - status is {feature.status}")
                     continue
                 
-                # Create PM Board task first if needed
+                # Create PM Board task first if needed (only if PM Board is enabled)
                 if not feature.jira_issue_key:
-                    issue_key = await self.repository.create_jira_task_from_feature(feature)
-                    if issue_key:
-                        sync_results["created_jira_tasks"] += 1
-                        feature = feature.copy(update={"jira_issue_key": issue_key})
+                    if (self.repository.project_config.boards.pm_board and 
+                        self.repository.project_config.boards.pm_board.enabled):
+                        issue_key = await self.repository.create_jira_task_from_feature(feature)
+                        if issue_key:
+                            sync_results["created_jira_tasks"] += 1
+                            feature = feature.copy(update={"jira_issue_key": issue_key})
+                        else:
+                            LOGGER.warning(f"Failed to create PM task for: {feature.task_title}, will create subtask without PM task")
                     else:
-                        sync_results["errors"].append(
-                            f"Failed to create PM task for: {feature.task_title}",
-                        )
-                        continue
+                        LOGGER.debug(f"PM Board disabled, skipping PM task creation for {feature.task_title}, creating subtask directly")
                 
                 # Create subtask for this feature
                 assignees = self._extract_assignees_from_feature(feature)
@@ -509,17 +510,18 @@ class SynthPMUseCase:
                 LOGGER.info(f"Skipping task creation for {feature.task_title} - status is {feature.status}")
                 continue
             
-            # Create PM Board task first if needed
+            # Create PM Board task first if needed (only if PM Board is enabled)
             if not feature.jira_issue_key:
-                issue_key = await self.repository.create_jira_task_from_feature(feature)
-                if issue_key:
-                    sync_results["created_jira_tasks"] += 1
-                    feature = feature.copy(update={"jira_issue_key": issue_key})
+                if (self.repository.project_config.boards.pm_board and 
+                    self.repository.project_config.boards.pm_board.enabled):
+                    issue_key = await self.repository.create_jira_task_from_feature(feature)
+                    if issue_key:
+                        sync_results["created_jira_tasks"] += 1
+                        feature = feature.copy(update={"jira_issue_key": issue_key})
+                    else:
+                        LOGGER.warning(f"Failed to create PM task for: {feature.task_title}, will create developer board task without PM task")
                 else:
-                    sync_results["errors"].append(
-                        f"Failed to create PM task for: {feature.task_title}",
-                    )
-                    continue
+                    LOGGER.debug(f"PM Board disabled, skipping PM task creation for {feature.task_title}, creating developer board task directly")
             
             # Create regular developer board task
             if feature.sprint_list and len(feature.sprint_list) > 0:

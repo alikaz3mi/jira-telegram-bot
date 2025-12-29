@@ -14,7 +14,7 @@ from jira_telegram_bot.use_cases.interfaces.jira_report_repository_interface imp
     JiraReportRepositoryInterface,
 )
 
-
+# TODO: HIGHEST: if an issue is deleted, it must me be deleted across all the tables in here too.
 class SyncJiraIssueUseCase:
     """Real-time sync of critical Jira issue updates to PostgreSQL.
     
