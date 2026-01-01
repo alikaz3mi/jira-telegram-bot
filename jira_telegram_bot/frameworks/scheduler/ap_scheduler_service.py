@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from typing import Callable
 
+from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from jira_telegram_bot import LOGGER
@@ -15,7 +16,20 @@ class APSchedulerService(SchedulerServiceInterface):
 
     def __init__(self) -> None:
         """Initialize the scheduler service."""
-        self._scheduler = AsyncIOScheduler()
+        # Configure executors to allow concurrent job execution
+        executors = {
+            'default': AsyncIOExecutor()
+        }
+        # Configure job defaults to allow multiple instances
+        job_defaults = {
+            'coalesce': False,  # Don't combine missed executions
+            'max_instances': 10,  # Allow up to 10 concurrent instances per job
+            'misfire_grace_time': 300  # Allow 5 minutes grace for missed jobs
+        }
+        self._scheduler = AsyncIOScheduler(
+            executors=executors,
+            job_defaults=job_defaults
+        )
         self._is_running = False
 
     async def schedule_recurring_job(

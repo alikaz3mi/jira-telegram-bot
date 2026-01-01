@@ -1,6 +1,7 @@
 """Multi-project synchronization service for SynthPM."""
 from __future__ import annotations
 
+import asyncio
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -140,6 +141,16 @@ class SynthPMMultiProjectSyncService:
             f"Starting APScheduler for {len(self.use_cases)} project(s): "
             f"{', '.join(self.use_cases.keys())}"
         )
+        
+        # Run initial sync for all projects immediately
+        LOGGER.info("Running initial sync for all projects...")
+        for project_key, use_case in self.use_cases.items():
+            project_config = use_case.repository.project_config
+            # Run in background without waiting
+            asyncio.create_task(
+                self._execute_project_sync(project_key, use_case, project_config)
+            )
+        
         await self.scheduler.start_scheduler()
 
     async def stop(self):

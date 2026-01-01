@@ -193,6 +193,14 @@ class JiraDataService(JiraDataServiceInterface):
                 reviewed_at = change.changed_at
                 break
         
+        # Read actual dates from Jira custom fields (set by Jira listener)
+        actual_start_date = self._parse_datetime(
+            getattr(issue.fields, self._jira_repository.jira_actual_start_id, None)
+        )
+        actual_end_date = self._parse_datetime(
+            getattr(issue.fields, self._jira_repository.jira_actual_end_id, None)
+        )
+        
         # Extract epic link and name
         epic_link_key = getattr(issue.fields, 'customfield_10100', None)
         epic_name = None
@@ -253,6 +261,8 @@ class JiraDataService(JiraDataServiceInterface):
                 getattr(issue.fields, "customfield_10110", None)
             ),
             due_date=self._parse_datetime(issue.fields.duedate),
+            actual_start_date=actual_start_date,
+            actual_end_date=actual_end_date,
             project=issue.fields.project.key,
             story_points=story_points,
             components=(

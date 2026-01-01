@@ -955,11 +955,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         # Get current Persian/Jalali year for dynamic date handling
         current_jalali_year = jdatetime.datetime.now().year
         
+        # Check if PM Board is enabled
+        pm_board_enabled = (
+            self.project_config.boards.pm_board and 
+            self.project_config.boards.pm_board.enabled
+        )
+        
         # TODO: If task has two sprints, handle it: get the first active sprint or future sprint as the sprint for the task
         # TODO: If the issue is only updated in the google sheet board (i.e its times and stuff, handle it)
         try:
-            if not feature.jira_issue_key:
-                LOGGER.error("Cannot create task without existing PM Board task")
+            # Only require PM Board task if PM Board is enabled
+            if pm_board_enabled and not feature.jira_issue_key:
+                LOGGER.error("Cannot create task without existing PM Board task (PM Board is enabled)")
                 return None
 
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
@@ -1060,13 +1067,23 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 story_points = feature.total_hours / 8 if feature.total_hours else 0
                 assignee = assignees[0] if assignees else None
             else:
-                labels = [f"PM-{feature.jira_issue_key}", feature.involved_people]
-                description = (
-                    f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
-                    f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
-                    f"📝 *Original Time*: {feature.total_hours}h\n\n"
-                    f"✍️ *Description*: {feature.description}"
-                )
+                # Build labels and description based on PM Board status
+                if pm_board_enabled and feature.jira_issue_key:
+                    labels = [f"PM-{feature.jira_issue_key}", feature.involved_people]
+                    description = (
+                        f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
+                        f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
+                        f"📝 *Original Time*: {feature.total_hours}h\n\n"
+                        f"✍️ *Description*: {feature.description}"
+                    )
+                else:
+                    # PM Board disabled - simpler format
+                    labels = [feature.involved_people] if feature.involved_people else None
+                    description = (
+                        f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
+                        f"📝 *Original Time*: {feature.total_hours}h\n\n"
+                        f"✍️ *Description*: {feature.description}"
+                    )
                 story_points = None
                 assignee = None  # Stories don't have direct assignee, use subtasks
 
@@ -1129,12 +1146,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"Could not create subtasks for {developer_board_issue.key}: {e}",
                     )
 
-            try:
-                self._link_issues(feature.jira_issue_key, developer_board_issue.key)
-            except Exception as e:
-                LOGGER.warning(
-                    f"Could not link issues {feature.jira_issue_key} and {developer_board_issue.key}: {e}",
-                )
+            # Only link issues if PM Board is enabled and PM task exists
+            if pm_board_enabled and feature.jira_issue_key:
+                try:
+                    self._link_issues(feature.jira_issue_key, developer_board_issue.key)
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Could not link issues {feature.jira_issue_key} and {developer_board_issue.key}: {e}",
+                    )
 
             # Update the sheet with issue key
             await self.update_developer_board_feature(

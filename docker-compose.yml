@@ -61,7 +61,7 @@ services:
     restart: always
     environment:
       - SYNC_INTERVAL_MINUTES=10
-      - SYNC_PROJECT_KEYS=["PCT","PARSCHAT"]
+      - SYNC_PROJECT_KEYS=["PCT","PARSCHAT", "FOLLOWUP", "DASHBOARD"]
       - SYNC_FULL_SYNC=true
       - db_port=5432
       - db_host=postgres
