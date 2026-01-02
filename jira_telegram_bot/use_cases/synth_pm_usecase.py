@@ -118,8 +118,6 @@ class SynthPMUseCase:
             for release_name, release_features in release_groups.items():
                 try:
                     LOGGER.info(f"Processing release '{release_name}' with {len(release_features)} features")
-                    if release_name == "اتصال به سایت سازها از طریق API ها":
-                        x = 1
                     # Create release story with subtasks
                     story_key = await self._create_release_story_with_subtasks(
                         release_name,

@@ -85,6 +85,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             self.project_config.boards.developer_board.jira_board_key,
         )
         
+        if self.developer_board_id is None:
+            LOGGER.error(
+                f"Could not find board with key "
+                f"'{self.project_config.boards.developer_board.jira_board_key}' "
+                f"for project {self.project_config.project_key}"
+            )
+        else:
+            LOGGER.info(
+                f"Developer board ID for {self.project_config.project_key}: "
+                f"{self.developer_board_id}"
+            )
+        
         self.pm_board_id = None
         if (
             self.project_config.boards.pm_board
@@ -102,6 +114,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Developer board Jira project key
         """
+        return self.project_config.project_key
+
+    @property
+    def developer_board_key(self) -> str:
+        """Get developer board key.
+
+        Returns:
+            Developer board Jira board key
+        """
         return self.project_config.boards.developer_board.jira_board_key
 
     @property
@@ -110,6 +131,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         Returns:
             PM board Jira project key if configured, None otherwise
+        """
+        return self.project_config.project_key
+
+    @property
+    def pm_board_key(self) -> Optional[str]:
+        """Get PM board key.
+
+        Returns:
+            PM board Jira board key if configured, None otherwise
         """
         if (
             self.project_config.boards.pm_board
@@ -443,7 +473,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 
                 for s in sorted_sprints:
                     temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.pm_project_key} Sprint {temp_sprint_info.sprint_id}"
+                    sprint_name = f"{self.pm_board_key} Sprint {temp_sprint_info.sprint_id}"
                     temp_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.pm_board_id,
@@ -465,7 +495,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # If no active/future sprint found, create the earliest one
                 if not selected_sprint:
                     selected_sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    sprint_name = f"{self.pm_project_key} Sprint {selected_sprint_info.sprint_id}"
+                    sprint_name = f"{self.pm_board_key} Sprint {selected_sprint_info.sprint_id}"
                     # Double-check if sprint exists before creating
                     selected_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
@@ -477,7 +507,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             selected_sprint_info, 
                             current_jalali_year,
                             self.pm_board_id,
-                            self.pm_project_key
+                            self.pm_board_key
                         )
                     else:
                         LOGGER.info(f"PM Board: Sprint {sprint_name} already exists (state: {selected_sprint.get('state')}), using it for feature {feature.task_title}")
@@ -994,7 +1024,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # Iterate through sprints to find first non-closed sprint
                 for s in sorted_sprints:
                     temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
+                    sprint_name = f"{self.developer_board_key} Sprint {temp_sprint_info.sprint_id}"
                     temp_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.developer_board_id,
@@ -1031,7 +1061,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                sprint_name = f"{self.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                 sprint = self.jira_repository.get_sprint_by_name(
                     sprint_name,
                     self.developer_board_id,
@@ -1051,7 +1081,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     sprint_info, 
                     current_jalali_year,
                     self.developer_board_id,
-                    self.developer_board_project_key
+                    self.developer_board_key
                 )
                 LOGGER.debug(f"Created sprint: {sprint}")
             
@@ -1167,18 +1197,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error creating task for feature {feature.task_title}: {e}")
             return None
 
-    def _create_sprint(self, sprint_info, current_jalali_year, board_id: int, project_key: str):
+    def _create_sprint(self, sprint_info, current_jalali_year, board_id: int, board_key: str):
         """Create a sprint in the specified board.
         
         Args:
             sprint_info: Sprint information
             current_jalali_year: Current Jalali year
             board_id: Board ID where sprint should be created
-            project_key: Project key for sprint naming
+            board_key: Board key for sprint naming (e.g., 'FollowUpper', 'PARSCHAT')
             
         Returns:
             Created sprint object
         """
+        if board_id is None:
+            LOGGER.error(f"Cannot create sprint - board_id is None for board {board_key}")
+            return None
+            
         start_date = sprint_info.start_date
         end_date = sprint_info.end_date
         start_date = jdatetime.JalaliToGregorian(
@@ -1197,13 +1231,24 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     f"{start_date[0]}-{start_date[1]:02d}-{start_date[2]:02d}"
                 )
         end_date_str = f"{end_date[0]}-{end_date[1]:02d}-{end_date[2]:02d}"
+        
+        LOGGER.info(
+            f"Creating sprint '{board_key} Sprint {sprint_info.sprint_id}' "
+            f"on board {board_id} from {start_date_str} to {end_date_str}"
+        )
+        
         sprint = self.jira_repository.create_sprint(
                     board_id=board_id,
-                    sprint_name=f"{project_key} Sprint {sprint_info.sprint_id}",
+                    sprint_name=f"{board_key} Sprint {sprint_info.sprint_id}",
                     start_date=start_date_str,
                     end_date=end_date_str,
                     goal=f"{sprint_info.start_date} to {sprint_info.end_date}",
                 )
+        
+        if sprint:
+            LOGGER.info(f"Successfully created sprint {sprint.get('id')} - {sprint.get('name')}")
+        else:
+            LOGGER.error(f"Failed to create sprint for board {board_key}")
         
         return sprint
 
@@ -1360,7 +1405,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # Find first active or future sprint (don't create in loop)
                     for s in sorted_sprints:
                         sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint_name = f"{self.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                         LOGGER.debug(f"Looking for sprint: '{sprint_name}' on board {self.developer_board_id}")
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
@@ -1383,7 +1428,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # If no active sprint found, use first non-closed sprint or create first sprint
                     if target_sprint is None:
                         sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint_name = f"{self.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
@@ -1393,14 +1438,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                                 sprint_info, 
                                 current_jalali_year,
                                 self.developer_board_id,
-                                self.developer_board_project_key
+                                self.developer_board_key
                             )
                         elif sprint.get('state') != "closed":
                             target_sprint = sprint
                         
                 elif len(feature.sprint_list) == 1:
                     sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                    sprint_name = f"{self.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                     LOGGER.debug(f"Looking for single sprint: '{sprint_name}' on board {self.developer_board_id}")
                     sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
@@ -1418,7 +1463,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             sprint_info, 
                             current_jalali_year,
                             self.developer_board_id,
-                            self.developer_board_project_key
+                            self.developer_board_key
                         )
                         LOGGER.debug(f"Created single sprint: {target_sprint}")
                     # If sprint is closed, target_sprint remains None (will remove sprint assignment)
@@ -1796,7 +1841,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "necessity": ["ضرورت", "Necessity", "ضرورت"],
             "priority": ["اولویت", "Priority", "اولویت"],
             "status": ["وضعیت", "Status", "وضعیت"],
-            "release": ["ریلیز", "Release", "ریلیز", "feature", "Feature"],  # FIXME: biggest bug
+            "release": ["ریلیز", "Release", "ریلیز", "feature", "Feature",],  # FIXME: biggest bug: this is story, not release. 
             "eta_hours": ["ETA(h)", "ETA", "ETA(h)"],
             "total_hours": ["Total (h)", "Total", "Total (h)"],
             "departments": ["Departments", "Departments", "Components"],
@@ -3743,7 +3788,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         try:
             # Search for stories with the release name in the summary
-            project_key = self.project_config.boards.developer_board.jira_board_key
+            project_key = self.developer_board_project_key
             jql = f'project = "{project_key}" AND issuetype = Story AND summary ~ "{release_name}"'
             issues = self.jira_repository.search_issues(jql, max_results=1)
             
@@ -3776,7 +3821,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Use first feature to get common data like sprint, epic, etc.
             first_feature = features[0]
-            project_key = self.project_config.boards.developer_board.jira_board_key
+            project_key = self.developer_board_project_key
             
             # Get current Persian/Jalali year for dynamic date handling
             current_jalali_year = jdatetime.datetime.now().year
@@ -3805,7 +3850,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     )
                     for s in sorted_sprints:
                         temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint_name = f"{self.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
+                        sprint_name = f"{self.developer_board_key} Sprint {temp_sprint_info.sprint_id}"
                         temp_sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
@@ -3820,14 +3865,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     
                     if not sprint:
                         sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint_name = f"{self.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
                         )
                 else:
                     sprint_info = SprintInfo.parse_sprint_string(first_feature.sprint_list[0])
-                    sprint_name = f"{self.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                     sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.developer_board_id,
@@ -3839,7 +3884,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         sprint_info,
                         current_jalali_year,
                         self.developer_board_id,
-                        self.developer_board_project_key
+                        self.developer_board_key
                     )
             
             # Get epic link
