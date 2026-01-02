@@ -50,6 +50,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         self.jira_target_end_id = "customfield_10110"
         self.jira_target_start_id = "customfield_10109"
         self.jira_delay_reason_id = "customfield_10600"
+        self.jira_actual_start_id = "customfield_10702"
+        self.jira_actual_end_id = "customfield_10703"
 
     def _get_from_cache(self, cache_key, max_age_seconds):
         entry = self.cache.get(cache_key)
@@ -314,6 +316,10 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             issue_fields[self.jira_target_start_id] = task_data.target_start
         if task_data.target_end:
             issue_fields[self.jira_target_end_id] = task_data.target_end
+        if task_data.actual_start_date:
+            issue_fields[self.jira_actual_start_id] = task_data.actual_start_date
+        if task_data.actual_end_date:
+            issue_fields[self.jira_actual_end_id] = task_data.actual_end_date
         if task_data.reporter:
             issue_fields["reporter"] = {"name": task_data.reporter}
 
@@ -1415,6 +1421,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             "frontend_hours": 0.0,
             "devops_hours": 0.0,
             "ui_ux_hours": 0.0,
+            "qa_pm_hours": 0.0,
         }
         individual_hours = {}
 

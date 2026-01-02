@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 from typing import List
@@ -85,6 +85,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             self.project_config.boards.developer_board.jira_board_key,
         )
         
+        if self.developer_board_id is None:
+            LOGGER.error(
+                f"Could not find board with key "
+                f"'{self.project_config.boards.developer_board.jira_board_key}' "
+                f"for project {self.project_config.project_key}"
+            )
+        else:
+            LOGGER.info(
+                f"Developer board ID for {self.project_config.project_key}: "
+                f"{self.developer_board_id}"
+            )
+        
         self.pm_board_id = None
         if (
             self.project_config.boards.pm_board
@@ -102,6 +114,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Developer board Jira project key
         """
+        return self.project_config.project_key
+
+    @property
+    def developer_board_key(self) -> str:
+        """Get developer board key.
+
+        Returns:
+            Developer board Jira board key
+        """
         return self.project_config.boards.developer_board.jira_board_key
 
     @property
@@ -110,6 +131,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         Returns:
             PM board Jira project key if configured, None otherwise
+        """
+        return self.project_config.project_key
+
+    @property
+    def pm_board_key(self) -> Optional[str]:
+        """Get PM board key.
+
+        Returns:
+            PM board Jira board key if configured, None otherwise
         """
         if (
             self.project_config.boards.pm_board
@@ -186,7 +216,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         if not has_department:
             return (
                 False,
-                f"Row {feature.row_number} ('{feature.task_title}'): No department/component defined (AI, Backend, Frontend, DevOps, UI/UX)",
+                f"Row {feature.row_number} ('{feature.task_title}'): No department/component defined (AI, Backend, Frontend, DevOps, UI/UX, QA/PM)",
             )
 
         feature_dates = self.extract_dates_from_feature_in_str(feature)
@@ -216,7 +246,24 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return []
 
             headers = values[0]
+            
+            # Validate required columns
+            required_fields = ["task_title", "status", "departments"]
             column_mapping, people_mapping = self._create_column_mapping(headers)
+            
+            missing_fields = [field for field in required_fields if field not in column_mapping]
+            if missing_fields:
+                LOGGER.error(
+                    f"❌ Cannot retrieve features - Missing required columns: {missing_fields}\n"
+                    f"Available headers: {headers}\n"
+                    f"Mapped fields: {list(column_mapping.keys())}\n"
+                    f"Required fields and their possible names:\n"
+                    f"  - task_title: ['وظیفه', 'Task', 'Summary']\n"
+                    f"  - status: ['وضعیت', 'Status']\n"
+                    f"  - departments: ['Departments']\n"
+                    f"Please check your sheet and ensure these columns exist."
+                )
+                return []
 
             data_rows = values[1:]
             features = []
@@ -225,23 +272,73 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if len(row) < 2:
                     continue
 
-
-
                 feature = self._parse_row_to_feature_with_mapping(
                     idx,
                     row,
                     column_mapping,
                     people_mapping
                 )
-                if feature:
+                if feature and self._passes_date_filter(feature):
                     features.append(feature)
 
-            LOGGER.info(f"Retrieved {len(features)} features")
+            LOGGER.info(f"Retrieved {len(features)} features (after date filtering)")
             return features
 
         except Exception as e:
             LOGGER.error(f"Error retrieving features: {e}")
             return []
+
+    def _passes_date_filter(self, feature: SynthPMFeatureEntity) -> bool:
+        """Check if feature passes date filter criteria.
+
+        Args:
+            feature: Feature to check
+
+        Returns:
+            True if feature passes date filter or no filter configured
+        """
+        date_filter_start = self.project_config.sync_settings.date_filter_start
+        date_filter_end = self.project_config.sync_settings.date_filter_end
+
+        # No filter configured - pass all
+        if not date_filter_start and not date_filter_end:
+            return True
+
+        try:
+            # Parse filter dates
+            filter_start = datetime.strptime(date_filter_start, "%Y-%m-%d") if date_filter_start else None
+            filter_end = datetime.strptime(date_filter_end, "%Y-%m-%d") if date_filter_end else None
+
+            # Check implementation_start_date if available
+            if feature.implementation_start_date:
+                impl_start = feature.implementation_start_date.date() if hasattr(feature.implementation_start_date, 'date') else feature.implementation_start_date
+                if filter_start and impl_start < filter_start.date():
+                    return False
+                if filter_end and impl_start > filter_end.date():
+                    return False
+
+            # Check deadline if available
+            if feature.deadline:
+                deadline = feature.deadline.date() if hasattr(feature.deadline, 'date') else feature.deadline
+                if filter_start and deadline < filter_start.date():
+                    return False
+                if filter_end and deadline > filter_end.date():
+                    return False
+
+            # If neither date is set, check sprint
+            if not feature.implementation_start_date and not feature.deadline:
+                if feature.sprint_list and len(feature.sprint_list) > 0:
+                    LOGGER.debug(f"Feature '{feature.task_title}' has no dates but has sprint, including it")
+                    return True
+                else:
+                    LOGGER.debug(f"Feature '{feature.task_title}' has no dates and no sprint, excluding it")
+                    return False
+
+            return True
+
+        except Exception as e:
+            LOGGER.warning(f"Error applying date filter to feature '{feature.task_title}': {e}")
+            return True  # Include feature if filter fails
 
     async def update_developer_board_feature(
         self,
@@ -318,6 +415,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             PM Board Jira issue key if successful, None otherwise
         """
+        # Check if PM board is enabled
+        if not (
+            self.project_config.boards.pm_board
+            and self.project_config.boards.pm_board.enabled
+        ):
+            LOGGER.info(f"PM Board is disabled for {self.project_config.project_key}, skipping task creation for {feature.task_title}")
+            return None
+        
         # Start and target end dates are extracted and set for each task
         try:
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
@@ -326,7 +431,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
                 _, epic_key = self._create_epic_if_not_exists(
                     feature.epic,
-                    self.settings.pm_project_key,
+                    self.pm_project_key,
                 )
                 epic_link = epic_key
 
@@ -336,7 +441,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             labels = [feature.involved_people] if feature.involved_people else []
             labels = labels + [f"PM-{feature.row_number}"]
             pm_board_task_data = TaskData(
-                project_key=self.settings.pm_project_key,
+                project_key=self.pm_project_key,
                 summary=feature.task_title,
                 description=feature.description or "",
                 task_type="Task",
@@ -368,7 +473,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 
                 for s in sorted_sprints:
                     temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.settings.pm_project_key} Sprint {temp_sprint_info.sprint_id}"
+                    sprint_name = f"{self.pm_board_key} Sprint {temp_sprint_info.sprint_id}"
                     temp_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.pm_board_id,
@@ -390,7 +495,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 # If no active/future sprint found, create the earliest one
                 if not selected_sprint:
                     selected_sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    sprint_name = f"{self.settings.pm_project_key} Sprint {selected_sprint_info.sprint_id}"
+                    sprint_name = f"{self.pm_board_key} Sprint {selected_sprint_info.sprint_id}"
                     # Double-check if sprint exists before creating
                     selected_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
@@ -402,7 +507,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             selected_sprint_info, 
                             current_jalali_year,
                             self.pm_board_id,
-                            self.settings.pm_project_key
+                            self.pm_board_key
                         )
                     else:
                         LOGGER.info(f"PM Board: Sprint {sprint_name} already exists (state: {selected_sprint.get('state')}), using it for feature {feature.task_title}")
@@ -421,7 +526,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             self._create_release_not_exist(
                 feature,
                 pm_board_task_data,
-                self.settings.pm_project_key,
+                self.pm_project_key,
             )
 
             pm_board_issue = self.jira_repository.create_task(pm_board_task_data)
@@ -535,6 +640,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             True if successful, False otherwise
         """
+        # Check if PM board is enabled
+        if not (
+            self.project_config.boards.pm_board
+            and self.project_config.boards.pm_board.enabled
+        ):
+            LOGGER.info(f"PM Board is disabled for {self.project_config.project_key}, skipping task update for {feature.task_title}")
+            return True  # Return True to not treat as error
+        
         try:
             if not feature.jira_issue_key:
                 LOGGER.warning(f"No Jira issue key for feature: {feature.task_title}")
@@ -552,13 +665,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     update_fields["summary"] = feature.task_title
 
             if feature.release != None or feature.version != None:
-                if set([feature.release, feature.version]) != set(
-                    issue.fields.fixVersions,
-                ):  # Replace with actual custom field ID
+                # Get current fix version names
+                current_versions = set([v.name for v in issue.fields.fixVersions])
+                # Get desired fix versions from feature
+                feature_versions = set([v for v in [feature.release, feature.version] if v])
+                
+                if feature_versions != current_versions:
+                    # Create releases if they don't exist
                     self._create_release_not_exist_during_update(
                         feature,
-                        self.settings.pm_project_key,
+                        self.pm_project_key,
                     )
+                    # Replace all fix versions with the new ones (not append)
                     update_fields["fixVersions"] = [
                         {"name": release}
                         for release in [feature.release, feature.version]
@@ -605,10 +723,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     update_fields["duedate"] = feature_duedate
 
             if feature.total_hours:
-                if (
-                    feature.total_hours * 3600
-                    != issue.fields.timetracking.originalEstimateSeconds
-                ):
+                # Safely get current original estimate from timetracking
+                current_estimate_seconds = 0
+                if issue.fields.timetracking:
+                    current_estimate_seconds = getattr(
+                        issue.fields.timetracking,
+                        "originalEstimateSeconds",
+                        0,
+                    ) or 0
+                
+                if feature.total_hours * 3600 != current_estimate_seconds:
                     logged_time = self.jira_repository.get_issue_spent_time_in_seconds(
                         issue.key,
                     )
@@ -699,7 +823,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.warning(f"Invalid update. Not handled for {feature} and {issue}")
 
             if update_fields:
-                update_fields["project"] = {"key": self.settings.pm_project_key}
+                update_fields["project"] = {"key": self.pm_project_key}
                 issue.update(fields=update_fields)
                 LOGGER.info(f"Updated Jira task {feature.jira_issue_key}")
 
@@ -861,11 +985,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         # Get current Persian/Jalali year for dynamic date handling
         current_jalali_year = jdatetime.datetime.now().year
         
+        # Check if PM Board is enabled
+        pm_board_enabled = (
+            self.project_config.boards.pm_board and 
+            self.project_config.boards.pm_board.enabled
+        )
+        
         # TODO: If task has two sprints, handle it: get the first active sprint or future sprint as the sprint for the task
         # TODO: If the issue is only updated in the google sheet board (i.e its times and stuff, handle it)
         try:
-            if not feature.jira_issue_key:
-                LOGGER.error("Cannot create task without existing PM Board task")
+            # Only require PM Board task if PM Board is enabled
+            if pm_board_enabled and not feature.jira_issue_key:
+                LOGGER.error("Cannot create task without existing PM Board task (PM Board is enabled)")
                 return None
 
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
@@ -874,85 +1005,89 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
                 _, epic_key = self._create_epic_if_not_exists(
                     feature.epic,
-                    self.settings.developer_board_project_key,
+                    self.developer_board_project_key,
                 )
                 epic_link = epic_key
 
             components = self._map_components(feature)
 
             if len(feature.sprint_list) > 1:
-                # Sort sprints by sprint ID (first number when splitting by ':')
+                # Sort sprints by sprint ID (earliest first)
                 sorted_sprints = sorted(
                     feature.sprint_list,
                     key=lambda s: int(s.split(':')[0]) if ':' in s else 0
                 )
                 
-                # Find the closest active or future sprint
                 sprint = None
                 sprint_info = None
-                active_sprint_found = False
                 
+                # Iterate through sprints to find first non-closed sprint
                 for s in sorted_sprints:
                     temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {temp_sprint_info.sprint_id}"
+                    sprint_name = f"{self.developer_board_key} Sprint {temp_sprint_info.sprint_id}"
                     temp_sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
                         self.developer_board_id,
                     )
                     
                     if temp_sprint is not None:
-                        if temp_sprint.get('state') == 'active':
-                            # Found an active sprint - use it
+                        if temp_sprint.get('state') == 'closed':
+                            # Skip closed sprints
+                            LOGGER.debug(f"Skipping closed sprint {temp_sprint_info.sprint_id}")
+                            continue
+                        elif temp_sprint.get('state') == 'active':
+                            # Found an active sprint - use it immediately
                             sprint = temp_sprint
                             sprint_info = temp_sprint_info
-                            active_sprint_found = True
                             LOGGER.info(f"Assigning feature {feature.task_title} to active sprint {sprint_info.sprint_id}")
                             break
-                        elif temp_sprint.get('state') == 'future' and not sprint:
-                            # Found a future sprint - remember it but keep looking for active
-                            sprint = temp_sprint
-                            sprint_info = temp_sprint_info
-                            LOGGER.info(f"Found future sprint {sprint_info.sprint_id} for feature {feature.task_title}")
-                
-                # If no active/future sprint found, create the earliest one
-                if not sprint:
-                    sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
-                    # Double-check if sprint exists before creating
-                    sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.developer_board_id,
-                    )
-                    if sprint:
-                        LOGGER.info(f"Sprint {sprint_name} already exists (state: {sprint.get('state')}), using it for feature {feature.task_title}")
+                        elif temp_sprint.get('state') == 'future':
+                            # Found a future sprint - use it but keep looking for active
+                            if not sprint:
+                                sprint = temp_sprint
+                                sprint_info = temp_sprint_info
+                                LOGGER.info(f"Found future sprint {sprint_info.sprint_id} for feature {feature.task_title}")
                     else:
-                        LOGGER.info(f"No active/future sprint found, will create sprint {sprint_info.sprint_id} for feature {feature.task_title}")
-                        sprint = None  # Will be created below
+                        # Sprint doesn't exist - create it
+                        LOGGER.info(f"Sprint {sprint_name} doesn't exist, will create it for feature {feature.task_title}")
+                        sprint = None
+                        sprint_info = temp_sprint_info
+                        break
+                
+                # If all sprints are closed, cannot create task
+                if sprint is None and sprint_info is None:
+                    LOGGER.warning(f"All sprints for feature {feature.task_title} are closed - cannot create task")
+                    return None
                     
             elif len(feature.sprint_list) == 1:
                 sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                 sprint = self.jira_repository.get_sprint_by_name(
                     sprint_name,
                     self.developer_board_id,
                 )
                 if sprint is not None and sprint.get('state') == "closed":
-                    return None # TODO test it. In this state, issue must not be created
+                    LOGGER.warning(f"Cannot create task for feature {feature.task_title} - sprint is closed")
+                    return None
                 
             else:
+                LOGGER.warning(f"No sprints defined for feature {feature.task_title}")
                 return None
 
-            if sprint is None:
+            # Create sprint if it doesn't exist
+            if sprint is None and sprint_info is not None:
                 LOGGER.info(f"Creating new sprint: {sprint_info.sprint_id} for feature {feature.task_title}")
                 sprint = self._create_sprint(
                     sprint_info, 
                     current_jalali_year,
                     self.developer_board_id,
-                    self.settings.developer_board_project_key
+                    self.developer_board_key
                 )
                 LOGGER.debug(f"Created sprint: {sprint}")
-            elif sprint.get('state') == 'closed':
-                LOGGER.warning(f"Cannot create task for feature {feature.task_title} - assigned sprint is closed")
+            
+            # Final validation
+            if sprint is None or sprint.get('state') == 'closed':
+                LOGGER.warning(f"Cannot create task for feature {feature.task_title} - no valid sprint available")
                 return None
 
             task_type = "Story" if len(assignees) > 1 else "Task"
@@ -962,18 +1097,28 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 story_points = feature.total_hours / 8 if feature.total_hours else 0
                 assignee = assignees[0] if assignees else None
             else:
-                labels = [f"PM-{feature.jira_issue_key}", feature.involved_people]
-                description = (
-                    f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
-                    f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
-                    f"📝 *Original Time*: {feature.total_hours}h\n\n"
-                    f"✍️ *Description*: {feature.description}"
-                )
+                # Build labels and description based on PM Board status
+                if pm_board_enabled and feature.jira_issue_key:
+                    labels = [f"PM-{feature.jira_issue_key}", feature.involved_people]
+                    description = (
+                        f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
+                        f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
+                        f"📝 *Original Time*: {feature.total_hours}h\n\n"
+                        f"✍️ *Description*: {feature.description}"
+                    )
+                else:
+                    # PM Board disabled - simpler format
+                    labels = [feature.involved_people] if feature.involved_people else None
+                    description = (
+                        f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
+                        f"📝 *Original Time*: {feature.total_hours}h\n\n"
+                        f"✍️ *Description*: {feature.description}"
+                    )
                 story_points = None
                 assignee = None  # Stories don't have direct assignee, use subtasks
 
             developer_board_task_data = TaskData(
-                project_key=self.settings.developer_board_project_key,
+                project_key=self.developer_board_project_key,
                 summary=f"{feature.task_title}",
                 description=description,
                 task_type=task_type,
@@ -994,7 +1139,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             self._create_release_not_exist(
                 feature,
                 developer_board_task_data,
-                self.settings.developer_board_project_key,
+                self.developer_board_project_key,
             )
 
             developer_board_issue = self.jira_repository.create_task(
@@ -1019,17 +1164,26 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         LOGGER.info(
                             f"Created {len(subtask_keys)} subtasks for story {developer_board_issue.key}: {subtask_keys}",
                         )
+                        
+                        # Update story deadline based on unique assignees
+                        await self._update_story_deadline_after_subtasks(
+                            developer_board_issue.key,
+                            assignees,
+                            feature_dates_str.get("target_end"),
+                        )
                 except Exception as e:
                     LOGGER.warning(
                         f"Could not create subtasks for {developer_board_issue.key}: {e}",
                     )
 
-            try:
-                self._link_issues(feature.jira_issue_key, developer_board_issue.key)
-            except Exception as e:
-                LOGGER.warning(
-                    f"Could not link issues {feature.jira_issue_key} and {developer_board_issue.key}: {e}",
-                )
+            # Only link issues if PM Board is enabled and PM task exists
+            if pm_board_enabled and feature.jira_issue_key:
+                try:
+                    self._link_issues(feature.jira_issue_key, developer_board_issue.key)
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Could not link issues {feature.jira_issue_key} and {developer_board_issue.key}: {e}",
+                    )
 
             # Update the sheet with issue key
             await self.update_developer_board_feature(
@@ -1043,18 +1197,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error creating task for feature {feature.task_title}: {e}")
             return None
 
-    def _create_sprint(self, sprint_info, current_jalali_year, board_id: int, project_key: str):
+    def _create_sprint(self, sprint_info, current_jalali_year, board_id: int, board_key: str):
         """Create a sprint in the specified board.
         
         Args:
             sprint_info: Sprint information
             current_jalali_year: Current Jalali year
             board_id: Board ID where sprint should be created
-            project_key: Project key for sprint naming
+            board_key: Board key for sprint naming (e.g., 'FollowUpper', 'PARSCHAT')
             
         Returns:
             Created sprint object
         """
+        if board_id is None:
+            LOGGER.error(f"Cannot create sprint - board_id is None for board {board_key}")
+            return None
+            
         start_date = sprint_info.start_date
         end_date = sprint_info.end_date
         start_date = jdatetime.JalaliToGregorian(
@@ -1073,13 +1231,24 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     f"{start_date[0]}-{start_date[1]:02d}-{start_date[2]:02d}"
                 )
         end_date_str = f"{end_date[0]}-{end_date[1]:02d}-{end_date[2]:02d}"
+        
+        LOGGER.info(
+            f"Creating sprint '{board_key} Sprint {sprint_info.sprint_id}' "
+            f"on board {board_id} from {start_date_str} to {end_date_str}"
+        )
+        
         sprint = self.jira_repository.create_sprint(
                     board_id=board_id,
-                    sprint_name=f"{project_key} Sprint {sprint_info.sprint_id}",
+                    sprint_name=f"{board_key} Sprint {sprint_info.sprint_id}",
                     start_date=start_date_str,
                     end_date=end_date_str,
                     goal=f"{sprint_info.start_date} to {sprint_info.end_date}",
                 )
+        
+        if sprint:
+            LOGGER.info(f"Successfully created sprint {sprint.get('id')} - {sprint.get('name')}")
+        else:
+            LOGGER.error(f"Failed to create sprint for board {board_key}")
         
         return sprint
 
@@ -1137,7 +1306,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 else:
                     _, epic_key = self._create_epic_if_not_exists(
                         feature.epic,
-                        self.settings.developer_board_project_key,
+                        self.developer_board_project_key,
                     )
                     
                     current_epic = getattr(issue.fields, self.jira_repository.jira_epic_link_id, None)
@@ -1188,16 +1357,32 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                                     LOGGER.info(f"Updated summary for subtask {subtask.key} to '{feature.task_title}'")
                             else:
                                 LOGGER.warning(f"Subtask {subtask.key} not found, skipping summary update")
+            
+            # Update description based on issue type
+            if issue.fields.issuetype.name == "Story":
+                # Stories should have empty description
+                new_description = ""
+            elif issue.fields.issuetype.name == "Sub-task":
+                # Subtasks should have feature.description
+                new_description = feature.description if feature.description else ""
+            else:
+                # For other types, use feature.description
+                new_description = feature.description if feature.description else ""
+            
+            current_description = issue.fields.description if issue.fields.description else ""
+            if new_description != current_description:
+                update_fields["description"] = new_description
 
             # Update fixVersions (handle both setting and clearing)
             feature_versions = set([v for v in [feature.release, feature.version] if v])
-            current_versions = set([field.name for field in issue.fields.fixVersions])
+            current_versions = set([v.name for v in issue.fields.fixVersions])
             if feature_versions != current_versions:
                 if feature_versions:  # Only create releases if we're setting versions
                     self._create_release_not_exist_during_update(
                         feature,
-                        self.settings.developer_board_project_key,
+                        self.developer_board_project_key,
                     )
+                # Replace all fix versions with the new ones (not append)
                 update_fields["fixVersions"] = [
                     {"name": release}
                     for release in [feature.release, feature.version]
@@ -1220,7 +1405,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # Find first active or future sprint (don't create in loop)
                     for s in sorted_sprints:
                         sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                         LOGGER.debug(f"Looking for sprint: '{sprint_name}' on board {self.developer_board_id}")
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
@@ -1243,7 +1428,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # If no active sprint found, use first non-closed sprint or create first sprint
                     if target_sprint is None:
                         sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                         sprint = self.jira_repository.get_sprint_by_name(
                             sprint_name,
                             self.developer_board_id,
@@ -1253,14 +1438,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                                 sprint_info, 
                                 current_jalali_year,
                                 self.developer_board_id,
-                                self.settings.developer_board_project_key
+                                self.developer_board_key
                             )
                         elif sprint.get('state') != "closed":
                             target_sprint = sprint
                         
                 elif len(feature.sprint_list) == 1:
                     sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                    sprint_name = f"{self.settings.developer_board_project_key} Sprint {sprint_info.sprint_id}"
+                    sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
                     LOGGER.debug(f"Looking for single sprint: '{sprint_name}' on board {self.developer_board_id}")
                     sprint = self.jira_repository.get_sprint_by_name(
                         sprint_name,
@@ -1278,38 +1463,42 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                             sprint_info, 
                             current_jalali_year,
                             self.developer_board_id,
-                            self.settings.developer_board_project_key
+                            self.developer_board_key
                         )
                         LOGGER.debug(f"Created single sprint: {target_sprint}")
                     # If sprint is closed, target_sprint remains None (will remove sprint assignment)
             # If feature.sprint_list is empty or None, target_sprint remains None (will remove sprint assignment)
             
             # Update sprint assignment based on target_sprint
-            current_sprint_data = issue.fields.__dict__.get(self.jira_repository.jira_sprint_id)
-            current_sprint_id = None
-            
-            # Extract current sprint ID from Jira field (handles Jira's sprint field format)
-            if current_sprint_data and isinstance(current_sprint_data, list) and len(current_sprint_data) > 0:
-                sprint_str = current_sprint_data[0]
-                if "id=" in sprint_str:
-                    id_start = sprint_str.find("id=") + 3
-                    id_end = sprint_str.find(",", id_start)
-                    if id_end == -1:
-                        id_end = sprint_str.find("]", id_start)
-                    current_sprint_id = int(sprint_str[id_start:id_end])
-            
-            # Compare and update sprint assignment
-            if target_sprint is None:
-                # Remove sprint assignment if no valid sprint found
-                if current_sprint_data is not None:
-                    update_fields[self.jira_repository.jira_sprint_id] = None
-                    LOGGER.debug(f"Removing sprint assignment from {issue.key} - no valid sprint found")
+            # Skip sprint updates for subtasks - they inherit sprint from parent
+            if issue.fields.issuetype.name == "Sub-task":
+                LOGGER.debug(f"Skipping sprint update for subtask {issue.key} - subtasks inherit sprint from parent issue")
             else:
-                # Assign to target sprint if different
-                target_sprint_id = target_sprint.get("id")
-                if current_sprint_id != target_sprint_id:
-                    update_fields[self.jira_repository.jira_sprint_id] = target_sprint_id
-                    LOGGER.debug(f"Updating sprint for {issue.key} from {current_sprint_id} to {target_sprint_id}")
+                current_sprint_data = issue.fields.__dict__.get(self.jira_repository.jira_sprint_id)
+                current_sprint_id = None
+                
+                # Extract current sprint ID from Jira field (handles Jira's sprint field format)
+                if current_sprint_data and isinstance(current_sprint_data, list) and len(current_sprint_data) > 0:
+                    sprint_str = current_sprint_data[0]
+                    if "id=" in sprint_str:
+                        id_start = sprint_str.find("id=") + 3
+                        id_end = sprint_str.find(",", id_start)
+                        if id_end == -1:
+                            id_end = sprint_str.find("]", id_start)
+                        current_sprint_id = int(sprint_str[id_start:id_end])
+                
+                # Compare and update sprint assignment
+                if target_sprint is None:
+                    # Remove sprint assignment if no valid sprint found
+                    if current_sprint_data is not None:
+                        update_fields[self.jira_repository.jira_sprint_id] = None
+                        LOGGER.debug(f"Removing sprint assignment from {issue.key} - no valid sprint found")
+                else:
+                    # Assign to target sprint if different
+                    target_sprint_id = target_sprint.get("id")
+                    if current_sprint_id != target_sprint_id:
+                        update_fields[self.jira_repository.jira_sprint_id] = target_sprint_id
+                        LOGGER.debug(f"Updating sprint for {issue.key} from {current_sprint_id} to {target_sprint_id}")
 
             if feature.priority:
                 feature_priority = self._map_priority(feature.priority)
@@ -1327,6 +1516,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 feature_assignees
                 and len(feature_assignees) == 1
                 and issue.fields.issuetype.name == "Task"
+            )
+            check_for_subtask_assignee_change = (
+                feature_assignees
+                and len(feature_assignees) == 1
+                and issue.fields.issuetype.name == "Sub-task"
             )
             check_for_change_from_story_to_task = (
                 feature_assignees
@@ -1353,6 +1547,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 assignee_name = issue.fields.assignee.name if issue.fields.assignee else None
                 if assignee_name != feature_assignees[0]:
                     update_fields["assignee"] = {"name": feature_assignees[0]}
+            elif check_for_subtask_assignee_change:
+                # Update subtask assignee
+                assignee_name = issue.fields.assignee.name if issue.fields.assignee else None
+                if assignee_name != feature_assignees[0]:
+                    update_fields["assignee"] = {"name": feature_assignees[0]}
+                    LOGGER.info(f"Updating subtask {issue.key} assignee from {assignee_name} to {feature_assignees[0]}")
             elif check_for_change_from_story_to_task:
                 # Story to task conversion
                 update_fields["issuetype"] = {"name": "Task"}
@@ -1396,10 +1596,16 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         "remainingEstimate": None,
                     }
                 else:
-                    if (
-                        feature.total_hours * 3600
-                        != issue.fields.timetracking.originalEstimateSeconds
-                    ):
+                    # Safely get current original estimate from timetracking
+                    current_estimate_seconds = 0
+                    if issue.fields.timetracking:
+                        current_estimate_seconds = getattr(
+                            issue.fields.timetracking,
+                            "originalEstimateSeconds",
+                            0,
+                        ) or 0
+                    
+                    if feature.total_hours * 3600 != current_estimate_seconds:
                         time_logged = (
                             self.jira_repository.get_issue_spent_time_in_seconds(
                                 issue.key,
@@ -1471,8 +1677,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         combined_label = "---".join(sorted([name.replace(" ", "-") for name in sheet_usernames]))
                         update_fields["labels"] = list(existing_labels) + [combined_label]
 
-            else:
-                LOGGER.warning(f"Invalid update. Not handled for {feature} and {issue}")
+            elif issue.fields.issuetype.name == "Sub-task":
+                # Sub-tasks don't use labels for assignee tracking - they use assignee field directly
+                # All other updates (dates, components, time tracking) are handled above
+                LOGGER.debug(f"Skipping label updates for subtask {issue.key} - subtasks use assignee field directly")
 
             if update_fields:
                 issue.update(fields=update_fields)
@@ -1633,10 +1841,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "necessity": ["ضرورت", "Necessity", "ضرورت"],
             "priority": ["اولویت", "Priority", "اولویت"],
             "status": ["وضعیت", "Status", "وضعیت"],
-            "release": ["ریلیز", "Release", "ریلیز"],
+            "release": ["ریلیز", "Release", "ریلیز", "feature", "Feature",],  # FIXME: biggest bug: this is story, not release. 
             "eta_hours": ["ETA(h)", "ETA", "ETA(h)"],
             "total_hours": ["Total (h)", "Total", "Total (h)"],
-            "departments": ["Departments", "Departments"],
+            "departments": ["Departments", "Departments", "Components"],
             "involved_people": ["افراد درگیر", "Involved People", "افراد درگیر", "Assignee", "Assignees"],
             "ai": ["AI", "AI"],
             "backend": ["Backend", "Backend"],
@@ -1746,6 +1954,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 except (ValueError, TypeError):
                     return None
 
+            def parse_int(value_str: str) -> Optional[int]:
+                """Parse integer value from string, return None if empty or invalid."""
+                if not value_str or value_str.strip() == "":
+                    return None
+                try:
+                    return int(value_str)
+                except (ValueError, TypeError):
+                    return None
+
             task_title = get_mapped_value("task_title")
             if not task_title:
                 return None
@@ -1769,8 +1986,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         # Fallback to last item if parsing fails
                         last_sprint = items[-1]
             times = {key: parse_float(get_mapped_value(key)) for key in people_mapping.keys() if parse_float(get_mapped_value(key)) is not None}
+            
+            # Parse row_number, use sheet_row_number as fallback if empty
+            parsed_row_number = parse_int(get_mapped_value("row_number"))
+            if parsed_row_number is None:
+                parsed_row_number = row_number
+            
             return SynthPMFeatureEntity(
-                row_number=get_mapped_value("row_number"),
+                row_number=parsed_row_number,
                 sheet_row_number=row_number,
                 task_title=task_title,
                 epic=(
@@ -1980,6 +2203,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     components.append("DevOps")
                 elif dept.lower() in ["ui/ux", "ui", "ux", "design"]:
                     components.append("UI/UX")
+                elif dept.lower() in ["qa/pm", "qa", "pm", "quality assurance", "project management"]:
+                    components.append("QA/PM")
         else:
             # Fallback to individual department fields
             if feature.ai != "" and float(feature.ai) > 0:
@@ -2152,6 +2377,107 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Error transitioning {issue_key} to {target_status}: {e}")
 
+    def _calculate_story_dates_based_on_assignees(
+        self,
+        last_subtask_target_end: Optional[datetime],
+        unique_assignee_count: int,
+    ) -> Optional[datetime]:
+        """Calculate story target_end and deadline based on subtasks and assignees.
+
+        Both target_end and deadline will be equal in the final result.
+        Formula: 
+        - target_end = deadline = last_subtask_target_end + (unique_assignee_count - 2) days
+
+        Args:
+            last_subtask_target_end: Latest target_end from all subtasks
+            unique_assignee_count: Number of unique people working on the story
+
+        Returns:
+            Calculated target_end (which equals deadline)
+        """
+        if not last_subtask_target_end or unique_assignee_count <= 0:
+            return last_subtask_target_end
+        
+        # Calculate: target_end = deadline = last_subtask_target_end + (N - 2) days
+        days_to_add = unique_assignee_count - 2
+        target_end_and_deadline = last_subtask_target_end + timedelta(days=days_to_add)
+
+        return target_end_and_deadline
+
+    async def _update_story_deadline_after_subtasks(
+        self,
+        story_key: str,
+        assignees: List[str],
+        original_target_end_str: Optional[str],
+    ):
+        """Update story target_end and deadline based on subtasks and unique assignees.
+        
+        Both target_end and deadline will be set to the same value.
+
+        Args:
+            story_key: Story issue key
+            assignees: List of assignee usernames
+            original_target_end_str: Original target end date string (YYYY-MM-DD format) - not used in calculation but kept for logging
+        """
+        try:
+            if not assignees:
+                return
+
+            # Get all subtasks and find the last target_end
+            story_issue = self.jira_repository.get_issue(story_key)
+            subtasks = story_issue.fields.subtasks
+            
+            if not subtasks:
+                LOGGER.warning(f"No subtasks found for story {story_key}, skipping deadline update")
+                return
+            
+            # Find the latest target_end among all subtasks
+            last_target_end = None
+            for subtask in subtasks:
+                subtask_detail = self.jira_repository.get_issue(subtask.key)
+                target_end_value = getattr(
+                    subtask_detail.fields,
+                    self.jira_repository.jira_target_end_id,
+                    None
+                )
+                if target_end_value:
+                    try:
+                        subtask_target_end = datetime.strptime(target_end_value, "%Y-%m-%d")
+                        if last_target_end is None or subtask_target_end > last_target_end:
+                            last_target_end = subtask_target_end
+                    except ValueError:
+                        continue
+            
+            if not last_target_end:
+                LOGGER.warning(f"No valid target_end found in subtasks for story {story_key}")
+                return
+            
+            # Calculate target_end and deadline (they are equal)
+            unique_assignee_count = len(set(assignees))
+            target_end_and_deadline = self._calculate_story_dates_based_on_assignees(
+                last_target_end,
+                unique_assignee_count,
+            )
+
+            if target_end_and_deadline:
+                date_str = target_end_and_deadline.strftime("%Y-%m-%d")
+                
+                # Update both target_end and deadline to the same value
+                update_fields = {
+                    "duedate": date_str,
+                    self.jira_repository.jira_target_end_id: date_str,
+                }
+                self.jira_repository.update_issue(story_key, update_fields)
+                
+                LOGGER.info(
+                    f"Updated story {story_key}: target_end=deadline={date_str} "
+                    f"(last_subtask_target_end={last_target_end.strftime('%Y-%m-%d')}, "
+                    f"unique_assignees={unique_assignee_count})"
+                )
+
+        except Exception as e:
+            LOGGER.error(f"Error updating story deadline for {story_key}: {e}")
+
     async def _create_subtasks_for_assignees(
         self,
         parent_issue_key: str,
@@ -2175,7 +2501,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         if not assignees:
             return []
 
-        project_key = self.settings.developer_board_project_key
+        project_key = self.developer_board_project_key
         created_subtasks = {}
 
         # Parse department dependencies
@@ -2190,7 +2516,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         for assignee in assignees:
             component = self.user_config.get_user_component(
                 assignee,
-                self.settings.developer_board_project_key,
+                self.developer_board_project_key,
             )
             if component:
                 dept_name = DepartmentDependencyCalculator.get_department_from_component(component)
@@ -2224,7 +2550,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             try:
                 component = self.user_config.get_user_component(
                     assignee,
-                    self.settings.developer_board_project_key,
+                    self.developer_board_project_key,
                 )
                 if not component:
                     LOGGER.warning(
@@ -2687,7 +3013,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             component = self.user_config.get_user_component(
                 assignee,
-                self.settings.developer_board_project_key,
+                self.developer_board_project_key,
             )
             if not component:
                 LOGGER.warning(
@@ -2705,7 +3031,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             releases = [r for r in [feature.release, feature.version] if r]
             
             subtask_data = TaskData(
-                project_key=self.settings.developer_board_project_key,
+                project_key=self.developer_board_project_key,
                 summary=f"{feature.task_title}",
                 description=f"{feature.description or ''}",
                 task_type="Sub-task",
@@ -2927,7 +3253,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         try:
             component = self.user_config.get_user_component(
                 assignee,
-                self.settings.developer_board_project_key,
+                self.developer_board_project_key,
             )
 
             story_point_hour = self._get_assignee_story_points(
@@ -2975,13 +3301,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Update fixVersions (handle both setting and clearing)
             feature_versions = set([v for v in [feature.release, feature.version] if v])
-            current_versions = set([field.name for field in issue.fields.fixVersions])
+            current_versions = set([v.name for v in issue.fields.fixVersions])
             if feature_versions != current_versions:
                 if feature_versions:  # Only create releases if we're setting versions
                     self._create_release_not_exist_during_update(
                         feature,
-                        self.settings.developer_board_project_key,
+                        self.developer_board_project_key,
                     )
+                # Replace all fix versions with the new ones (not append)
                 update_fields["fixVersions"] = [
                     {"name": release}
                     for release in [feature.release, feature.version]
@@ -3334,3 +3661,388 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         custom_fields: Dict[str, Any]
         ):
         pass
+
+    async def update_story_from_subtasks(self, story_key: str) -> bool:
+        """Update story components and dates based on its subtasks.
+
+        Args:
+            story_key: Story issue key
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            story_issue = self.jira_repository.get_issue(story_key)
+            if not story_issue:
+                LOGGER.error(f"Story {story_key} not found")
+                return False
+            
+            subtasks = story_issue.fields.subtasks
+            if not subtasks:
+                LOGGER.debug(f"No subtasks found for story {story_key}")
+                return True
+            
+            # Collect all components and dates from subtasks
+            all_components = set()
+            all_assignees = set()
+            all_fix_versions = set()
+            earliest_start = None
+            latest_end = None
+            
+            for subtask in subtasks:
+                subtask_issue = self.jira_repository.get_issue(subtask.key)
+                if not subtask_issue:
+                    continue
+                
+                # Collect components
+                if subtask_issue.fields.components:
+                    for comp in subtask_issue.fields.components:
+                        all_components.add(comp.name)
+                
+                # Collect assignees
+                if subtask_issue.fields.assignee:
+                    all_assignees.add(subtask_issue.fields.assignee.name)
+                
+                # Collect fix versions
+                if subtask_issue.fields.fixVersions:
+                    for version in subtask_issue.fields.fixVersions:
+                        all_fix_versions.add(version.name)
+                
+                # Collect dates
+                target_start_str = subtask_issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
+                if target_start_str:
+                    target_start = datetime.strptime(target_start_str, "%Y-%m-%d")
+                    if earliest_start is None or target_start < earliest_start:
+                        earliest_start = target_start
+                
+                target_end_str = subtask_issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
+                if target_end_str:
+                    target_end = datetime.strptime(target_end_str, "%Y-%m-%d")
+                    if latest_end is None or target_end > latest_end:
+                        latest_end = target_end
+            
+            # Calculate final dates using the assignee-based formula
+            unique_assignee_count = len(all_assignees)
+            final_target_end = self._calculate_story_dates_based_on_assignees(
+                latest_end,
+                unique_assignee_count,
+            )
+            
+            # Build update fields
+            update_fields = {}
+            
+            # Update components
+            current_components = set([comp.name for comp in story_issue.fields.components])
+            if all_components != current_components:
+                update_fields["components"] = [{"name": comp} for comp in sorted(all_components)]
+            
+            # Update fix versions
+            current_fix_versions = set([v.name for v in story_issue.fields.fixVersions])
+            if all_fix_versions != current_fix_versions:
+                update_fields["fixVersions"] = [{"name": version} for version in sorted(all_fix_versions)]
+            
+            # Update dates
+            if earliest_start:
+                target_start_str = earliest_start.strftime("%Y-%m-%d")
+                current_start = story_issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
+                if target_start_str != current_start:
+                    update_fields[self.jira_repository.jira_target_start_id] = target_start_str
+            
+            if final_target_end:
+                final_target_end_str = final_target_end.strftime("%Y-%m-%d")
+                current_end = story_issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
+                if final_target_end_str != current_end:
+                    update_fields[self.jira_repository.jira_target_end_id] = final_target_end_str
+                
+                # Also update duedate to match target_end
+                if final_target_end_str != story_issue.fields.duedate:
+                    update_fields["duedate"] = final_target_end_str
+            
+            # Apply updates
+            if update_fields:
+                story_issue.update(fields=update_fields)
+                LOGGER.info(
+                    f"Updated story {story_key}: components={sorted(all_components)}, "
+                    f"fix_versions={sorted(all_fix_versions)}, "
+                    f"start={earliest_start.strftime('%Y-%m-%d') if earliest_start else None}, "
+                    f"end={final_target_end.strftime('%Y-%m-%d') if final_target_end else None}, "
+                    f"assignees={unique_assignee_count}"
+                )
+            else:
+                LOGGER.debug(f"No updates needed for story {story_key}")
+            
+            return True
+            
+        except Exception as e:
+            LOGGER.error(f"Error updating story {story_key} from subtasks: {e}")
+            return False
+
+    async def get_story_by_release_name(self, release_name: str) -> Optional[str]:
+        """Check if a story already exists for the given release name.
+
+        Args:
+            release_name: Name of the release to search for
+
+        Returns:
+            Story issue key if found, None otherwise
+        """
+        try:
+            # Search for stories with the release name in the summary
+            project_key = self.developer_board_project_key
+            jql = f'project = "{project_key}" AND issuetype = Story AND summary ~ "{release_name}"'
+            issues = self.jira_repository.search_issues(jql, max_results=1)
+            
+            if issues:
+                LOGGER.info(f"Found existing story for release {release_name}: {issues[0].key}")
+                return issues[0].key
+            return None
+            
+        except Exception as e:
+            LOGGER.error(f"Error searching for story by release name '{release_name}': {e}")
+            return None
+
+    async def create_release_story(
+        self,
+        release_name: str,
+        features: List[SynthPMFeatureEntity],
+    ) -> Optional[str]:
+        """Create a story for a release based on features.
+
+        Args:
+            release_name: Name of the release
+            features: List of features in this release
+
+        Returns:
+            Story issue key if successful, None otherwise
+        """
+        try:
+            if not features:
+                return None
+            
+            # Use first feature to get common data like sprint, epic, etc.
+            first_feature = features[0]
+            project_key = self.developer_board_project_key
+            
+            # Get current Persian/Jalali year for dynamic date handling
+            current_jalali_year = jdatetime.datetime.now().year
+            
+            # Calculate total hours and get all assignees
+            total_hours = sum(f.total_hours for f in features if f.total_hours)
+            all_assignees = set()
+            for feature in features:
+                assignees = []
+                all_user_configs = self.user_config.get_all_user_configs()
+                for user_config in all_user_configs.values():
+                    if (user_config.google_sheet_name and 
+                        feature.involved_people and 
+                        user_config.google_sheet_name in feature.involved_people):
+                        all_assignees.add(user_config.jira_username)
+            
+            # Get sprint information from first feature
+            sprint = None
+            sprint_info = None
+            if first_feature.sprint_list and len(first_feature.sprint_list) > 0:
+                # Use the same sprint logic as in create_developer_board_task_from_feature
+                if len(first_feature.sprint_list) > 1:
+                    sorted_sprints = sorted(
+                        first_feature.sprint_list,
+                        key=lambda s: int(s.split(':')[0]) if ':' in s else 0
+                    )
+                    for s in sorted_sprints:
+                        temp_sprint_info = SprintInfo.parse_sprint_string(s)
+                        sprint_name = f"{self.developer_board_key} Sprint {temp_sprint_info.sprint_id}"
+                        temp_sprint = self.jira_repository.get_sprint_by_name(
+                            sprint_name,
+                            self.developer_board_id,
+                        )
+                        if temp_sprint and temp_sprint.get('state') == 'active':
+                            sprint = temp_sprint
+                            sprint_info = temp_sprint_info
+                            break
+                        elif temp_sprint and temp_sprint.get('state') == 'future' and not sprint:
+                            sprint = temp_sprint
+                            sprint_info = temp_sprint_info
+                    
+                    if not sprint:
+                        sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
+                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
+                        sprint = self.jira_repository.get_sprint_by_name(
+                            sprint_name,
+                            self.developer_board_id,
+                        )
+                else:
+                    sprint_info = SprintInfo.parse_sprint_string(first_feature.sprint_list[0])
+                    sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
+                    sprint = self.jira_repository.get_sprint_by_name(
+                        sprint_name,
+                        self.developer_board_id,
+                    )
+                
+                # Create sprint if it doesn't exist
+                if sprint is None and sprint_info:
+                    sprint = self._create_sprint(
+                        sprint_info,
+                        current_jalali_year,
+                        self.developer_board_id,
+                        self.developer_board_key
+                    )
+            
+            # Get epic link
+            epic_link = None
+            if first_feature.epic and first_feature.epic.strip() and first_feature.epic != "Select":
+                _, epic_key = self._create_epic_if_not_exists(
+                    first_feature.epic,
+                    self.developer_board_project_key,
+                )
+                epic_link = epic_key
+            
+            # Create the story (components and dates will be set after subtasks are created)
+            story_data = TaskData(
+                project_key=project_key,
+                summary=release_name,
+                description="",
+                task_type="Story",
+                priority=self._map_priority(first_feature.priority) if first_feature.priority else "Medium",
+                epic_link=epic_link,
+                labels=[],
+                components=None,  # Will be set from subtasks
+                assignee=None,  # Stories don't have direct assignees
+                story_points=None,
+            )
+            
+            if sprint and sprint.get("state") != "closed":
+                story_data.sprint_id = sprint.get("id")
+                story_data.sprint_name = sprint.get("name")
+            
+            # Add release as fixVersion
+            self._create_release_not_exist(
+                first_feature,
+                story_data,
+                project_key,
+            )
+            
+            # Create the story issue
+            story_issue = self.jira_repository.create_task(story_data)
+            LOGGER.info(
+                f"Created release story {self.jira_repository.get_issue_url_by_key(story_issue.key)} "
+                f"for release: {release_name}"
+            )
+            
+            return story_issue.key
+            
+        except Exception as e:
+            LOGGER.error(f"Error creating release story for {release_name}: {e}")
+            return None
+
+    async def create_subtask_for_release(
+        self,
+        parent_story_key: str,
+        feature: SynthPMFeatureEntity,
+        assignees: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        """Create a subtask for a feature under a release story.
+
+        Args:
+            parent_story_key: Parent story issue key
+            feature: Feature entity
+            assignees: List of assignee usernames
+
+        Returns:
+            Subtask issue key if successful, None otherwise
+        """
+        try:
+            # Extract dates
+            feature_dates_str = self.extract_dates_from_feature_in_str(feature)
+            
+            # Get components
+            components = self._map_components(feature)
+            
+            # Determine story points and assignee based on number of assignees
+            if assignees and len(assignees) == 1:
+                story_points = feature.total_hours / 8 if feature.total_hours else 0
+                assignee = assignees[0]
+            else:
+                # Multiple assignees - will create individual subtasks
+                story_points = None
+                assignee = None
+            
+            # Use feature description directly
+            description = feature.description if feature.description else ""
+            
+            # Get sprint from parent story to assign to subtask
+            parent_story = self.jira_repository.get_issue(parent_story_key)
+            sprint_id = None
+            if parent_story and hasattr(parent_story.fields, self.jira_repository.jira_sprint_id):
+                parent_sprint_data = getattr(parent_story.fields, self.jira_repository.jira_sprint_id)
+                if parent_sprint_data and isinstance(parent_sprint_data, list) and len(parent_sprint_data) > 0:
+                    sprint_str = parent_sprint_data[0]
+                    if "id=" in sprint_str:
+                        sprint_id = int(sprint_str.split("id=")[1].split(",")[0])
+            
+            # Create subtask
+            subtask_data = TaskData(
+                project_key=self.developer_board_project_key,
+                summary=feature.task_title,
+                description=description,
+                task_type="Sub-task",
+                priority=self._map_priority(feature.priority),
+                parent_issue_key=parent_story_key,
+                components=components,
+                assignee=assignee,
+                due_date=feature_dates_str.get("due_date"),
+                story_points=story_points,
+                target_start=feature_dates_str.get("target_start"),
+                target_end=feature_dates_str.get("target_end"),
+                sprint_id=sprint_id,
+            )
+            
+            subtask_issue = self.jira_repository.create_task(subtask_data)
+            LOGGER.info(
+                f"Created subtask {self.jira_repository.get_issue_url_by_key(subtask_issue.key)} "
+                f"for feature: {feature.task_title}"
+            )
+            
+            # If multiple assignees, create individual subtasks for each
+            if assignees and len(assignees) > 1:
+                try:
+                    # Get sprint info from feature
+                    sprint_info = None
+                    if feature.sprint_list and len(feature.sprint_list) > 0:
+                        sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
+                    
+                    subtask_keys = await self._create_subtasks_for_assignees(
+                        subtask_issue.key,
+                        assignees,
+                        feature,
+                        sprint_info,
+                        feature_dates_str
+                    )
+                    if subtask_keys:
+                        LOGGER.info(
+                            f"Created {len(subtask_keys)} individual subtasks under {subtask_issue.key}: {subtask_keys}"
+                        )
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Could not create individual subtasks for {subtask_issue.key}: {e}"
+                    )
+            
+            # Link to PM Board task if exists
+            if feature.jira_issue_key:
+                try:
+                    self._link_issues(feature.jira_issue_key, subtask_issue.key)
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Could not link issues {feature.jira_issue_key} and {subtask_issue.key}: {e}"
+                    )
+            
+            # Update the sheet with subtask key
+            await self.update_developer_board_feature(
+                feature.sheet_row_number,
+                {"developer_board_issue_key": subtask_issue.key},
+            )
+            
+            return subtask_issue.key
+            
+        except Exception as e:
+            LOGGER.error(f"Error creating subtask for feature {feature.task_title}: {e}")
+            return None

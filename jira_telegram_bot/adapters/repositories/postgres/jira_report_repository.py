@@ -51,6 +51,8 @@ class JiraTaskModel(Base):
     target_start = Column(DateTime, nullable=True)
     target_end = Column(DateTime, nullable=True)
     due_date = Column(DateTime, nullable=True)
+    actual_start_date = Column(DateTime, nullable=True)
+    actual_end_date = Column(DateTime, nullable=True)
     project = Column(String, nullable=True)
     story_points = Column(Float, nullable=True)
     components = Column(ARRAY(String), nullable=True)
@@ -117,6 +119,9 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             for issue in issues:
                 task_model = self._convert_to_model(issue)
                 session.merge(task_model)
+                
+                # Flush to ensure task exists before inserting status history
+                session.flush()
                 
                 # Store status changes in history table
                 if issue.status_changes:
@@ -273,6 +278,8 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             target_start=issue.target_start,
             target_end=issue.target_end,
             due_date=issue.due_date,
+            actual_start_date=issue.actual_start_date,
+            actual_end_date=issue.actual_end_date,
             project=issue.project,
             story_points=issue.story_points,
             components=issue.components,
@@ -327,9 +334,12 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             created_at=model.created_at or datetime.now(),
             updated_at=model.updated_at or datetime.now(),
             resolved_at=model.resolved_at,
+            reviewed_at=model.reviewed_at,
             target_start=model.target_start,
             target_end=model.target_end,
             due_date=model.due_date,
+            actual_start_date=model.actual_start_date,
+            actual_end_date=model.actual_end_date,
             project=model.project,
             story_points=model.story_points,
             components=model.components or [],

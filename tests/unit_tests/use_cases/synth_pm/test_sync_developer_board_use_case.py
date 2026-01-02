@@ -74,7 +74,7 @@ class TestSyncDeveloperBoardUseCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_sync_features_success(self):
         """Test successful feature synchronization."""
-        # Mock data
+        # Mock data - features need version field for filtering
         features = [
             SynthPMFeatureEntity(
                 row_number=1,
@@ -82,6 +82,7 @@ class TestSyncDeveloperBoardUseCase(unittest.IsolatedAsyncioTestCase):
                 task_title="Test Task 1",
                 status="۵",
                 times={"John Doe": 8},
+                version="04.06.28",  # Required for version-based filtering
             ),
             SynthPMFeatureEntity(
                 row_number=2,
@@ -89,6 +90,7 @@ class TestSyncDeveloperBoardUseCase(unittest.IsolatedAsyncioTestCase):
                 task_title="Test Task 2",
                 jira_issue_key="TEST-123",
                 status="۶",
+                version="04.07.11",  # Required for version-based filtering
             ),
         ]
 
@@ -119,12 +121,13 @@ class TestSyncDeveloperBoardUseCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_sync_features_with_errors(self):
         """Test feature synchronization with errors."""
-        # Mock data
+        # Mock data - feature needs version field for filtering
         features = [
             SynthPMFeatureEntity(
                 row_number=1,
                 sheet_row_number=2,
                 task_title="Test Task 1",
+                version="04.06.28",  # Required for version-based filtering
             ),
         ]
 

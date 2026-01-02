@@ -61,27 +61,13 @@ services:
     restart: always
     environment:
       - SYNC_INTERVAL_MINUTES=10
-      - SYNC_PROJECT_KEYS=["PCT","PARSCHAT"]
+      - SYNC_PROJECT_KEYS=["PCT","PARSCHAT", "FOLLOWUP", "DASHBOARD"]
       - SYNC_FULL_SYNC=true
       - db_port=5432
       - db_host=postgres
     networks:
       - jira-bot-network
 
-  # jira-report-scheduler:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: jira_report_scheduler
-  #   image: jira_telegram_bot:v3
-  #   volumes:
-  #     - .:/app
-  #   command: >
-  #     python3 scripts/run_scheduled_reports.py
-  #   restart: always
-  #   environment:
-  #     - POSTGRES_HOST=postgres
-  #     - POSTGRES_PORT=5432
 
   # synth-pm-service:
   #   build:
@@ -98,23 +84,23 @@ services:
   #     - POSTGRES_HOST=postgres
   #     - POSTGRES_PORT=5432
 
-  # synth-pm-multi-project-service:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: synth_pm_multi_project
-  #   image: jira_telegram_bot:v3
-  #   volumes:
-  #     - .:/app
-  #   command: >
-  #     python3 scripts/run_synth_pm_service.py
-  #   restart: always
-  #   environment:
-  #     # Comma-separated project keys or JSON array: ["PARSCHAT","PROJECT2"]
-  #     # Leave empty to sync all projects
-  #     - SYNTH_PM_PROJECT_KEYS=
-  #   networks:
-  #     - jira-bot-network
+  synth-pm-multi-project-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: synth_pm_multi_project
+    image: jira_telegram_bot:v3
+    volumes:
+      - .:/app
+    command: >
+      python3 scripts/run_synth_pm_service.py
+    restart: always
+    environment:
+      # Comma-separated project keys or JSON array: ["PARSCHAT","PROJECT2"]
+      # Leave empty to sync all projects
+      - SYNTH_PM_PROJECT_KEYS=
+    networks:
+      - jira-bot-network
   
 
   # deadline-notifier:

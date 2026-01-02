@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
-from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 
 class TestSynthPMDocumentationConditions:

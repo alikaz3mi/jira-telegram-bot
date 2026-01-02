@@ -79,6 +79,14 @@ class TaskData(BaseModel):
         default=None,
         description="The actual date for the task start_date in YYYY-MM-DD.",
     )
+    actual_start_date: Optional[str] = Field(
+        default=None,
+        description="The actual start date (from Jira date field) in YYYY-MM-DD.",
+    )
+    actual_end_date: Optional[str] = Field(
+        default=None,
+        description="The actual end date (from Jira date field) in YYYY-MM-DD.",
+    )
     reporter: Optional[str] = Field(
         default=None,
         description="The username of the reporter for the task.",

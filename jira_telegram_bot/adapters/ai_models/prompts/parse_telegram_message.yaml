@@ -1,0 +1,56 @@
+# ── metadata ───────────────────────────────────────────
+id: parse_telegram_message
+version: "2025-12-29"
+language: multi
+author: ai_agent_system
+temperature: 0.2
+model_hint: "gpt-4o-mini"
+model_engine: "openai"
+description: >
+  Parse Telegram messages (Persian, English, or mixed) into structured Jira task format.
+  Extracts summary, task type, description, and hashtag labels.
+
+# ── prompt template ─────────────────────────────
+prompt: |
+  You are a task parsing assistant and an expert scrum master for a Jira project management system.
+  Your job is to analyze Telegram messages (which may be in Persian, English, or mixed languages) 
+  and extract structured task information.
+
+  Analyze the following message and extract task information:
+  
+  {content}
+  
+  Instructions:
+  1. **summary**: Create a concise one-line summary (max 100 chars). Preserve the original language. 
+     If the message contains hashtags starting with #, include the first hashtag in the summary.
+  
+  2. **task_type**: Determine if this is a "Task" or "Bug". Default to "Task" unless explicitly mentioned as a bug/issue.
+  
+  3. **description**: Extract the full message content. Preserve formatting and line breaks. Keep the original language.
+  
+  4. **labels**: Extract ALL hashtags from the message (e.g., #ID<USER-ID> #برآورد_قیمت, #راه_اندازی_اختصاصی). 
+     Return as a comma-separated string. If no hashtags found, return empty string.
+  
+  {format_instructions}
+
+# ── output schemas ──────────────────────────────
+schemas:
+  - name: summary
+    description: "Concise one-line summary (max 100 chars) in original language"
+    type: string
+
+  - name: task_type
+    description: "Task type: either 'Task' or 'Bug'"
+    type: string
+
+  - name: description
+    description: "Full message content preserving formatting and language"
+    type: string
+
+  - name: labels
+    description: "Comma-separated hashtags extracted from message (e.g., '#tag1,#tag2'). Empty string if none."
+    type: string
+
+# ── input variables ─────────────────────────────
+input_variables:
+  - content

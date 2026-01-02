@@ -326,3 +326,51 @@ class SynthPMRepositoryInterface(ABC):
             True if successful, False otherwise
         """
         pass
+
+    @abstractmethod
+    async def get_story_by_release_name(self, release_name: str) -> Optional[str]:
+        """Check if a story already exists for the given release name.
+
+        Args:
+            release_name: Name of the release to search for
+
+        Returns:
+            Story issue key if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def create_release_story(
+        self,
+        release_name: str,
+        features: List[SynthPMFeatureEntity],
+    ) -> Optional[str]:
+        """Create a story for a release based on features.
+
+        Args:
+            release_name: Name of the release
+            features: List of features in this release
+
+        Returns:
+            Story issue key if successful, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def create_subtask_for_release(
+        self,
+        parent_story_key: str,
+        feature: SynthPMFeatureEntity,
+        assignees: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        """Create a subtask for a feature under a release story.
+
+        Args:
+            parent_story_key: Parent story issue key
+            feature: Feature entity
+            assignees: List of assignee usernames
+
+        Returns:
+            Subtask issue key if successful, None otherwise
+        """
+        pass

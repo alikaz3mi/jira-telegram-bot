@@ -47,4 +47,7 @@ DEPARTMENT_MAPPING = {
     "DevOps": "devops_hours",
     "UI / UX": "ui_ux_hours",
     "UI/UX": "ui_ux_hours",
+    "QA/PM": "qa_pm_hours",
+    "QA": "qa_pm_hours",
+    "PM": "qa_pm_hours",
 }

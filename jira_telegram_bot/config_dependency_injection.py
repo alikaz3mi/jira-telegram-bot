@@ -146,6 +146,9 @@ from jira_telegram_bot.use_cases.handle_jira_webhook_usecase import (
     HandleJiraWebhookUseCase,
 )
 from jira_telegram_bot.use_cases.sync_jira_issue_use_case import SyncJiraIssueUseCase
+from jira_telegram_bot.use_cases.calculate_actual_dates_use_case import (
+    CalculateActualDatesUseCase,
+)
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
     AIServiceProtocol,
 )
@@ -653,6 +656,12 @@ def _configure_use_cases(container: Container) -> None:
     container[SyncJiraIssueUseCase] = Singleton(
         lambda c: SyncJiraIssueUseCase(
             jira_service=c[JiraDataServiceInterface],
+            report_repository=c[JiraReportRepositoryInterface],
+        ),
+    )
+    container[CalculateActualDatesUseCase] = Singleton(
+        lambda c: CalculateActualDatesUseCase(
+            jira_repository=c[TaskManagerRepositoryInterface],
             report_repository=c[JiraReportRepositoryInterface],
         ),
     )

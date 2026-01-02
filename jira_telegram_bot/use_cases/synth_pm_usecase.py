@@ -106,49 +106,37 @@ class SynthPMUseCase:
             # Handle task cleanup - check for tasks that no longer exist in sheet
             await self._cleanup_deleted_tasks(features, sync_results)
 
+            # Group features by release column
+            release_groups = self._group_features_by_release(features)
+            LOGGER.info(f"Grouped features into {len(release_groups)} releases: {list(release_groups.keys())}")
+
             # Process features efficiently based on change detection
             processed_features = []
             doc_generated_rows = []
 
-            # Process new and modified features
-            new_features = features
-            for feature in new_features: #  + modified_features: TODO. Find issue of task creation duplication and modified hash
-                # Skip test rows
-                #if feature.row_number not in [215]:
-                #    continue
-                if feature.version not in [ "04.10.05",]:
-                    continue
-                
-                # if feature.department_deps == None:
-                #     continue
-                
-                
+            # Process each release group
+            for release_name, release_features in release_groups.items():
                 try:
-                    await self._process_feature(feature, sync_results)
-                    processed_features.append(feature)
-
-                    # Generate documentation for new features
-                    if False and feature in new_features and await self._generate_and_update_documentation(feature):
-                        sync_results["generated_documentation"] += 1
-                        doc_generated_rows.append(feature.sheet_row_number)
-
+                    LOGGER.info(f"Processing release '{release_name}' with {len(release_features)} features")
+                    # Create release story with subtasks
+                    story_key = await self._create_release_story_with_subtasks(
+                        release_name,
+                        release_features,
+                        sync_results
+                    )
+                    
+                    if story_key:
+                        LOGGER.info(f"Successfully processed release '{release_name}' with story {story_key}")
+                        processed_features.extend(release_features)
+                    else:
+                        reason = "No valid features or all features skipped"
+                        LOGGER.warning(f"Failed to process release '{release_name}': {reason}")
+                        sync_results["errors"].append(f"Release '{release_name}' processing failed: {reason}")
+                
                 except Exception as e:
-                    error_msg = f"Error processing feature {feature.task_title}: {e}"
-                    LOGGER.error(error_msg)
+                    error_msg = f"Error processing release '{release_name}': {e}"
+                    LOGGER.error(error_msg, exc_info=True)
                     sync_results["errors"].append(error_msg)
-
-            # Generate documentation for existing features that need it
-            for feature in []:
-                if feature not in new_features and feature.row_number in [225]:
-                    try:
-                        if await self._generate_and_update_documentation(feature):
-                            sync_results["generated_documentation"] += 1
-                            doc_generated_rows.append(feature.sheet_row_number)
-                            processed_features.append(feature)
-                    except Exception as e:
-                        error_msg = f"Error generating docs for {feature.task_title}: {e}"
-                        LOGGER.error(error_msg)
-                        sync_results["errors"].append(error_msg)
 
             # Update change tracker
             await self.repository.update_change_tracker(
@@ -240,6 +228,26 @@ class SynthPMUseCase:
             LOGGER.error(f"Error during task cleanup: {e}")
             sync_results["errors"].append(f"Task cleanup error: {e}")
 
+    def _group_features_by_release(
+        self,
+        features: List[SynthPMFeatureEntity],
+    ) -> Dict[str, List[SynthPMFeatureEntity]]:
+        """Group features by their release column value.
+
+        Args:
+            features: List of feature entities
+
+        Returns:
+            Dictionary mapping release names to lists of features
+        """
+        release_groups = {}
+        for feature in features:
+            release_name = feature.release if feature.release and feature.release.strip() else "No Release"
+            if release_name not in release_groups:
+                release_groups[release_name] = []
+            release_groups[release_name].append(feature)
+        return release_groups
+
     def _extract_assignees_from_feature(
         self,
         feature: SynthPMFeatureEntity,
@@ -255,14 +263,285 @@ class SynthPMUseCase:
         assignees = []
 
         all_user_configs = self.user_config.get_all_user_configs()
+        seen_users = set()
         for user_config in all_user_configs.values():
             assignee = user_config.jira_username
             if (user_config.google_sheet_name and 
                 feature.involved_people and 
                 user_config.google_sheet_name in feature.involved_people):
+                user_identifier = user_config.email or user_config.telegram_id
+                if user_identifier and user_identifier in seen_users:
+                    LOGGER.debug(f"Skipping duplicate user {assignee} with identifier {user_identifier}")
+                    continue
+                if user_identifier:
+                    seen_users.add(user_identifier)
                 assignees.append(assignee)
 
         return assignees
+
+    async def _create_release_story_with_subtasks(
+        self,
+        release_name: str,
+        features: List[SynthPMFeatureEntity],
+        sync_results: Dict[str, Any],
+    ) -> Optional[str]:
+        """Create a story for a release and add features as subtasks.
+        
+        If release is 'No Release' or only has 1 feature, creates regular tasks instead.
+
+        Args:
+            release_name: Name of the release
+            features: List of features in this release
+            sync_results: Dictionary to track sync results
+
+        Returns:
+            Story issue key if created successfully, None otherwise
+        """
+        try:
+            # Get the first feature to extract common data
+            if not features:
+                return None
+            
+            first_feature = features[0]
+            
+            # Validate if any feature needs to be created
+            project_config = self.repository.project_config # BIG TODO
+            minimum_status = project_config.sync_settings.minimum_status_for_task_creation
+            
+            valid_features = []
+            for feature in features:
+                is_valid, error_message = self.repository.validate_feature_for_task_creation(
+                    feature,
+                    minimum_status=minimum_status,
+                )
+                if is_valid:
+                    valid_features.append(feature)
+                else:
+                    sync_results["skipped"].append(error_message)
+            
+            if not valid_features:
+                LOGGER.info(f"No valid features found for release {release_name}")
+                return None
+            
+            # If no release or only 1 feature, create as regular task instead of story+subtask
+            if release_name == "No Release" or len(valid_features) == 1:
+                LOGGER.info(f"Creating regular task for {'no release' if release_name == 'No Release' else 'singular release'}: {release_name}")
+                await self._create_regular_tasks_for_features(valid_features, sync_results)
+                return None
+            
+            # Check if story already exists for this release
+            # We'll use the release name as a unique identifier
+            existing_story_key = await self.repository.get_story_by_release_name(release_name)
+            if existing_story_key:
+                LOGGER.info(f"Story already exists for release {release_name}: {existing_story_key}")
+                story_key = existing_story_key
+                
+                # Update story description to empty string (stories should have no description) # TODO: add the google doc link with a short description
+                try:
+                    await self.repository.update_jira_task_description(existing_story_key, "")
+                    LOGGER.debug(f"Updated description for story {existing_story_key} to empty string")
+                except Exception as e:
+                    LOGGER.warning(f"Could not update description for story {existing_story_key}: {e}")
+            else:
+                # Create the story
+                story_key = await self.repository.create_release_story(
+                    release_name=release_name,
+                    features=valid_features,
+                )
+                if story_key:
+                    LOGGER.info(f"Created release story {story_key} for {release_name}")
+                    sync_results["created_developer_board_tasks"] = (
+                        sync_results.get("created_developer_board_tasks", 0) + 1
+                    )
+                else:
+                    sync_results["errors"].append(f"Failed to create story for release: {release_name}")
+                    return None
+            
+            # Create or update subtasks for each feature
+            for feature in valid_features:
+                # Update existing subtask if it already exists
+                if feature.developer_board_issue_key:
+                    LOGGER.info(f"Developer board task already exists for {feature.task_title}: {feature.developer_board_issue_key}")
+                    
+                    # Check if status allows updating
+                    if feature.status in [
+                        StatusDescriptions.INITIATION_AND_PRIORITIZATION.value,
+                        StatusDescriptions.ANALYSIS_AND_RFP.value,
+                        StatusDescriptions.USER_STORY_PREPARATION.value,
+                        StatusDescriptions.COMPLETED.value
+                    ]:
+                        LOGGER.info(f"Skipping subtask update for {feature.task_title} - status {feature.status} does not allow updates")
+                        continue
+                    
+                    # Update the existing subtask
+                    assignees = self._extract_assignees_from_feature(feature)
+                    if feature.task_title == 'طراحی وایرفریم و UI بخش اتصال API':
+                        x = 1
+
+                    update_success = await self.repository.update_developer_board_task_from_feature(
+                        feature,
+                        feature_assignees=assignees,
+                    )
+                    
+                    if update_success:
+                        LOGGER.info(f"Updated subtask {feature.developer_board_issue_key} for feature {feature.task_title}")
+                        sync_results["updated_developer_board_tasks"] = (
+                            sync_results.get("updated_developer_board_tasks", 0) + 1
+                        )
+                    else:
+                        error_msg = f"Failed to update subtask {feature.developer_board_issue_key} for: {feature.task_title}"
+                        LOGGER.error(error_msg)
+                        sync_results["errors"].append(error_msg)
+                    continue
+                    
+                # Check if status allows Developer Board task creation
+                if feature.status in [
+                    StatusDescriptions.INITIATION_AND_PRIORITIZATION.value,
+                    StatusDescriptions.ANALYSIS_AND_RFP.value,
+                    StatusDescriptions.USER_STORY_PREPARATION.value,
+                    StatusDescriptions.COMPLETED.value
+                ]:
+                    LOGGER.info(f"Skipping subtask creation for {feature.task_title} - status is {feature.status}")
+                    continue
+                
+                # Create PM Board task first if needed (only if PM Board is enabled)
+                if not feature.jira_issue_key:
+                    if (self.repository.project_config.boards.pm_board and 
+                        self.repository.project_config.boards.pm_board.enabled):
+                        issue_key = await self.repository.create_jira_task_from_feature(feature)
+                        if issue_key:
+                            sync_results["created_jira_tasks"] += 1
+                            feature = feature.copy(update={"jira_issue_key": issue_key})
+                        else:
+                            LOGGER.warning(f"Failed to create PM task for: {feature.task_title}, will create subtask without PM task")
+                    else:
+                        LOGGER.debug(f"PM Board disabled, skipping PM task creation for {feature.task_title}, creating subtask directly")
+                
+                # Create subtask for this feature
+                assignees = self._extract_assignees_from_feature(feature)
+                subtask_key = await self.repository.create_subtask_for_release(
+                    parent_story_key=story_key,
+                    feature=feature,
+                    assignees=assignees,
+                )
+                
+                if subtask_key:
+                    LOGGER.info(f"Created subtask {subtask_key} for feature {feature.task_title}")
+                    feature = feature.copy(
+                        update={"developer_board_issue_key": subtask_key}
+                    )
+                    sync_results["created_developer_board_tasks"] = (
+                        sync_results.get("created_developer_board_tasks", 0) + 1
+                    )
+                else:
+                    sync_results["errors"].append(
+                        f"Failed to create subtask for: {feature.task_title}",
+                    )
+            
+            # Update story with components and dates from subtasks
+            if story_key:
+                try:
+                    await self.repository.update_story_from_subtasks(story_key)
+                    LOGGER.info(f"Updated story {story_key} metadata from subtasks")
+                except Exception as e:
+                    LOGGER.warning(f"Could not update story {story_key} metadata: {e}")
+            
+            return story_key
+            
+        except Exception as e:
+            error_msg = f"Error creating release story for {release_name}: {e}"
+            LOGGER.error(error_msg)
+            sync_results["errors"].append(error_msg)
+            return None
+
+    async def _create_regular_tasks_for_features(
+        self,
+        features: List[SynthPMFeatureEntity],
+        sync_results: Dict[str, Any],
+    ):
+        """Create regular developer board tasks for features (not as story+subtask).
+        
+        Args:
+            features: List of features to create tasks for
+            sync_results: Dictionary to track sync results
+        """
+        for feature in features:
+            # Update existing task if it already exists
+            if feature.developer_board_issue_key:
+                LOGGER.info(f"Developer board task already exists for {feature.task_title}: {feature.developer_board_issue_key}")
+                
+                # Check if status allows updating
+                if feature.status in [
+                    StatusDescriptions.INITIATION_AND_PRIORITIZATION.value,
+                    StatusDescriptions.ANALYSIS_AND_RFP.value,
+                    StatusDescriptions.USER_STORY_PREPARATION.value,
+                    StatusDescriptions.COMPLETED.value
+                ]:
+                    LOGGER.info(f"Skipping task update for {feature.task_title} - status {feature.status} does not allow updates")
+                    continue
+                
+                # Update the existing task
+                assignees = self._extract_assignees_from_feature(feature)
+                update_success = await self.repository.update_developer_board_task_from_feature(
+                    feature,
+                    feature_assignees=assignees,
+                )
+                
+                if update_success:
+                    LOGGER.info(f"Updated developer board task {feature.developer_board_issue_key} for {feature.task_title}")
+                    sync_results["updated_developer_board_tasks"] = (
+                        sync_results.get("updated_developer_board_tasks", 0) + 1
+                    )
+                else:
+                    error_msg = f"Failed to update developer board task {feature.developer_board_issue_key} for: {feature.task_title}"
+                    LOGGER.error(error_msg)
+                    sync_results["errors"].append(error_msg)
+                continue
+                
+            # Check if status allows Developer Board task creation
+            if feature.status in [
+                StatusDescriptions.INITIATION_AND_PRIORITIZATION.value,
+                StatusDescriptions.ANALYSIS_AND_RFP.value,
+                StatusDescriptions.USER_STORY_PREPARATION.value,
+                StatusDescriptions.COMPLETED.value
+            ]:
+                LOGGER.info(f"Skipping task creation for {feature.task_title} - status is {feature.status}")
+                continue
+            
+            # Create PM Board task first if needed (only if PM Board is enabled)
+            if not feature.jira_issue_key:
+                if (self.repository.project_config.boards.pm_board and 
+                    self.repository.project_config.boards.pm_board.enabled):
+                    issue_key = await self.repository.create_jira_task_from_feature(feature)
+                    if issue_key:
+                        sync_results["created_jira_tasks"] += 1
+                        feature = feature.copy(update={"jira_issue_key": issue_key})
+                    else:
+                        LOGGER.warning(f"Failed to create PM task for: {feature.task_title}, will create developer board task without PM task")
+                else:
+                    LOGGER.debug(f"PM Board disabled, skipping PM task creation for {feature.task_title}, creating developer board task directly")
+            
+            # Create regular developer board task
+            if feature.sprint_list and len(feature.sprint_list) > 0:
+                assignees = self._extract_assignees_from_feature(feature)
+                developer_board_key = await self.repository.create_developer_board_task_from_feature(
+                    feature,
+                    assignees=assignees,
+                )
+                if developer_board_key:
+                    LOGGER.info(f"Created developer board task {developer_board_key} for {feature.task_title}")
+                    feature = feature.copy(
+                        update={"developer_board_issue_key": developer_board_key}
+                    )
+                    sync_results["created_developer_board_tasks"] = (
+                        sync_results.get("created_developer_board_tasks", 0) + 1
+                    )
+                else:
+                    sync_results["errors"].append(
+                        f"Failed to create developer board task for: {feature.task_title}",
+                    )
+            else:
+                LOGGER.warning(f"No valid sprints found for feature {feature.task_title}, skipping Developer Board task creation")
 
     async def _process_feature(
         self,

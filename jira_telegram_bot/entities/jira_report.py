@@ -61,6 +61,8 @@ class JiraIssueDetail(BaseModel):
     target_start: Optional[datetime] = Field(default=None, description="Target start date")
     target_end: Optional[datetime] = Field(default=None, description="Target end date")
     due_date: Optional[datetime] = Field(default=None, description="Due date")
+    actual_start_date: Optional[datetime] = Field(default=None, description="Actual start date (from Jira date field)")
+    actual_end_date: Optional[datetime] = Field(default=None, description="Actual end date (from Jira date field)")
     project: Optional[str] = Field(default=None, description="Project key")
     story_points: Optional[float] = Field(default=None, description="Story points")
     components: List[str] = Field(default_factory=list, description="Component names")

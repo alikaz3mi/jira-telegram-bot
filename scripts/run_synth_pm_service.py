@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import signal
 import sys
-from typing import List
-from typing import Optional
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.services.synth_pm_multi_project_sync import (
@@ -17,49 +14,24 @@ from jira_telegram_bot.app_container import get_container
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 
 
-def parse_project_keys(env_value: Optional[str]) -> Optional[List[str]]:
-    """Parse project keys from environment variable.
-
-    Args:
-        env_value: Comma-separated project keys or JSON array
-
-    Returns:
-        List of project keys or None
-    """
-    if not env_value:
-        return None
-    
-    # Try JSON array first
-    if env_value.strip().startswith('['):
-        try:
-            import json
-            return json.loads(env_value)
-        except json.JSONDecodeError:
-            pass
-    
-    # Fallback to comma-separated
-    return [key.strip() for key in env_value.split(',') if key.strip()]
-
-
 async def main():
     """Main entry point for Docker service."""
     LOGGER.info("=" * 80)
     LOGGER.info("Starting SynthPM Multi-Project Synchronization Service")
     LOGGER.info("=" * 80)
     
-    # Read configuration from environment
-    project_keys_env = os.getenv('SYNTH_PM_PROJECT_KEYS')
-    project_keys = parse_project_keys(project_keys_env)
-    
-    if project_keys:
-        LOGGER.info(f"Configured to sync projects: {', '.join(project_keys)}")
-    else:
-        LOGGER.info("Configured to sync all projects in configuration")
-    
     try:
         # Initialize container and settings
         container = get_container()
         settings = container[SynthPMSettings]
+        
+        # Read configuration from settings
+        project_keys = settings.project_keys
+        
+        if project_keys:
+            LOGGER.info(f"Configured to sync projects: {', '.join(project_keys)}")
+        else:
+            LOGGER.info("Configured to sync all projects in configuration")
         
         # Create and start sync service
         sync_service = SynthPMMultiProjectSyncService(
@@ -119,3 +91,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         LOGGER.info("Service interrupted")
         sys.exit(0)
+ 

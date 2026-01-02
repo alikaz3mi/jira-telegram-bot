@@ -1,6 +1,7 @@
 """Multi-project synchronization service for SynthPM."""
 from __future__ import annotations
 
+import asyncio
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -122,13 +123,15 @@ class SynthPMMultiProjectSyncService:
             project_config = use_case.repository.project_config
             sync_interval_minutes = project_config.sync_settings.sync_interval_minutes
             
-            # Create async wrapper for the sync job
-            async def sync_job(pk=project_key, uc=use_case, pc=project_config):
-                await self._execute_project_sync(pk, uc, pc)
+            # Create async wrapper for the sync job with proper closure
+            def create_sync_job(pk: str, uc: SynthPMUseCase, pc: ProjectConfig):
+                async def sync_job():
+                    await self._execute_project_sync(pk, uc, pc)
+                return sync_job
             
             # Schedule the job
             await self.scheduler.schedule_recurring_job(
-                job_func=sync_job,
+                job_func=create_sync_job(project_key, use_case, project_config),
                 interval_minutes=sync_interval_minutes,
                 job_name=f"synth_pm_sync_{project_key}",
             )
@@ -138,6 +141,16 @@ class SynthPMMultiProjectSyncService:
             f"Starting APScheduler for {len(self.use_cases)} project(s): "
             f"{', '.join(self.use_cases.keys())}"
         )
+        
+        # Run initial sync for all projects immediately
+        LOGGER.info("Running initial sync for all projects...")
+        for project_key, use_case in self.use_cases.items():
+            project_config = use_case.repository.project_config
+            # Run in background without waiting
+            asyncio.create_task(
+                self._execute_project_sync(project_key, use_case, project_config)
+            )
+        
         await self.scheduler.start_scheduler()
 
     async def stop(self):
