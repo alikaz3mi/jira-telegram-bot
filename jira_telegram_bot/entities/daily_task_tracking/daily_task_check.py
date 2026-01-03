@@ -56,3 +56,7 @@ class DailyTaskCheck(BaseModel):
         None,
         description="Task priority",
     )
+    description: Optional[str] = Field(
+        None,
+        description="Task description",
+    )

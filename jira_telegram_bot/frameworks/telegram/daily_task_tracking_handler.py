@@ -1,8 +1,10 @@
 """Telegram handler for daily task tracking with Persian interface."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import CallbackContext
+from telegram.ext import CallbackContext, CallbackQueryHandler, MessageHandler, filters
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.constants import persian_messages
@@ -25,6 +27,14 @@ from jira_telegram_bot.use_cases.daily_task_tracking.request_subtask_creation_us
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
+from jira_telegram_bot.frameworks.telegram.daily_task_queue_manager import (
+    DailyTaskQueueManager,
+)
+
+if TYPE_CHECKING:
+    from jira_telegram_bot.use_cases.daily_task_tracking.send_daily_task_reminders_use_case import (
+        SendDailyTaskRemindersUseCase,
+    )
 
 
 class DailyTaskTrackingHandler:
@@ -40,6 +50,7 @@ class DailyTaskTrackingHandler:
         record_worklog_use_case: RecordWorklogUseCase,
         request_subtask_creation_use_case: RequestSubtaskCreationUseCase,
         user_config_repository: UserConfigInterface,
+        queue_manager: DailyTaskQueueManager,
     ):
         """Initialize the handler.
 
@@ -49,12 +60,15 @@ class DailyTaskTrackingHandler:
             record_worklog_use_case: Use case for recording worklog
             request_subtask_creation_use_case: Use case for subtask requests
             user_config_repository: Repository for user config
+            queue_manager: Task queue manager
         """
         self.record_delay = record_delay_reason_use_case
         self.record_time = record_time_spent_use_case
         self.record_worklog = record_worklog_use_case
         self.request_subtask = request_subtask_creation_use_case
         self.user_config_repository = user_config_repository
+        self.queue_manager = queue_manager
+        self.task_sender = None  # Will be set by SendDailyTaskRemindersUseCase
 
     def create_delay_reason_keyboard(self) -> InlineKeyboardMarkup:
         """Create inline keyboard for delay reasons.
@@ -184,21 +198,31 @@ class DailyTaskTrackingHandler:
         await query.answer()
         
         data = query.data
+        chat_id = query.message.chat_id
+        
+        LOGGER.info(f"Callback received: data='{data}', chat_id={chat_id}")
         
         try:
             if data.startswith("delay_"):
+                LOGGER.info("Processing delay callback")
                 await self._handle_delay_callback(query, context, data)
             elif data.startswith("hours_"):
+                LOGGER.info("Processing hours callback")
                 await self._handle_hours_callback(query, context, data)
             elif data.startswith("worklog_"):
+                LOGGER.info("Processing worklog callback")
                 await self._handle_worklog_callback(query, context, data)
             elif data == "request_subtasks":
+                LOGGER.info("Processing subtask request")
                 await self._handle_subtask_request(query, context)
             elif data == "skip_task":
+                LOGGER.info("Processing skip task")
                 await query.edit_message_text(persian_messages.TASK_SKIPPED)
+                # Send next task
+                await self._send_next_task_for_user(chat_id)
             
         except Exception as e:
-            LOGGER.error(f"Error handling callback: {e}")
+            LOGGER.error(f"Error handling callback: {e}", exc_info=True)
             await query.edit_message_text(
                 f"❌ خطا در پردازش: {str(e)}"
             )
@@ -233,8 +257,17 @@ class DailyTaskTrackingHandler:
         
         delay_reason = delay_mapping.get(data)
         
-        if delay_reason and "current_task" in context.user_data:
-            task_data = context.user_data["current_task"]
+        if delay_reason:
+            chat_id = query.message.chat_id
+            queue = self.queue_manager.get_queue(chat_id)
+            if not queue:
+                await query.edit_message_text("❌ خطا: تسک یافت نشد")
+                return
+                
+            task = queue.get_current()
+            if not task:
+                await query.edit_message_text("❌ خطا: تسک یافت نشد")
+                return
             
             user_config = self.user_config_repository.get_user_config(
                 query.from_user.username
@@ -242,7 +275,7 @@ class DailyTaskTrackingHandler:
             
             if user_config:
                 await self.record_delay.execute(
-                    issue_key=task_data["issue_key"],
+                    issue_key=task.issue_key,
                     jira_username=user_config.jira_username,
                     telegram_username=query.from_user.username,
                     delay_reason=delay_reason,
@@ -251,6 +284,9 @@ class DailyTaskTrackingHandler:
                 await query.edit_message_text(
                     persian_messages.DELAY_RECORDED
                 )
+                
+                # Send next task
+                await self._send_next_task_for_user(chat_id)
 
     async def _handle_hours_callback(
         self,
@@ -279,24 +315,35 @@ class DailyTaskTrackingHandler:
         except ValueError:
             return
         
-        if "current_task" in context.user_data:
-            task_data = context.user_data["current_task"]
+        chat_id = query.message.chat_id
+        queue = self.queue_manager.get_queue(chat_id)
+        if not queue:
+            await query.edit_message_text("❌ خطا: تسک یافت نشد")
+            return
             
-            user_config = self.user_config_repository.get_user_config(
-                query.from_user.username
+        task = queue.get_current()
+        if not task:
+            await query.edit_message_text("❌ خطا: تسک یافت نشد")
+            return
+        
+        user_config = self.user_config_repository.get_user_config(
+            query.from_user.username
+        )
+        
+        if user_config:
+            await self.record_time.execute(
+                issue_key=task.issue_key,
+                jira_username=user_config.jira_username,
+                telegram_username=query.from_user.username,
+                hours_spent=hours,
             )
             
-            if user_config:
-                await self.record_time.execute(
-                    issue_key=task_data["issue_key"],
-                    jira_username=user_config.jira_username,
-                    telegram_username=query.from_user.username,
-                    hours_spent=hours,
-                )
-                
-                await query.edit_message_text(
-                    persian_messages.HOURS_RECORDED.format(hours)
-                )
+            await query.edit_message_text(
+                persian_messages.HOURS_RECORDED.format(hours)
+            )
+            
+            # Send next task
+            await self._send_next_task_for_user(chat_id)
 
     async def _handle_worklog_callback(
         self,
@@ -325,24 +372,35 @@ class DailyTaskTrackingHandler:
         except ValueError:
             return
         
-        if "current_task" in context.user_data:
-            task_data = context.user_data["current_task"]
+        chat_id = query.message.chat_id
+        queue = self.queue_manager.get_queue(chat_id)
+        if not queue:
+            await query.edit_message_text("❌ خطا: تسک یافت نشد")
+            return
             
-            user_config = self.user_config_repository.get_user_config(
-                query.from_user.username
+        task = queue.get_current()
+        if not task:
+            await query.edit_message_text("❌ خطا: تسک یافت نشد")
+            return
+        
+        user_config = self.user_config_repository.get_user_config(
+            query.from_user.username
+        )
+        
+        if user_config:
+            await self.record_worklog.execute(
+                issue_key=task.issue_key,
+                jira_username=user_config.jira_username,
+                telegram_username=query.from_user.username,
+                hours=hours,
             )
             
-            if user_config:
-                await self.record_worklog.execute(
-                    issue_key=task_data["issue_key"],
-                    jira_username=user_config.jira_username,
-                    telegram_username=query.from_user.username,
-                    hours=hours,
-                )
-                
-                await query.edit_message_text(
-                    persian_messages.WORKLOG_RECORDED.format(hours)
-                )
+            await query.edit_message_text(
+                persian_messages.WORKLOG_RECORDED.format(hours)
+            )
+            
+            # Send next task
+            await self._send_next_task_for_user(chat_id)
 
     async def _handle_subtask_request(
         self,
@@ -355,25 +413,33 @@ class DailyTaskTrackingHandler:
             query: Callback query
             context: Callback context
         """
-        if "current_task" in context.user_data:
-            task_data = context.user_data["current_task"]
+        chat_id = query.message.chat_id
+        queue = self.queue_manager.get_queue(chat_id)
+        if not queue:
+            await query.edit_message_text("❌ خطا: تسک یافت نشد")
+            return
             
-            user_config = self.user_config_repository.get_user_config(
-                query.from_user.username
+        task = queue.get_current()
+        if not task:
+            await query.edit_message_text("❌ خطا: تسک یافت نشد")
+            return
+        
+        user_config = self.user_config_repository.get_user_config(
+            query.from_user.username
+        )
+        
+        if user_config:
+            await self.request_subtask.execute(
+                issue_key=task.issue_key,
+                issue_summary=task.summary,
+                project_key=task.project_key,
+                jira_username=user_config.jira_username,
+                telegram_username=query.from_user.username,
             )
             
-            if user_config:
-                await self.request_subtask.execute(
-                    issue_key=task_data["issue_key"],
-                    issue_summary=task_data.get("summary", ""),
-                    project_key=task_data.get("project_key", ""),
-                    jira_username=user_config.jira_username,
-                    telegram_username=query.from_user.username,
-                )
-                
-                await query.edit_message_text(
-                    persian_messages.SUBTASK_REQUEST_SENT
-                )
+            await query.edit_message_text(
+                persian_messages.SUBTASK_REQUEST_SENT
+            )
 
     async def handle_text_message(
         self,
@@ -413,38 +479,50 @@ class DailyTaskTrackingHandler:
                 )
                 return
             
-            if "current_task" in context.user_data:
-                task_data = context.user_data["current_task"]
-                hours_type = context.user_data.get("hours_type", "progress")
+            chat_id = update.effective_chat.id
+            queue = self.queue_manager.get_queue(chat_id)
+            if not queue:
+                await update.message.reply_text("❌ خطا: تسک یافت نشد")
+                return
                 
-                user_config = self.user_config_repository.get_user_config(
-                    update.effective_user.username
-                )
+            task = queue.get_current()
+            if not task:
+                await update.message.reply_text("❌ خطا: تسک یافت نشد")
+                return
+            
+            hours_type = context.user_data.get("hours_type", "progress")
+            
+            user_config = self.user_config_repository.get_user_config(
+                update.effective_user.username
+            )
+            
+            if user_config:
+                if hours_type == "worklog":
+                    await self.record_worklog.execute(
+                        issue_key=task.issue_key,
+                        jira_username=user_config.jira_username,
+                        telegram_username=update.effective_user.username,
+                        hours=hours,
+                    )
+                    await update.message.reply_text(
+                        persian_messages.WORKLOG_RECORDED.format(hours)
+                    )
+                else:
+                    await self.record_time.execute(
+                        issue_key=task.issue_key,
+                        jira_username=user_config.jira_username,
+                        telegram_username=update.effective_user.username,
+                        hours_spent=hours,
+                    )
+                    await update.message.reply_text(
+                        persian_messages.HOURS_RECORDED.format(hours)
+                    )
                 
-                if user_config:
-                    if hours_type == "worklog":
-                        await self.record_worklog.execute(
-                            issue_key=task_data["issue_key"],
-                            jira_username=user_config.jira_username,
-                            telegram_username=update.effective_user.username,
-                            hours=hours,
-                        )
-                        await update.message.reply_text(
-                            persian_messages.WORKLOG_RECORDED.format(hours)
-                        )
-                    else:
-                        await self.record_time.execute(
-                            issue_key=task_data["issue_key"],
-                            jira_username=user_config.jira_username,
-                            telegram_username=update.effective_user.username,
-                            hours_spent=hours,
-                        )
-                        await update.message.reply_text(
-                            persian_messages.HOURS_RECORDED.format(hours)
-                        )
-                    
-                    context.user_data.pop("state", None)
-                    context.user_data.pop("hours_type", None)
+                context.user_data.pop("state", None)
+                context.user_data.pop("hours_type", None)
+                
+                # Send next task
+                await self._send_next_task_for_user(chat_id)
                     
         except ValueError:
             await update.message.reply_text(
@@ -464,24 +542,49 @@ class DailyTaskTrackingHandler:
         """
         delay_text = update.message.text
         
-        if "current_task" in context.user_data:
-            task_data = context.user_data["current_task"]
+        chat_id = update.effective_chat.id
+        queue = self.queue_manager.get_queue(chat_id)
+        if not queue:
+            await update.message.reply_text("❌ خطا: تسک یافت نشد")
+            return
             
-            user_config = self.user_config_repository.get_user_config(
-                update.effective_user.username
+        task = queue.get_current()
+        if not task:
+            await update.message.reply_text("❌ خطا: تسک یافت نشد")
+            return
+        
+        user_config = self.user_config_repository.get_user_config(
+            update.effective_user.username
+        )
+        
+        if user_config:
+            await self.record_delay.execute(
+                issue_key=task.issue_key,
+                jira_username=user_config.jira_username,
+                telegram_username=update.effective_user.username,
+                delay_reason=DelayReason.OTHER,
+                delay_reason_text=delay_text,
             )
             
-            if user_config:
-                await self.record_delay.execute(
-                    issue_key=task_data["issue_key"],
-                    jira_username=user_config.jira_username,
-                    telegram_username=update.effective_user.username,
-                    delay_reason=DelayReason.OTHER,
-                    delay_reason_text=delay_text,
-                )
-                
-                await update.message.reply_text(
-                    persian_messages.DELAY_RECORDED
-                )
-                
-                context.user_data.pop("state", None)
+            await update.message.reply_text(
+                persian_messages.DELAY_RECORDED
+            )
+            
+            context.user_data.pop("state", None)
+            
+            # Send next task
+            await self._send_next_task_for_user(chat_id)
+
+    async def _send_next_task_for_user(self, chat_id: int) -> None:
+        """Send next task for user.
+
+        Args:
+            chat_id: User's chat ID
+        """
+        LOGGER.info(f"_send_next_task_for_user called for chat_id {chat_id}")
+        
+        if self.task_sender:
+            LOGGER.info(f"Calling task_sender for chat_id {chat_id}")
+            await self.task_sender(chat_id)
+        else:
+            LOGGER.error("task_sender is not set!")

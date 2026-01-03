@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import Optional
 
 from jira_telegram_bot import LOGGER
-from jira_telegram_bot.entities.constants import persian_messages
+from jira_telegram_bot.entities.constants.persian_messages import (
+    PO_SUBTASK_REQUEST,
+)
 from jira_telegram_bot.entities.daily_task_tracking.task_progress_report import (
     UserTaskProgressReport,
 )
@@ -72,7 +74,7 @@ class RequestSubtaskCreationUseCase:
             
             po_notified = False
             if po_chat_id:
-                message = persian_messages.PO_SUBTASK_REQUEST.format(
+                message = PO_SUBTASK_REQUEST.format(
                     assignee=telegram_username or jira_username,
                     issue_key=issue_key,
                     summary=issue_summary,

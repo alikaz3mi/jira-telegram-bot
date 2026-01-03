@@ -9,6 +9,7 @@ STATUS_REGRESSED = "⚠️ تسک شما از Review به Backlog برگشت"
 # Task header
 TASK_HEADER = """
 📋 تسک: {issue_key}
+� لینک: {issue_url}
 📝 عنوان: {summary}
 📊 وضعیت: {status}
 📅 اسپرینت: {sprint_name}
@@ -16,11 +17,16 @@ TASK_HEADER = """
 
 TASK_HEADER_WITH_DATES = """
 📋 تسک: {issue_key}
+🔗 لینک: {issue_url}
 📝 عنوان: {summary}
 📊 وضعیت: {status}
 📅 اسپرینت: {sprint_name}
 🎯 شروع هدف: {target_start}
 🏁 پایان هدف: {target_end}
+"""
+
+TASK_DESCRIPTION = """
+📄 توضیحات: {description}
 """
 
 # Delay reasons (buttons)
@@ -101,3 +107,8 @@ DAILY_CHECK_COMPLETE = """
 ✅ بررسی روزانه تکمیل شد!
 از همکاری شما متشکریم.
 """
+
+# Generic messages
+DAILY_TASK_CHECK_TITLE = "بررسی روزانه تسک‌ها"
+THANK_YOU = "متشکریم!"
+ERROR_MESSAGE = "❌ خطا رخ داد"

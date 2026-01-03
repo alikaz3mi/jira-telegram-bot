@@ -47,7 +47,15 @@ class GetUserDailyTasksUseCase:
         try:
             tasks_needing_attention = []
             
-            jql_parts = [f'assignee = "{jira_username}"', 'sprint in openSprints()']
+            # Build JQL query based on user's recommendation:
+            # resolution = Unresolved AND (Sprint in openSprints() AND ("Target start" <= now() OR "Target start" is EMPTY) OR Sprint is EMPTY AND ("Target start" <= now() OR "Target start" is EMPTY))
+            # Note: Sprint is EMPTY is for Kanban board tasks
+            
+            jql_parts = [
+                f'assignee = "{jira_username}"',
+                'resolution = Unresolved',
+                '(Sprint in openSprints() AND ("Target start" <= now() OR "Target start" is EMPTY) OR Sprint is EMPTY AND ("Target start" <= now() OR "Target start" is EMPTY))'
+            ]
             
             if project_keys:
                 project_filter = " OR ".join(
@@ -56,6 +64,9 @@ class GetUserDailyTasksUseCase:
                 jql_parts.append(f"({project_filter})")
             
             jql = " AND ".join(jql_parts)
+            jql += " ORDER BY cf[10109] ASC"  # Order by Target End date
+            
+            LOGGER.info(f"Daily task tracker JQL query: {jql}")
             
             issues = self.task_manager_repository.search_for_issues(
                 jql,
@@ -120,6 +131,8 @@ class GetUserDailyTasksUseCase:
                 else None
             )
             
+            description = getattr(issue.fields, "description", None)
+            
             check_status = self._determine_check_status(
                 status,
                 target_start,
@@ -142,6 +155,7 @@ class GetUserDailyTasksUseCase:
                 worklog_hours=worklog_hours,
                 issue_type=issue_type,
                 priority=priority,
+                description=description,
             )
             
         except Exception as e:

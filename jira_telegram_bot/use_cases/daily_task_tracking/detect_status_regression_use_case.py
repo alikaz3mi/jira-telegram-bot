@@ -1,7 +1,7 @@
 """Use case for detecting status regression (Review -> Backlog)."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from jira_telegram_bot import LOGGER
@@ -43,10 +43,21 @@ class DetectStatusRegressionUseCase:
             TaskStatusChange if regression detected, None otherwise
         """
         try:
-            issue = self.task_manager_repository.get_issue(
-                issue_key,
-                expand="changelog",
-            )
+            # Get issue with changelog
+            issue = self.task_manager_repository.get_issue(issue_key)
+            
+            # Check if issue has changelog - some repositories may not support expand parameter
+            if not hasattr(issue, "changelog") or not issue.changelog:
+                # Try alternative method to get changelog
+                try:
+                    changelog = self.task_manager_repository.jira.issue(
+                        issue_key,
+                        expand="changelog"
+                    )
+                    issue = changelog
+                except Exception:
+                    LOGGER.debug(f"Could not fetch changelog for {issue_key}")
+                    return None
             
             if not hasattr(issue, "changelog"):
                 return None
@@ -57,12 +68,15 @@ class DetectStatusRegressionUseCase:
                 else None
             )
             
-            cutoff_time = datetime.now() - timedelta(hours=hours_lookback)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_lookback)
             
             for history in issue.changelog.histories:
-                change_time = datetime.fromisoformat(
-                    history.created.replace("Z", "+00:00")
-                )
+                change_time_str = history.created.replace("Z", "+00:00") if isinstance(history.created, str) else str(history.created)
+                change_time = datetime.fromisoformat(change_time_str)
+                
+                # Make sure both datetimes are timezone-aware
+                if change_time.tzinfo is None:
+                    change_time = change_time.replace(tzinfo=timezone.utc)
                 
                 if change_time < cutoff_time:
                     continue

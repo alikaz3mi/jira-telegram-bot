@@ -364,6 +364,9 @@ def configure_container() -> Container:
 
     # Configure team evaluation
     configure_team_evaluation_dependencies(container)
+    
+    # Configure daily task tracking
+    _configure_daily_task_tracking(container)
 
     return container
 
@@ -927,7 +930,9 @@ def configure_team_evaluation_dependencies(container: Container):
         ),
     )
 
-    # Daily Task Tracking
+
+def _configure_daily_task_tracking(container: Container):
+    """Configure daily task tracking dependencies."""
     from jira_telegram_bot.settings.daily_task_tracker_settings import (
         DailyTaskTrackerSettings,
     )
@@ -945,10 +950,15 @@ def configure_team_evaluation_dependencies(container: Container):
         RecordTimeSpentUseCase,
         RecordWorklogUseCase,
         RequestSubtaskCreationUseCase,
+    )
+    from jira_telegram_bot.use_cases.daily_task_tracking.send_daily_task_reminders_use_case import (
         SendDailyTaskRemindersUseCase,
     )
     from jira_telegram_bot.frameworks.telegram.daily_task_tracking_handler import (
         DailyTaskTrackingHandler,
+    )
+    from jira_telegram_bot.frameworks.telegram.daily_task_queue_manager import (
+        DailyTaskQueueManager,
     )
     from jira_telegram_bot.frameworks.scheduler.daily_task_tracker_job import (
         DailyTaskTrackerJob,
@@ -959,7 +969,9 @@ def configure_team_evaluation_dependencies(container: Container):
     )
 
     container[DailyTaskTrackingRepositoryInterface] = Singleton(
-        lambda: FileDailyTaskTrackingRepository()
+        lambda c: FileDailyTaskTrackingRepository(
+            storage_path="data/storage/daily_task_tracking.jsonl",
+        )
     )
 
     container[GetUserDailyTasksUseCase] = Singleton(
@@ -1008,13 +1020,8 @@ def configure_team_evaluation_dependencies(container: Container):
         )
     )
 
-    container[SendDailyTaskRemindersUseCase] = Singleton(
-        lambda c: SendDailyTaskRemindersUseCase(
-            get_user_daily_tasks_use_case=c[GetUserDailyTasksUseCase],
-            detect_status_regression_use_case=c[DetectStatusRegressionUseCase],
-            user_config_repository=c[UserConfigInterface],
-            telegram_notifier=c[TelegramNotifierInterface],
-        )
+    container[DailyTaskQueueManager] = Singleton(
+        lambda c: DailyTaskQueueManager()
     )
 
     container[DailyTaskTrackingHandler] = Singleton(
@@ -1024,6 +1031,21 @@ def configure_team_evaluation_dependencies(container: Container):
             record_worklog_use_case=c[RecordWorklogUseCase],
             request_subtask_creation_use_case=c[RequestSubtaskCreationUseCase],
             user_config_repository=c[UserConfigInterface],
+            queue_manager=c[DailyTaskQueueManager],
+        )
+    )
+
+    container[SendDailyTaskRemindersUseCase] = Singleton(
+        lambda c: SendDailyTaskRemindersUseCase(
+            get_user_daily_tasks_use_case=c[GetUserDailyTasksUseCase],
+            detect_status_regression_use_case=c[DetectStatusRegressionUseCase],
+            user_config_repository=c[UserConfigInterface],
+            telegram_notifier=c[TelegramNotifierInterface],
+            task_manager_repository=c[TaskManagerRepositoryInterface],
+            project_info_repository=c[ProjectInfoRepositoryInterface],
+            daily_task_tracking_handler=c[DailyTaskTrackingHandler],
+            telegram_token=c[TelegramConnectionSettings].HOOK_TOKEN,
+            queue_manager=c[DailyTaskQueueManager],
         )
     )
 

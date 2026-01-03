@@ -83,9 +83,10 @@ class DailyTaskTrackerJob:
     async def _run_daily_check(self) -> None:
         """Run the daily task check."""
         try:
-            if self._should_skip_today():
-                LOGGER.info("Skipping daily check (weekend/holiday)")
-                return
+            # TEMPORARY: Disabled for testing
+            # if self._should_skip_today():
+            #     LOGGER.info("Skipping daily check (weekend/holiday)")
+            #     return
             
             LOGGER.info("Running daily task check")
             

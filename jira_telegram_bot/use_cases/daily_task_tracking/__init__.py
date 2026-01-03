@@ -20,9 +20,6 @@ from jira_telegram_bot.use_cases.daily_task_tracking.record_worklog_use_case imp
 from jira_telegram_bot.use_cases.daily_task_tracking.request_subtask_creation_use_case import (
     RequestSubtaskCreationUseCase,
 )
-from jira_telegram_bot.use_cases.daily_task_tracking.send_daily_task_reminders_use_case import (
-    SendDailyTaskRemindersUseCase,
-)
 
 __all__ = [
     "GetUserDailyTasksUseCase",
@@ -32,5 +29,5 @@ __all__ = [
     "RecordTimeSpentUseCase",
     "RecordWorklogUseCase",
     "RequestSubtaskCreationUseCase",
-    "SendDailyTaskRemindersUseCase",
 ]
+

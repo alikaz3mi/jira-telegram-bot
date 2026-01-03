@@ -3,7 +3,7 @@ import traceback
 from pathlib import Path
 from warnings import filterwarnings
 
-from telegram.ext import CommandHandler
+from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, filters
 from telegram.warnings import PTBUserWarning
 
 from jira_telegram_bot import LOGGER
@@ -29,6 +29,9 @@ from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
 )
 from jira_telegram_bot.frameworks.telegram.get_current_stories_handler import (
     GetCurrentStoriesHandler,
+)
+from jira_telegram_bot.frameworks.telegram.daily_task_tracking_handler import (
+    DailyTaskTrackingHandler,
 )
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
 from jira_telegram_bot.use_cases.telegram_commands.board_summary_generator import BoardSummaryGenerator
@@ -152,6 +155,7 @@ def setup_and_run():
         speech_processor,
     )
     get_current_stories_handler = container[GetCurrentStoriesHandler]
+    daily_task_tracking_handler = container[DailyTaskTrackingHandler]
 
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(task_creation_handler.get_handler())
@@ -162,6 +166,23 @@ def setup_and_run():
     application.add_handler(task_get_users_time_handler.get_handler())
     application.add_handler(advanced_task_creation_handler.get_handler())
     application.add_handler(get_current_stories_handler.get_handler())
+    
+    # Register daily task tracking callback handlers
+    application.add_handler(
+        CallbackQueryHandler(
+            daily_task_tracking_handler.handle_callback,
+            pattern=r"^(delay_|hours_|worklog_|skip_task|request_subtasks)"
+        )
+    )
+    
+    # Register daily task tracking text message handler for custom inputs
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            daily_task_tracking_handler.handle_text_message
+        )
+    )
+    
     application.add_error_handler(error)
     startup()
     
