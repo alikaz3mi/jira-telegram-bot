@@ -1058,6 +1058,74 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             )
             return False
 
+    def get_issue_links(self, issue_key: str) -> List[Dict[str, Any]]:
+        """Get all issue links for a given issue.
+
+        Args:
+            issue_key: The key of the issue
+
+        Returns:
+            List of issue links with their type, direction, and linked issues
+        """
+        try:
+            issue = self.jira.issue(issue_key)
+            links = []
+            
+            if hasattr(issue.fields, "issuelinks"):
+                for link in issue.fields.issuelinks:
+                    link_data = {
+                        "id": link.id,
+                        "type": {
+                            "name": link.type.name,
+                            "inward": link.type.inward,
+                            "outward": link.type.outward,
+                        }
+                    }
+                    
+                    if hasattr(link, "outwardIssue"):
+                        link_data["outwardIssue"] = {
+                            "key": link.outwardIssue.key,
+                            "fields": {
+                                "summary": link.outwardIssue.fields.summary,
+                                "status": {"name": link.outwardIssue.fields.status.name},
+                            }
+                        }
+                    
+                    if hasattr(link, "inwardIssue"):
+                        link_data["inwardIssue"] = {
+                            "key": link.inwardIssue.key,
+                            "fields": {
+                                "summary": link.inwardIssue.fields.summary,
+                                "status": {"name": link.inwardIssue.fields.status.name},
+                            }
+                        }
+                    
+                    links.append(link_data)
+            
+            return links
+            
+        except Exception as e:
+            LOGGER.error(f"Error getting issue links for {issue_key}: {e}")
+            return []
+
+    def delete_issue_link(self, link_id: str) -> bool:
+        """Delete an issue link by its ID.
+
+        Args:
+            link_id: The ID of the link to delete
+
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        try:
+            link = self.jira.issue_link(link_id)
+            link.delete()
+            LOGGER.info(f"Successfully deleted issue link {link_id}")
+            return True
+        except Exception as e:
+            LOGGER.error(f"Error deleting issue link {link_id}: {e}")
+            return False
+
     def create_issue_link(
         self,
         link_type: str,

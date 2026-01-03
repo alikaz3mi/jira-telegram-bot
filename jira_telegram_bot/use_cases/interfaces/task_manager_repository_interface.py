@@ -621,6 +621,32 @@ class TaskManagerRepositoryInterface(ABC):
         pass
 
     @abstractmethod
+    def get_issue_links(self, issue_key: str) -> List[Dict[str, Any]]:
+        """
+        Get all issue links for a given issue.
+
+        Args:
+            issue_key: The key of the issue
+
+        Returns:
+            List of issue links with their type, direction, and linked issues
+        """
+        pass
+
+    @abstractmethod
+    def delete_issue_link(self, link_id: str) -> bool:
+        """
+        Delete an issue link by its ID.
+
+        Args:
+            link_id: The ID of the link to delete
+
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        pass
+
+    @abstractmethod
     def get_issue_subtasks(self, issue_key: str) -> List[Issue]:
         """Get all subtasks for a given Jira issue.
 

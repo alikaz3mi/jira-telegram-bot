@@ -2462,77 +2462,94 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             Number of dependencies successfully linked
         """
-        if not feature.dependencies or not feature.dependencies.strip():
-            LOGGER.debug(f"No dependencies to link for {issue_key}")
-            return 0
+        # Parse desired dependencies from feature
+        desired_dependency_keys = set()
+        if feature.dependencies and feature.dependencies.strip():
+            dependency_summaries = [
+                dep.strip() 
+                for dep in feature.dependencies.split(",") 
+                if dep.strip()
+            ]
+            
+            for dep_summary in dependency_summaries:
+                try:
+                    blocking_issue_key = self._search_issue_by_summary_in_project(
+                        dep_summary,
+                        project_key,
+                    )
+                    
+                    if blocking_issue_key and blocking_issue_key != issue_key:
+                        desired_dependency_keys.add(blocking_issue_key)
+                    elif not blocking_issue_key:
+                        LOGGER.warning(
+                            f"Could not find blocking issue with summary '{dep_summary}' "
+                            f"for {issue_key} in project {project_key}"
+                        )
+                    elif blocking_issue_key == issue_key:
+                        LOGGER.warning(
+                            f"Skipping self-dependency: {issue_key} cannot block itself"
+                        )
+                except Exception as e:
+                    LOGGER.error(
+                        f"Error searching for dependency '{dep_summary}': {e}"
+                    )
 
-        dependency_summaries = [
-            dep.strip() 
-            for dep in feature.dependencies.split(",") 
-            if dep.strip()
-        ]
+        # Get existing "Blocks" links for this issue
+        existing_links = self.jira_repository.get_issue_links(issue_key)
+        existing_blocking_keys = set()
+        links_to_remove = []
         
-        if not dependency_summaries:
-            LOGGER.debug(f"No valid dependency summaries found for {issue_key}")
-            return 0
-
-        linked_count = 0
-        for dep_summary in dependency_summaries:
+        for link in existing_links:
+            link_type = link.get("type", {}).get("name", "")
+            if link_type == "Blocks":
+                # Check if this is an inward link (something blocks this issue)
+                inward_issue = link.get("inwardIssue", {})
+                if inward_issue:
+                    inward_key = inward_issue.get("key")
+                    if inward_key:
+                        existing_blocking_keys.add(inward_key)
+                        # If this link shouldn't exist anymore, mark for removal
+                        if inward_key not in desired_dependency_keys:
+                            links_to_remove.append(link.get("id"))
+        
+        # Remove links that no longer should exist
+        removed_count = 0
+        for link_id in links_to_remove:
             try:
-                blocking_issue_key = self._search_issue_by_summary_in_project(
-                    dep_summary,
-                    project_key,
-                )
-                
-                if not blocking_issue_key:
-                    LOGGER.warning(
-                        f"Could not find blocking issue with summary '{dep_summary}' "
-                        f"for {issue_key} in project {project_key}"
-                    )
-                    continue
-                
-                if blocking_issue_key == issue_key:
-                    LOGGER.warning(
-                        f"Skipping self-dependency: {issue_key} cannot block itself"
-                    )
-                    continue
-                
-                existing_links = self.jira_repository.get_issue_links(issue_key)
-                already_linked = False
-                for link in existing_links:
-                    inward_issue = link.get("inwardIssue", {})
-                    if inward_issue.get("key") == blocking_issue_key:
-                        already_linked = True
-                        break
-                
-                if already_linked:
-                    LOGGER.info(
-                        f"Dependency already exists: {blocking_issue_key} blocks {issue_key}"
-                    )
-                    linked_count += 1
-                    continue
-                
-                self.jira_repository.link_issues(
-                    dependent_issue_key=issue_key,  # The task being blocked
-                    dependency_issue_key=blocking_issue_key,  # The blocking task
-                    link_type="Blocks",
-                )
-                LOGGER.info(
-                    f"Linked dependency: {blocking_issue_key} blocks {issue_key}"
-                )
-                linked_count += 1
-                
+                self.jira_repository.delete_issue_link(link_id)
+                LOGGER.info(f"Removed obsolete dependency link (ID: {link_id}) from {issue_key}")
+                removed_count += 1
             except Exception as e:
-                LOGGER.error(
-                    f"Error linking dependency '{dep_summary}' to {issue_key}: {e}"
-                )
-                continue
+                LOGGER.error(f"Error removing link {link_id} from {issue_key}: {e}")
         
-        LOGGER.info(
-            f"Successfully linked {linked_count}/{len(dependency_summaries)} "
-            f"dependencies for {issue_key}"
-        )
-        return linked_count
+        # Add new links that don't exist yet
+        added_count = 0
+        for blocking_key in desired_dependency_keys:
+            if blocking_key not in existing_blocking_keys:
+                try:
+                    self.jira_repository.link_issues(
+                        dependent_issue_key=issue_key,  # The task being blocked
+                        dependency_issue_key=blocking_key,  # The blocking task
+                        link_type="Blocks",
+                    )
+                    LOGGER.info(
+                        f"Linked dependency: {blocking_key} blocks {issue_key}"
+                    )
+                    added_count += 1
+                except Exception as e:
+                    LOGGER.error(
+                        f"Error linking dependency {blocking_key} to {issue_key}: {e}"
+                    )
+        
+        if removed_count > 0 or added_count > 0:
+            LOGGER.info(
+                f"Dependency sync for {issue_key}: added {added_count}, removed {removed_count}, "
+                f"total {len(desired_dependency_keys)} dependencies"
+            )
+        else:
+            LOGGER.debug(f"No dependency changes needed for {issue_key}")
+        
+        return len(desired_dependency_keys)
 
     def _find_issue_by_summary(
         self,
