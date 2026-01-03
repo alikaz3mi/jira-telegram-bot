@@ -58,13 +58,9 @@ class SyncSettings(BaseModel):
         default="۵. آماده پیاده سازی فنی",
         description="Minimum status required before creating Jira tasks",
     )
-    date_filter_start: Optional[str] = Field(
+    creation_date_filter: Optional[str] = Field(
         default=None,
-        description="Filter tasks with dates >= this date (YYYY-MM-DD format). Applies to implementation_start_date and deadline.",
-    )
-    date_filter_end: Optional[str] = Field(
-        default=None,
-        description="Filter tasks with dates <= this date (YYYY-MM-DD format). Applies to implementation_start_date and deadline.",
+        description="Filter tasks created on or after this date (YYYY-MM-DD format). Applies to creation_date field. Tasks without creation_date are included.",
     )
     sprint_filter: Optional[list[str]] = Field(
         default=None,

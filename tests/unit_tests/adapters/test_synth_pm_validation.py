@@ -179,6 +179,7 @@ class TestFeatureValidation(unittest.TestCase):
             frontend=None,
             devops=None,
             ui_ux=None,
+            qa_pm=None,
         )
         
         is_valid, error = self.repository.validate_feature_for_task_creation(feature)
@@ -245,6 +246,17 @@ class TestFeatureValidation(unittest.TestCase):
         )
         
         is_valid, _ = self.repository.validate_feature_for_task_creation(feature)
+        self.assertTrue(is_valid)
+        
+        # Test with QA/PM only
+        feature_qapm = create_test_feature(
+            task_title="QA Feature",
+            ai=None,
+            backend=None,
+            qa_pm="✓",
+        )
+        
+        is_valid, _ = self.repository.validate_feature_for_task_creation(feature_qapm)
         self.assertTrue(is_valid)
 
     def test_validate_invalid_status(self):

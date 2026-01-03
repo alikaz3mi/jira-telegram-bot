@@ -477,6 +477,11 @@ class DepartmentDependencyCalculator:
             "ui/ux": "UI/UX",
             "UI/UX": "UI/UX",
             "UI / UX": "UI/UX",
+            "qa/pm": "QA/PM",
+            "QA/PM": "QA/PM",
+            "QA / PM": "QA/PM",
+            "qa": "QA/PM",
+            "pm": "QA/PM",
         }
 
         return mapping.get(component, component)

@@ -73,6 +73,9 @@ async def test_dept_deps():
             if feature.devops and feature.devops > 0:
                 dept_hours["DevOps"] = feature.devops
                 print(f"   • DevOps: {feature.devops}h")
+            if feature.qa_pm and feature.qa_pm > 0:
+                dept_hours["QA/PM"] = feature.qa_pm
+                print(f"   • QA/PM: {feature.qa_pm}h")
             
             if not dept_hours:
                 print("   ⚠️  No department hours specified")

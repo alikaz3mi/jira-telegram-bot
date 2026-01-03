@@ -211,6 +211,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             feature.frontend,
             feature.devops,
             feature.ui_ux,
+            feature.qa_pm,
         ])
 
         if not has_department:
@@ -297,44 +298,35 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         Returns:
             True if feature passes date filter or no filter configured
         """
-        date_filter_start = self.project_config.sync_settings.date_filter_start
-        date_filter_end = self.project_config.sync_settings.date_filter_end
+        creation_date_filter = self.project_config.sync_settings.creation_date_filter
 
         # No filter configured - pass all
-        if not date_filter_start and not date_filter_end:
+        if not creation_date_filter:
             return True
 
         try:
-            # Parse filter dates
-            filter_start = datetime.strptime(date_filter_start, "%Y-%m-%d") if date_filter_start else None
-            filter_end = datetime.strptime(date_filter_end, "%Y-%m-%d") if date_filter_end else None
+            # Parse filter date
+            filter_date = datetime.strptime(creation_date_filter, "%Y-%m-%d")
 
-            # Check implementation_start_date if available
-            if feature.implementation_start_date:
-                impl_start = feature.implementation_start_date.date() if hasattr(feature.implementation_start_date, 'date') else feature.implementation_start_date
-                if filter_start and impl_start < filter_start.date():
-                    return False
-                if filter_end and impl_start > filter_end.date():
-                    return False
-
-            # Check deadline if available
-            if feature.deadline:
-                deadline = feature.deadline.date() if hasattr(feature.deadline, 'date') else feature.deadline
-                if filter_start and deadline < filter_start.date():
-                    return False
-                if filter_end and deadline > filter_end.date():
-                    return False
-
-            # If neither date is set, check sprint
-            if not feature.implementation_start_date and not feature.deadline:
-                if feature.sprint_list and len(feature.sprint_list) > 0:
-                    LOGGER.debug(f"Feature '{feature.task_title}' has no dates but has sprint, including it")
+            # Check creation_date if available
+            if feature.creation_date:
+                creation_date = feature.creation_date.date() if hasattr(feature.creation_date, 'date') else feature.creation_date
+                
+                # Include tasks created on or after the filter date
+                if creation_date >= filter_date.date():
                     return True
                 else:
-                    LOGGER.debug(f"Feature '{feature.task_title}' has no dates and no sprint, excluding it")
+                    LOGGER.debug(
+                        f"Feature '{feature.task_title}' excluded: "
+                        f"created {creation_date} before filter {filter_date.date()}"
+                    )
                     return False
-
-            return True
+            else:
+                # If no creation_date, include the task (backward compatibility)
+                LOGGER.debug(
+                    f"Feature '{feature.task_title}' has no creation_date, including it"
+                )
+                return True
 
         except Exception as e:
             LOGGER.warning(f"Error applying date filter to feature '{feature.task_title}': {e}")
@@ -1877,6 +1869,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "frontend": ["Front-end", "Frontend", "Front-end"],
             "devops": ["DevOPS", "DevOps", "DevOPS"],
             "ui_ux": ["UI / UX", "UI/UX", "UI / UX"],
+            "qa_pm": ["QA/PM", "qa/pm", "QA / PM", "qa / pm"],
             "creation_date": ["تاریخ ایجاد", "Creation Date", "تاریخ ایجاد"],
             "implementation_start_date": [
             "تاریخ شروع پیاده سازی",
@@ -2084,6 +2077,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if get_mapped_value("ui_ux") != "Select"
                     else None
                 ),
+                qa_pm=(
+                    get_mapped_value("qa_pm")
+                    if get_mapped_value("qa_pm") != "Select"
+                    else None
+                ),
                 creation_date=parse_date(get_mapped_value("creation_date")),
                 implementation_start_date=parse_date(
                     get_mapped_value("implementation_start_date"),
@@ -2243,6 +2241,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 components.append("DevOps")
             if feature.ui_ux != "" and float(feature.ui_ux) > 0:
                 components.append("UI/UX")
+            if feature.qa_pm != "" and float(feature.qa_pm) > 0:
+                components.append("QA/PM")
 
         return components
 

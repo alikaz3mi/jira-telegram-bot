@@ -36,6 +36,7 @@ class SynthPMFeatureEntity(BaseModel):
     frontend: Optional[str] = Field(default=None, description="Front-end")
     devops: Optional[str] = Field(default=None, description="DevOPS")
     ui_ux: Optional[str] = Field(default=None, description="UI/UX")
+    qa_pm: Optional[str] = Field(default=None, description="QA/PM")
     creation_date: Optional[datetime] = Field(
         default=None,
         description="Creation date/تاریخ ایجاد",
