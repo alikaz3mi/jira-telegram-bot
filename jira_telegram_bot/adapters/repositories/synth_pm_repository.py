@@ -1185,6 +1185,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"Could not link issues {feature.jira_issue_key} and {developer_board_issue.key}: {e}",
                     )
 
+            # Link dependencies based on summary field
+            try:
+                linked_deps = self._link_dependencies_by_summary(
+                    developer_board_issue.key,
+                    feature,
+                    self.developer_board_project_key,
+                )
+                LOGGER.info(f"Linked {linked_deps} dependencies for {developer_board_issue.key}")
+            except Exception as e:
+                LOGGER.warning(
+                    f"Could not link dependencies for {developer_board_issue.key}: {e}",
+                )
+
             # Update the sheet with issue key
             await self.update_developer_board_feature(
                 feature.sheet_row_number,
@@ -1277,6 +1290,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if not issue:
                 LOGGER.warning(f"issue {feature.developer_board_issue_key} not found")
                 return False
+
+            # Link/update dependencies based on summary field
+            try:
+                linked_deps = self._link_dependencies_by_summary(
+                    feature.developer_board_issue_key,
+                    feature,
+                    self.developer_board_project_key,
+                )
+                LOGGER.info(f"Updated {linked_deps} dependencies for {feature.developer_board_issue_key}")
+            except Exception as e:
+                LOGGER.warning(
+                    f"Could not update dependencies for {feature.developer_board_issue_key}: {e}",
+                )
 
             update_fields = {}
             
@@ -2376,6 +2402,254 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.warning(f"No transition found to {target_status} for {issue_key}")
         except Exception as e:
             LOGGER.error(f"Error transitioning {issue_key} to {target_status}: {e}")
+
+    def _search_issue_by_summary_in_project(
+        self,
+        summary: str,
+        project_key: str,
+    ) -> Optional[str]:
+        """Search for an issue by summary within a specific project.
+
+        Args:
+            summary: Issue summary to search for
+            project_key: Project key to search within
+
+        Returns:
+            Issue key if found, None otherwise
+        """
+        try:
+            summary_cleaned = summary.strip()
+            if not summary_cleaned:
+                return None
+            
+            escaped_summary = summary_cleaned.replace('"', '\\"')
+            jql = f'project = "{project_key}" AND summary ~ "{escaped_summary}"'
+            LOGGER.debug(f"Searching for issue with JQL: {jql}")
+            
+            issues = self.jira_repository.search_for_issues(jql, max_results=10)
+            
+            if not issues:
+                LOGGER.warning(f"No issue found with summary '{summary_cleaned}' in project {project_key}")
+                return None
+            
+            for issue in issues:
+                if issue.fields.summary.strip().lower() == summary_cleaned.lower():
+                    LOGGER.info(f"Found exact match: {issue.key} for summary '{summary_cleaned}'")
+                    return issue.key
+            
+            first_issue_key = issues[0].key
+            first_summary = issues[0].fields.summary
+            LOGGER.info(f"Using closest match: {first_issue_key} ('{first_summary}') for summary '{summary_cleaned}'")
+            return first_issue_key
+            
+        except Exception as e:
+            LOGGER.error(f"Error searching for issue by summary '{summary}': {e}")
+            return None
+
+    def _link_dependencies_by_summary(
+        self,
+        issue_key: str,
+        feature: SynthPMFeatureEntity,
+        project_key: str,
+    ) -> int:
+        """Link issue dependencies based on task summaries in the dependencies field.
+
+        Args:
+            issue_key: Issue key to add dependencies to
+            feature: Feature entity containing dependencies
+            project_key: Project key where issues exist
+
+        Returns:
+            Number of dependencies successfully linked
+        """
+        if not feature.dependencies or not feature.dependencies.strip():
+            LOGGER.debug(f"No dependencies to link for {issue_key}")
+            return 0
+
+        dependency_summaries = [
+            dep.strip() 
+            for dep in feature.dependencies.split(",") 
+            if dep.strip()
+        ]
+        
+        if not dependency_summaries:
+            LOGGER.debug(f"No valid dependency summaries found for {issue_key}")
+            return 0
+
+        linked_count = 0
+        for dep_summary in dependency_summaries:
+            try:
+                blocking_issue_key = self._search_issue_by_summary_in_project(
+                    dep_summary,
+                    project_key,
+                )
+                
+                if not blocking_issue_key:
+                    LOGGER.warning(
+                        f"Could not find blocking issue with summary '{dep_summary}' "
+                        f"for {issue_key} in project {project_key}"
+                    )
+                    continue
+                
+                if blocking_issue_key == issue_key:
+                    LOGGER.warning(
+                        f"Skipping self-dependency: {issue_key} cannot block itself"
+                    )
+                    continue
+                
+                existing_links = self.jira_repository.get_issue_links(issue_key)
+                already_linked = False
+                for link in existing_links:
+                    inward_issue = link.get("inwardIssue", {})
+                    if inward_issue.get("key") == blocking_issue_key:
+                        already_linked = True
+                        break
+                
+                if already_linked:
+                    LOGGER.info(
+                        f"Dependency already exists: {blocking_issue_key} blocks {issue_key}"
+                    )
+                    linked_count += 1
+                    continue
+                
+                self.jira_repository.link_issues(
+                    dependent_issue_key=issue_key,  # The task being blocked
+                    dependency_issue_key=blocking_issue_key,  # The blocking task
+                    link_type="Blocks",
+                )
+                LOGGER.info(
+                    f"Linked dependency: {blocking_issue_key} blocks {issue_key}"
+                )
+                linked_count += 1
+                
+            except Exception as e:
+                LOGGER.error(
+                    f"Error linking dependency '{dep_summary}' to {issue_key}: {e}"
+                )
+                continue
+        
+        LOGGER.info(
+            f"Successfully linked {linked_count}/{len(dependency_summaries)} "
+            f"dependencies for {issue_key}"
+        )
+        return linked_count
+
+    def _find_issue_by_summary(
+        self,
+        summary: str,
+        project_key: str,
+    ) -> Optional[str]:
+        """Find a Jira issue by its summary in a specific project.
+
+        Args:
+            summary: The task summary to search for
+            project_key: The project key to search within
+
+        Returns:
+            Issue key if found, None otherwise
+        """
+        try:
+            summary_cleaned = summary.strip()
+            if not summary_cleaned:
+                return None
+            
+            # Escape special JQL characters in summary
+            summary_escaped = summary_cleaned.replace('"', '\\"')
+            
+            # Search for exact match first
+            jql = f'project = "{project_key}" AND summary ~ "\"{summary_escaped}\""'
+            
+            issues = self.jira_repository.search_for_issues(jql, max_results=10)
+            
+            if not issues:
+                return None
+            
+            # Find exact match
+            for issue in issues:
+                if issue.fields.summary.strip() == summary_cleaned:
+                    LOGGER.info(f"Found issue {issue.key} for summary: {summary_cleaned}")
+                    return issue.key
+            
+            # If no exact match, return first result
+            LOGGER.info(f"Found issue {issues[0].key} for summary (fuzzy): {summary_cleaned}")
+            return issues[0].key
+            
+        except Exception as e:
+            LOGGER.error(f"Error finding issue by summary '{summary}': {e}")
+            return None
+
+    def _link_task_dependencies(
+        self,
+        issue_key: str,
+        feature: SynthPMFeatureEntity,
+        project_key: str,
+    ) -> int:
+        """Link task dependencies based on the dependencies field.
+
+        Args:
+            issue_key: The current task's issue key
+            feature: Feature entity containing dependencies
+            project_key: Project key to search for dependencies
+
+        Returns:
+            Number of successfully created links
+        """
+        if not feature.dependencies or not feature.dependencies.strip():
+            return 0
+        
+        try:
+            # Parse dependencies - could be comma-separated or newline-separated
+            dependency_summaries = []
+            
+            # Try splitting by newline first
+            if '\n' in feature.dependencies:
+                dependency_summaries = [d.strip() for d in feature.dependencies.split('\n') if d.strip()]
+            # Then try comma
+            elif ',' in feature.dependencies:
+                dependency_summaries = [d.strip() for d in feature.dependencies.split(',') if d.strip()]
+            # Otherwise treat as single dependency
+            else:
+                dependency_summaries = [feature.dependencies.strip()]
+            
+            links_created = 0
+            
+            for dependency_summary in dependency_summaries:
+                # Find the blocking issue
+                blocking_issue_key = self._find_issue_by_summary(
+                    dependency_summary,
+                    project_key,
+                )
+                
+                if blocking_issue_key:
+                    # Create the blocking link
+                    # blocking_issue_key blocks issue_key (current task is blocked by dependency)
+                    success = self.jira_repository.link_issues(
+                        dependent_issue_key=issue_key,  # The task being blocked
+                        dependency_issue_key=blocking_issue_key,  # The task that blocks
+                        link_type="Blocks",
+                    )
+                    
+                    if success:
+                        LOGGER.info(
+                            f"Created blocking link: {blocking_issue_key} blocks {issue_key} "
+                            f"(dependency: '{dependency_summary}')"
+                        )
+                        links_created += 1
+                    else:
+                        LOGGER.warning(
+                            f"Failed to create blocking link between {blocking_issue_key} and {issue_key}"
+                        )
+                else:
+                    LOGGER.warning(
+                        f"Could not find blocking issue for dependency: '{dependency_summary}' "
+                        f"in project {project_key}"
+                    )
+            
+            return links_created
+            
+        except Exception as e:
+            LOGGER.error(f"Error linking task dependencies for {issue_key}: {e}")
+            return 0
 
     def _calculate_story_dates_based_on_assignees(
         self,
