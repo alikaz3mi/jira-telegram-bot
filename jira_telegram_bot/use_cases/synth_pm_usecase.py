@@ -106,6 +106,11 @@ class SynthPMUseCase:
             # Handle task cleanup - check for tasks that no longer exist in sheet
             await self._cleanup_deleted_tasks(features, sync_results)
 
+            # Read Features sheet once to avoid multiple reads in loop
+            release_notes = await self.repository.get_release_notes()
+            release_notes_map = {rn.release_version: rn for rn in release_notes}
+            LOGGER.info(f"Loaded {len(release_notes_map)} release notes from Features sheet")
+
             # Group features by release column
             release_groups = self._group_features_by_release(features)
             LOGGER.info(f"Grouped features into {len(release_groups)} releases: {list(release_groups.keys())}")
@@ -122,7 +127,8 @@ class SynthPMUseCase:
                     story_key = await self._create_release_story_with_subtasks(
                         release_name,
                         release_features,
-                        sync_results
+                        sync_results,
+                        release_notes_map,
                     )
                     
                     if story_key:
@@ -284,6 +290,7 @@ class SynthPMUseCase:
         release_name: str,
         features: List[SynthPMFeatureEntity],
         sync_results: Dict[str, Any],
+        release_notes_map: Optional[Dict[str, 'ReleaseNoteEntity']] = None,
     ) -> Optional[str]:
         """Create a story for a release and add features as subtasks.
         
@@ -293,6 +300,7 @@ class SynthPMUseCase:
             release_name: Name of the release
             features: List of features in this release
             sync_results: Dictionary to track sync results
+            release_notes_map: Optional mapping of release versions to ReleaseNoteEntity
 
         Returns:
             Story issue key if created successfully, None otherwise
@@ -344,9 +352,11 @@ class SynthPMUseCase:
                     LOGGER.warning(f"Could not update description for story {existing_story_key}: {e}")
             else:
                 # Create the story
+                release_note = release_notes_map.get(release_name) if release_notes_map else None
                 story_key = await self.repository.create_release_story(
                     release_name=release_name,
                     features=valid_features,
+                    release_note=release_note,
                 )
                 if story_key:
                     LOGGER.info(f"Created release story {story_key} for {release_name}")

@@ -2695,6 +2695,99 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         return target_end_and_deadline
 
+    def _build_story_description(self, release_note: ReleaseNoteEntity) -> str:
+        """Build story description from ReleaseNoteEntity.
+
+        Args:
+            release_note: Release note entity from Features sheet
+
+        Returns:
+            Formatted description with documentation link and description
+        """
+        description_parts = []
+        
+        # Add documentation link if available
+        if release_note.documentation_link and release_note.documentation_link.strip():
+            description_parts.append(f"📄 *Documentation:* {release_note.documentation_link}")
+            description_parts.append("")
+        
+        # Add description if available
+        if release_note.description and release_note.description.strip():
+            description_parts.append(release_note.description)
+        
+        return "\n".join(description_parts) if description_parts else ""
+
+    async def _link_story_dependencies(
+        self,
+        story_key: str,
+        release_note: ReleaseNoteEntity,
+    ) -> None:
+        """Link story dependencies based on release note dependencies field.
+
+        Args:
+            story_key: Current story issue key
+            release_note: Release note entity with dependencies information
+        """
+        try:
+            if not release_note.dependencies or not release_note.dependencies.strip():
+                LOGGER.debug(f"No dependencies specified for story {story_key}")
+                return
+            
+            # Parse comma-separated dependency release names
+            dependency_names = [dep.strip() for dep in release_note.dependencies.split(",") if dep.strip()]
+            
+            if not dependency_names:
+                LOGGER.debug(f"No valid dependencies found for story {story_key}")
+                return
+            
+            LOGGER.info(f"Processing {len(dependency_names)} dependencies for story {story_key}: {dependency_names}")
+            
+            # Find and link each dependency story
+            linked_count = 0
+            for dependency_release_name in dependency_names:
+                try:
+                    # Search for the dependency story by release name
+                    dependency_story_key = await self.get_story_by_release_name(dependency_release_name)
+                    
+                    if not dependency_story_key:
+                        LOGGER.warning(
+                            f"Dependency story not found for release '{dependency_release_name}', "
+                            f"skipping link for story {story_key}"
+                        )
+                        continue
+                    
+                    # Create "Blocks" link: dependency_story_key blocks story_key
+                    # This means story_key depends on (is blocked by) dependency_story_key
+                    link_created = self.jira_repository.create_issue_link(
+                        link_type="Blocks",
+                        inward_issue=story_key,  # This story is blocked
+                        outward_issue=dependency_story_key,  # By the dependency story
+                    )
+                    
+                    if link_created:
+                        linked_count += 1
+                        LOGGER.info(
+                            f"Linked dependency: {dependency_story_key} ({dependency_release_name}) "
+                            f"blocks {story_key} ({release_note.release_version})"
+                        )
+                    else:
+                        LOGGER.warning(
+                            f"Failed to create link between {dependency_story_key} and {story_key}"
+                        )
+                        
+                except Exception as link_error:
+                    LOGGER.error(
+                        f"Error linking dependency '{dependency_release_name}' for story {story_key}: {link_error}"
+                    )
+            
+            if linked_count > 0:
+                LOGGER.info(f"Successfully linked {linked_count}/{len(dependency_names)} dependencies for story {story_key}")
+            else:
+                LOGGER.warning(f"No dependencies were linked for story {story_key}")
+                
+        except Exception as e:
+            LOGGER.error(f"Error linking story dependencies for {story_key}: {e}")
+
     async def _update_story_deadline_after_subtasks(
         self,
         story_key: str,
@@ -2994,6 +3087,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "status": ["وضعیت", "Status"],
             "rag": ["RAG", "RAG"],
             "description": ["شرح", "Description"],
+            "documentation_link": ["لینک مستندات", "Documentation Link", "Doc Link"],
+            "dependencies": ["وابستگی ها", "Dependencies", "وابستگی‌ها"],
             "goals": ["اهداف", "Goals"],
             "delivery_process": ["فرایند تحویل", "Delivery Process"],
             "test_process": ["فرایند تست", "Test Process"],
@@ -3086,6 +3181,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 status=get_mapped_value("status") if get_mapped_value("status") else None,
                 rag=get_mapped_value("rag") if get_mapped_value("rag") else None,
                 description=description,
+                documentation_link=get_mapped_value("documentation_link") if get_mapped_value("documentation_link") else None,
+                dependencies=get_mapped_value("dependencies") if get_mapped_value("dependencies") else None,
                 goals=get_mapped_value("goals") if get_mapped_value("goals") else None,
                 delivery_process=get_mapped_value("delivery_process") if get_mapped_value("delivery_process") else None,
                 test_process=get_mapped_value("test_process") if get_mapped_value("test_process") else None,
@@ -4061,6 +4158,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # Build update fields
             update_fields = {}
             
+            # PRESERVE EXISTING DESCRIPTION - do not overwrite it
+            # The description is set when the story is created from release notes
+            # and should not be modified when updating from subtasks
+            
             # Update components
             current_components = set([comp.name for comp in story_issue.fields.components])
             if all_components != current_components:
@@ -4135,12 +4236,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         self,
         release_name: str,
         features: List[SynthPMFeatureEntity],
+        release_note: Optional[ReleaseNoteEntity] = None,
     ) -> Optional[str]:
         """Create a story for a release based on features.
 
         Args:
             release_name: Name of the release
             features: List of features in this release
+            release_note: Optional release note entity for description and metadata
 
         Returns:
             Story issue key if successful, None otherwise
@@ -4226,11 +4329,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 )
                 epic_link = epic_key
             
+            # Build description from release note if available
+            description = self._build_story_description(release_note) if release_note else ""
+            
             # Create the story (components and dates will be set after subtasks are created)
             story_data = TaskData(
                 project_key=project_key,
                 summary=release_name,
-                description="",
+                description=description,
                 task_type="Story",
                 priority=self._map_priority(first_feature.priority) if first_feature.priority else "Medium",
                 epic_link=epic_link,
@@ -4257,6 +4363,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 f"Created release story {self.jira_repository.get_issue_url_by_key(story_issue.key)} "
                 f"for release: {release_name}"
             )
+            
+            # Link story dependencies if release_note is provided
+            if release_note:
+                await self._link_story_dependencies(story_issue.key, release_note)
             
             return story_issue.key
             

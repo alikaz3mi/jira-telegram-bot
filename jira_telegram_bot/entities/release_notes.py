@@ -25,6 +25,8 @@ class ReleaseNoteEntity(BaseModel):
     status: Optional[str] = Field(default=None, description="وضعیت")
     rag: Optional[str] = Field(default=None, description="RAG")
     description: str = Field(description="شرح")
+    documentation_link: Optional[str] = Field(default=None, description="لینک مستندات")
+    dependencies: Optional[str] = Field(default=None, description="وابستگی ها")
     goals: Optional[str] = Field(default=None, description="اهداف")
     delivery_process: Optional[str] = Field(default=None, description="فرایند تحویل")
     test_process: Optional[str] = Field(default=None, description="فرایند تست")

@@ -344,12 +344,14 @@ class SynthPMRepositoryInterface(ABC):
         self,
         release_name: str,
         features: List[SynthPMFeatureEntity],
+        release_note: Optional['ReleaseNoteEntity'] = None,
     ) -> Optional[str]:
         """Create a story for a release based on features.
 
         Args:
             release_name: Name of the release
             features: List of features in this release
+            release_note: Optional release note entity for description and metadata
 
         Returns:
             Story issue key if successful, None otherwise
