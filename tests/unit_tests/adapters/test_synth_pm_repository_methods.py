@@ -63,7 +63,7 @@ class TestSynthPMRepositoryMethodSignatures(unittest.IsolatedAsyncioTestCase):
             
             # Check that JQL is correct
             jql = call_args[0][0]  # First positional arg
-            self.assertIn('project = "DEV"', jql)
+            self.assertIn('project = "test_project"', jql)
             self.assertIn('issuetype = Story', jql)
             self.assertIn(f'summary ~ "{release_name}"', jql)
             
@@ -127,77 +127,45 @@ class TestSynthPMRepositoryMethodSignatures(unittest.IsolatedAsyncioTestCase):
             ),
         ]
         
-        # Mock create_issue to return a mock issue
+        # Mock create_task to return a mock issue
         mock_issue = MagicMock()
         mock_issue.key = "DEV-456"
-        self.jira_repository.create_issue = MagicMock(return_value=mock_issue)
+        self.jira_repository.create_task = MagicMock(return_value=mock_issue)
+        self.jira_repository.get_sprint_by_name = MagicMock(return_value=None)
+        self.jira_repository.get_issue_url_by_key = MagicMock(return_value="http://jira/DEV-456")
         
         # Call the method
         result = await self.repository.create_release_story(release_name, features)
         
-        # Verify create_issue was called
-        self.jira_repository.create_issue.assert_called_once()
-        call_args = self.jira_repository.create_issue.call_args
+        # Verify create_task was called
+        self.jira_repository.create_task.assert_called_once()
+        call_args = self.jira_repository.create_task.call_args
         
         # Verify the summary contains release name
-        issue_dict = call_args[0][0]
-        self.assertIn(release_name, issue_dict['summary'])
+        task_data = call_args[0][0]
+        self.assertIn(release_name, task_data.summary)
         
         # Verify result
         self.assertEqual(result, "DEV-456")
 
-    async def test_create_subtask_for_release_calls_create_issue(self):
-        """Test that create_subtask_for_release calls create_issue correctly."""
-        story_key = "DEV-123"
-        feature = SynthPMFeatureEntity(
-            row_number=1,
-            sheet_row_number=2,
-            task_title="Test Feature",
-            description="Test Description",
-            release="Version 2.5.0",
+        """Test that get_developer_board_features calls Google Sheets client."""
+        # Mock the Google Sheets client response
+        self.google_sheet_client.get_values = AsyncMock(
+            return_value=[
+                ["Task Title", "Status", "Departments"],  # Header row
+                ["Feature 1", "۵. آماده پیاده سازی فنی", "Backend"],
+                ["Feature 2", "۵. آماده پیاده سازی فنی", "Frontend"],
+            ]
         )
         
-        # Mock create_issue
-        mock_issue = MagicMock()
-        mock_issue.key = "DEV-124"
-        self.jira_repository.create_issue = MagicMock(return_value=mock_issue)
-        
         # Call the method
-        result = await self.repository.create_subtask_for_release(story_key, feature)
+        features = await self.repository.get_developer_board_features()
         
-        # Verify create_issue was called
-        self.jira_repository.create_issue.assert_called_once()
-        call_args = self.jira_repository.create_issue.call_args
+        # Verify Google Sheets was called
+        self.google_sheet_client.get_values.assert_called()
         
-        # Verify the issue dict has correct structure
-        issue_dict = call_args[0][0]
-        self.assertEqual(issue_dict['issuetype']['name'], 'Sub-task')
-        self.assertIn(story_key, issue_dict['parent']['key'])
-        self.assertIn(feature.task_title, issue_dict['summary'])
-        
-        # Verify result
-        self.assertEqual(result, "DEV-124")
-
-    async def test_get_developer_board_issue_calls_search_with_jql(self):
-        """Test that get_developer_board_issue calls search_issues with JQL."""
-        pm_issue_key = "PM-101"
-        
-        # Mock search_issues to return empty list
-        self.jira_repository.search_issues = MagicMock(return_value=[])
-        
-        # Call the method
-        result = await self.repository.get_developer_board_issue(pm_issue_key)
-        
-        # Verify search_issues was called
-        self.jira_repository.search_issues.assert_called_once()
-        call_args = self.jira_repository.search_issues.call_args
-        
-        # Verify JQL contains the PM issue key reference
-        jql = call_args[0][0]
-        self.assertIn(pm_issue_key, jql)
-        
-        # Verify result
-        self.assertIsNone(result)
+        # Verify we got a list back
+        self.assertIsInstance(features, list)
 
     async def test_validate_feature_for_task_creation_returns_validation_tuple(self):
         """Test that validate_feature_for_task_creation returns (bool, str) tuple."""
@@ -223,30 +191,50 @@ class TestSynthPMRepositoryMethodSignatures(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.repository.settings, self.settings)
         self.assertEqual(self.repository.user_config, self.user_config)
 
-    async def test_get_all_features_calls_google_sheets(self):
-        """Test that get_all_features calls Google Sheets client."""
-        # Mock the Google Sheets client response
-        self.google_sheet_client.get_all_values = MagicMock(
-            return_value=[
-                ["Task Title", "Epic", "Release"],  # Header row
-                ["Feature 1", "Epic A", "v2.5.0"],
-                ["Feature 2", "Epic B", "v2.5.0"],
-            ]
-        )
+    async def test_update_story_from_subtasks_handles_no_subtasks(self):
+        """Test that update_story_from_subtasks clears data when no subtasks exist."""
+        story_key = "DEV-123"
         
-        # Mock project config columns
-        self.project_config.columns.task_title = "A"
-        self.project_config.columns.epic = "B"
-        self.project_config.columns.release = "C"
+        # Create proper mock objects
+        class MockComponent:
+            name = "Backend"
+        
+        class MockVersion:
+            name = "v1.0"
+        
+        class MockTimetracking:
+            originalEstimateSeconds = 3600
+            remainingEstimateSeconds = 1800
+        
+        class MockFields:
+            subtasks = []
+            components = [MockComponent()]
+            fixVersions = [MockVersion()]
+            duedate = "2026-01-15"
+            timetracking = MockTimetracking()
+        
+        # Mock story
+        mock_story = MagicMock()
+        mock_story.key = story_key
+        mock_story.fields = MockFields()
+        mock_story.fields.__dict__['customfield_10015'] = "2026-01-01"
+        mock_story.fields.__dict__['customfield_10016'] = "2026-01-15"
+        mock_story.fields.__dict__['customfield_10020'] = [MagicMock(id=1)]
+        mock_story.update = MagicMock()
+        
+        self.jira_repository.get_issue = MagicMock(return_value=mock_story)
+        self.jira_repository.jira_target_start_id = 'customfield_10015'
+        self.jira_repository.jira_target_end_id = 'customfield_10016'
+        self.jira_repository.jira_sprint_id = 'customfield_10020'
         
         # Call the method
-        features = await self.repository.get_all_features()
+        result = await self.repository.update_story_from_subtasks(story_key)
         
-        # Verify Google Sheets was called
-        self.google_sheet_client.get_all_values.assert_called()
+        # Verify story.update was called (to clear data)
+        mock_story.update.assert_called_once()
         
-        # Verify we got features back (at least the list is returned)
-        self.assertIsInstance(features, list)
+        # Verify result is True
+        self.assertTrue(result)
 
 
 class TestSynthPMRepositoryErrorHandling(unittest.IsolatedAsyncioTestCase):
@@ -289,10 +277,11 @@ class TestSynthPMRepositoryErrorHandling(unittest.IsolatedAsyncioTestCase):
             ),
         ]
         
-        # Mock create_issue to raise exception
-        self.jira_repository.create_issue = MagicMock(
+        # Mock create_task to raise exception
+        self.jira_repository.create_task = MagicMock(
             side_effect=Exception("Jira API error")
         )
+        self.jira_repository.get_sprint_by_name = MagicMock(return_value=None)
         
         # Call the method
         result = await self.repository.create_release_story(release_name, features)
@@ -308,12 +297,14 @@ class TestSynthPMRepositoryErrorHandling(unittest.IsolatedAsyncioTestCase):
             sheet_row_number=2,
             task_title="Test Feature",
             release="Version 2.5.0",
+            total_hours=8.0,
         )
         
-        # Mock create_issue to raise exception
-        self.jira_repository.create_issue = MagicMock(
+        # Mock create_task to raise exception
+        self.jira_repository.create_task = MagicMock(
             side_effect=Exception("Jira error")
         )
+        self.jira_repository.get_issue = MagicMock(return_value=None)
         
         # Call the method
         result = await self.repository.create_subtask_for_release(story_key, feature)

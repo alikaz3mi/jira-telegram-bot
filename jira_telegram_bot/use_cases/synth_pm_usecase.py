@@ -357,8 +357,25 @@ class SynthPMUseCase:
                     sync_results["errors"].append(f"Failed to create story for release: {release_name}")
                     return None
             
+            # Get existing subtasks from Jira to detect deletions
+            existing_jira_subtasks = set()
+            try:
+                story_issue = self.repository.jira_repository.get_issue(story_key)
+                if story_issue and story_issue.fields.subtasks:
+                    existing_jira_subtasks = {subtask.key for subtask in story_issue.fields.subtasks}
+                    LOGGER.info(f"Found {len(existing_jira_subtasks)} existing subtasks in story {story_key}")
+            except Exception as e:
+                LOGGER.warning(f"Could not fetch existing subtasks for story {story_key}: {e}")
+            
+            # Track which subtasks are still valid (present in Google Sheet)
+            valid_subtask_keys = set()
+            
             # Create or update subtasks for each feature
             for feature in valid_features:
+                # Track this subtask as valid if it exists
+                if feature.developer_board_issue_key:
+                    valid_subtask_keys.add(feature.developer_board_issue_key)
+                
                 # Update existing subtask if it already exists
                 if feature.developer_board_issue_key:
                     LOGGER.info(f"Developer board task already exists for {feature.task_title}: {feature.developer_board_issue_key}")
@@ -375,8 +392,6 @@ class SynthPMUseCase:
                     
                     # Update the existing subtask
                     assignees = self._extract_assignees_from_feature(feature)
-                    if feature.task_title == 'طراحی وایرفریم و UI بخش اتصال API':
-                        x = 1
 
                     update_success = await self.repository.update_developer_board_task_from_feature(
                         feature,
@@ -437,6 +452,21 @@ class SynthPMUseCase:
                     sync_results["errors"].append(
                         f"Failed to create subtask for: {feature.task_title}",
                     )
+            
+            # Delete orphaned subtasks (exist in Jira but not in Google Sheet)
+            orphaned_subtasks = existing_jira_subtasks - valid_subtask_keys
+            if orphaned_subtasks:
+                LOGGER.info(f"Found {len(orphaned_subtasks)} orphaned subtasks to delete: {orphaned_subtasks}")
+                for orphaned_key in orphaned_subtasks:
+                    try:
+                        self.repository.jira_repository.delete_issue(orphaned_key)
+                        LOGGER.info(f"Deleted orphaned subtask {orphaned_key} from story {story_key}")
+                        sync_results["deleted_developer_board_tasks"] = (
+                            sync_results.get("deleted_developer_board_tasks", 0) + 1
+                        )
+                    except Exception as e:
+                        LOGGER.error(f"Failed to delete orphaned subtask {orphaned_key}: {e}")
+                        sync_results["errors"].append(f"Failed to delete orphaned subtask {orphaned_key}")
             
             # Update story with components and dates from subtasks
             if story_key:

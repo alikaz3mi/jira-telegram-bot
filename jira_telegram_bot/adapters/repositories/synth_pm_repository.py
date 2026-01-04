@@ -656,24 +656,25 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 if feature.task_title != issue.fields.summary:
                     update_fields["summary"] = feature.task_title
 
-            if feature.release != None or feature.version != None:
-                # Get current fix version names
-                current_versions = set([v.name for v in issue.fields.fixVersions])
-                # Get desired fix versions from feature
-                feature_versions = set([v for v in [feature.release, feature.version] if v])
-                
-                if feature_versions != current_versions:
+            # Always check and update fix versions if they're specified in feature
+            # Get desired fix versions from feature (only non-None values)
+            feature_versions = set([v for v in [feature.release, feature.version] if v])
+            # Get current fix version names
+            current_versions = set([v.name for v in issue.fields.fixVersions])
+            
+            # Update if versions differ OR if we need to clear versions
+            if feature_versions != current_versions:
+                if feature_versions:
                     # Create releases if they don't exist
                     self._create_release_not_exist_during_update(
                         feature,
                         self.pm_project_key,
                     )
-                    # Replace all fix versions with the new ones (not append)
-                    update_fields["fixVersions"] = [
-                        {"name": release}
-                        for release in [feature.release, feature.version]
-                        if release
-                    ]
+                # Always replace ALL fix versions (clearing any that aren't in the feature)
+                update_fields["fixVersions"] = [
+                    {"name": release}
+                    for release in sorted(feature_versions)
+                ] if feature_versions else []
 
             if feature.description:
                 if feature.description != issue.fields.description:
@@ -1400,11 +1401,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         feature,
                         self.developer_board_project_key,
                     )
-                # Replace all fix versions with the new ones (not append)
+                # Always replace ALL fix versions (clearing any that aren't in the feature)
                 update_fields["fixVersions"] = [
                     {"name": release}
-                    for release in [feature.release, feature.version]
-                    if release
+                    for release in sorted(feature_versions)
                 ] if feature_versions else []
 
             # Handle sprint updates using the same logic as create method
@@ -3599,11 +3599,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         feature,
                         self.developer_board_project_key,
                     )
-                # Replace all fix versions with the new ones (not append)
+                # Always replace ALL fix versions (clearing any that aren't in the feature)
                 update_fields["fixVersions"] = [
                     {"name": release}
-                    for release in [feature.release, feature.version]
-                    if release
+                    for release in sorted(feature_versions)
                 ] if feature_versions else []
 
             if (
@@ -3970,7 +3969,47 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             subtasks = story_issue.fields.subtasks
             if not subtasks:
-                LOGGER.debug(f"No subtasks found for story {story_key}")
+                LOGGER.info(f"No subtasks found for story {story_key}, clearing story data")
+                # Clear all data that was derived from subtasks
+                update_fields = {}
+                
+                # Clear components if any exist
+                if story_issue.fields.components:
+                    update_fields["components"] = []
+                
+                # Clear fix versions if any exist
+                if story_issue.fields.fixVersions:
+                    update_fields["fixVersions"] = []
+                
+                # Clear target dates if any exist
+                if story_issue.fields.__dict__.get(self.jira_repository.jira_target_start_id):
+                    update_fields[self.jira_repository.jira_target_start_id] = None
+                if story_issue.fields.__dict__.get(self.jira_repository.jira_target_end_id):
+                    update_fields[self.jira_repository.jira_target_end_id] = None
+                
+                # Clear duedate if it exists
+                if story_issue.fields.duedate:
+                    update_fields["duedate"] = None
+                
+                # Clear sprint if it exists
+                if story_issue.fields.__dict__.get(self.jira_repository.jira_sprint_id):
+                    update_fields[self.jira_repository.jira_sprint_id] = None
+                
+                # Clear time tracking if any exists
+                if story_issue.fields.timetracking and (
+                    getattr(story_issue.fields.timetracking, "originalEstimateSeconds", None)
+                    or getattr(story_issue.fields.timetracking, "remainingEstimateSeconds", None)
+                ):
+                    update_fields["timetracking"] = {
+                        "originalEstimate": "0h",
+                        "remainingEstimate": "0h",
+                    }
+                
+                # Apply updates if any
+                if update_fields:
+                    story_issue.update(fields=update_fields)
+                    LOGGER.info(f"Cleared story {story_key} data (no subtasks): {list(update_fields.keys())}")
+                
                 return True
             
             # Collect all components and dates from subtasks

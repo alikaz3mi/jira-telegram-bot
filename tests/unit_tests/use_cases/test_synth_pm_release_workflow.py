@@ -458,6 +458,212 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         # But no subtasks (skipped due to status)
         self.repository.create_subtask_for_release.assert_not_awaited()
 
+    async def test_create_release_story_with_subtasks_deletes_orphaned_subtasks(self):
+        """Test that orphaned subtasks (in Jira but not in Google Sheet) are deleted."""
+        # Create features - only 2 valid features in Google Sheet
+        features = [
+            create_test_feature(
+                row_number=1,
+                task_title="Feature A",
+                developer_board_issue_key="DEV-101",  # Existing subtask
+                jira_issue_key="PM-101",
+                release="Version 2.5.0",
+            ),
+            create_test_feature(
+                row_number=2,
+                task_title="Feature B",
+                developer_board_issue_key="DEV-102",  # Existing subtask
+                jira_issue_key="PM-102",
+                release="Version 2.5.0",
+            ),
+        ]
+        
+        # Mock validation
+        self.repository.validate_feature_for_task_creation.return_value = (True, None)
+        
+        # Mock existing story with 4 subtasks (2 are orphaned)
+        mock_story = MagicMock()
+        mock_subtasks = [
+            MagicMock(key="DEV-101"),  # Valid - exists in sheet
+            MagicMock(key="DEV-102"),  # Valid - exists in sheet
+            MagicMock(key="DEV-103"),  # Orphaned - deleted from sheet
+            MagicMock(key="DEV-104"),  # Orphaned - deleted from sheet
+        ]
+        mock_story.fields.subtasks = mock_subtasks
+        
+        self.repository.jira_repository.get_issue.return_value = mock_story
+        self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
+        self.repository.update_jira_task_description = AsyncMock()
+        self.repository.jira_repository.delete_issue = MagicMock()
+        
+        # Mock update methods
+        self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        
+        # Mock user config
+        self.user_config.get_all_user_configs.return_value = {}
+        
+        sync_results = {
+            "created_jira_tasks": 0,
+            "updated_jira_tasks": 0,
+            "created_developer_board_tasks": 0,
+            "updated_developer_board_tasks": 0,
+            "deleted_developer_board_tasks": 0,
+            "skipped": [],
+            "errors": [],
+        }
+        
+        story_key = await self.use_case._create_release_story_with_subtasks(
+            "Version 2.5.0",
+            features,
+            sync_results,
+        )
+        
+        # Verify story key returned
+        self.assertEqual(story_key, "DEV-100")
+        
+        # Verify both valid subtasks were updated (not deleted)
+        self.assertEqual(self.repository.update_developer_board_task_from_feature.await_count, 2)
+        
+        # Verify orphaned subtasks were deleted
+        self.assertEqual(self.repository.jira_repository.delete_issue.call_count, 2)
+        
+        # Verify the correct orphaned keys were deleted
+        deleted_keys = [
+            call[0][0] for call in self.repository.jira_repository.delete_issue.call_args_list
+        ]
+        self.assertIn("DEV-103", deleted_keys)
+        self.assertIn("DEV-104", deleted_keys)
+        
+        # Verify sync results updated
+        self.assertEqual(sync_results["deleted_developer_board_tasks"], 2)
+        self.assertEqual(sync_results["updated_developer_board_tasks"], 2)
+
+    async def test_create_release_story_with_subtasks_no_orphaned_subtasks(self):
+        """Test that no deletion occurs when all subtasks are valid."""
+        features = [
+            create_test_feature(
+                row_number=1,
+                task_title="Feature A",
+                developer_board_issue_key="DEV-101",
+                jira_issue_key="PM-101",
+            ),
+            create_test_feature(
+                row_number=2,
+                task_title="Feature B",
+                developer_board_issue_key="DEV-102",
+                jira_issue_key="PM-102",
+            ),
+        ]
+        
+        # Mock validation
+        self.repository.validate_feature_for_task_creation.return_value = (True, None)
+        
+        # Mock existing story with matching subtasks (no orphans)
+        mock_story = MagicMock()
+        mock_subtasks = [
+            MagicMock(key="DEV-101"),
+            MagicMock(key="DEV-102"),
+        ]
+        mock_story.fields.subtasks = mock_subtasks
+        
+        self.repository.jira_repository.get_issue.return_value = mock_story
+        self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
+        self.repository.update_jira_task_description = AsyncMock()
+        self.repository.jira_repository.delete_issue = MagicMock()
+        self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        
+        # Mock user config
+        self.user_config.get_all_user_configs.return_value = {}
+        
+        sync_results = {
+            "created_jira_tasks": 0,
+            "created_developer_board_tasks": 0,
+            "updated_developer_board_tasks": 0,
+            "deleted_developer_board_tasks": 0,
+            "skipped": [],
+            "errors": [],
+        }
+        
+        story_key = await self.use_case._create_release_story_with_subtasks(
+            "Version 2.5.0",
+            features,
+            sync_results,
+        )
+        
+        # Verify no deletions occurred
+        self.repository.jira_repository.delete_issue.assert_not_called()
+        self.assertEqual(sync_results["deleted_developer_board_tasks"], 0)
+
+    async def test_create_release_story_with_subtasks_handles_deletion_errors(self):
+        """Test error handling when orphaned subtask deletion fails."""
+        # Need at least 2 features to create a story (not a regular task)
+        features = [
+            create_test_feature(
+                row_number=1,
+                task_title="Feature A",
+                developer_board_issue_key="DEV-101",
+                jira_issue_key="PM-101",
+                release="Version 2.5.0",
+            ),
+            create_test_feature(
+                row_number=2,
+                task_title="Feature B",
+                developer_board_issue_key="DEV-102",
+                jira_issue_key="PM-102",
+                release="Version 2.5.0",
+            ),
+        ]
+        
+        # Mock validation
+        self.repository.validate_feature_for_task_creation.return_value = (True, None)
+        
+        # Mock story with orphaned subtask
+        mock_story = MagicMock()
+        mock_subtasks = [
+            MagicMock(key="DEV-101"),  # Valid
+            MagicMock(key="DEV-102"),  # Valid
+            MagicMock(key="DEV-999"),  # Orphaned
+        ]
+        mock_story.fields.subtasks = mock_subtasks
+        
+        self.repository.jira_repository.get_issue.return_value = mock_story
+        self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
+        self.repository.update_jira_task_description = AsyncMock()
+        self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        
+        # Mock deletion failure
+        self.repository.jira_repository.delete_issue = MagicMock(
+            side_effect=Exception("Permission denied")
+        )
+        
+        # Mock user config
+        self.user_config.get_all_user_configs.return_value = {}
+        
+        sync_results = {
+            "created_jira_tasks": 0,
+            "created_developer_board_tasks": 0,
+            "updated_developer_board_tasks": 0,
+            "deleted_developer_board_tasks": 0,
+            "skipped": [],
+            "errors": [],
+        }
+        
+        story_key = await self.use_case._create_release_story_with_subtasks(
+            "Version 2.5.0",
+            features,
+            sync_results,
+        )
+        
+        # Should still return story key
+        self.assertEqual(story_key, "DEV-100")
+        
+        # Verify error was logged
+        self.assertEqual(len(sync_results["errors"]), 1)
+        self.assertIn("DEV-999", sync_results["errors"][0])
+        
+        # Verify no successful deletions
+        self.assertEqual(sync_results["deleted_developer_board_tasks"], 0)
+
 
 class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
     """Integration tests for release-based workflow in sync operation."""

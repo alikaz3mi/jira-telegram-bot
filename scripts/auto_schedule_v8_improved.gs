@@ -717,6 +717,7 @@ function allocateAcrossWindowsDept_({ estCandidate, windows, perPerson, normDept
   // 2. Standard Scheduling with strict workday enforcement
   let firstDay = null;
   let finalDay = null;
+  let attemptedStartDay = null;  // Track where we actually tried to start
   const remaining = Object.assign({}, perPerson);
 
   for (const w of windows) {
@@ -726,6 +727,11 @@ function allocateAcrossWindowsDept_({ estCandidate, windows, perPerson, normDept
     if (!estW || estW > w.end) { 
       estCandidate = null; 
       continue; 
+    }
+
+    // Track the first valid workday we attempted to schedule from
+    if (!attemptedStartDay) {
+      attemptedStartDay = new Date(estW);
     }
 
     let date = new Date(estW);
@@ -819,7 +825,7 @@ function allocateAcrossWindowsDept_({ estCandidate, windows, perPerson, normDept
   const deadline = endOfDay_(lastWindowEnd);
   
   return { 
-    startDay: firstDay || windows[0].start, 
+    startDay: firstDay || attemptedStartDay || windows[0].start, 
     deadline, 
     overflow, 
     note 
