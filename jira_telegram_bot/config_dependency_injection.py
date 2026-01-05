@@ -650,7 +650,7 @@ def _configure_use_cases(container: Container) -> None:
         lambda c: ScheduledReportUseCase(
             report_use_case=c[GenerateJiraReportUseCase],
             scheduler_service=c[SchedulerServiceInterface],
-            project_keys=["PARSCHAT", "PCT"],
+            project_keys=["PCT","PARSCHAT", "FOLLOWUP", "DASHBOARD", "PARS", "PCD", "AK", "DASH", "DEVOPS"],
         ),
     )
     container[SyncJiraIssueUseCase] = Singleton(

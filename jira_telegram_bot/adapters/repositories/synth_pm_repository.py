@@ -828,27 +828,38 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
     async def get_release_notes(self) -> List[ReleaseNoteEntity]:
         """Get all release notes from Google Sheets PM board.
+        
+        Note: This reads the Features sheet data regardless of whether PM board
+        task creation is enabled. The data is used to enrich developer board stories
+        with documentation links and descriptions.
 
         Returns:
             List of release note entities
         """
         try:
-            if not self.project_config.boards.pm_board or not self.project_config.boards.pm_board.enabled:
-                LOGGER.warning("PM board not configured or disabled")
+            LOGGER.info("get_release_notes called - starting to fetch release notes")
+            if not self.project_config.boards.pm_board:
+                LOGGER.warning("PM board not configured")
                 return []
 
             pm_board_config = self.project_config.boards.pm_board
+            LOGGER.info(f"PM board configured: enabled={pm_board_config.enabled}, reading Features sheet anyway for story enrichment")
+            sheet_range = f"{pm_board_config.sheet_name}!{pm_board_config.data_range}"
+            LOGGER.info(f"Reading release notes from sheet range: {sheet_range}")
+            
             values = await self.google_sheet_client.get_values(
                 self.project_config.spreadsheet_id,
-                f"{pm_board_config.sheet_name}!{pm_board_config.data_range}",
+                sheet_range,
             )
 
             if not values or len(values) < 2:
-                LOGGER.warning("No data found in Release Notes sheet")
+                LOGGER.warning(f"No data found in Release Notes sheet (got {len(values) if values else 0} rows)")
                 return []
 
             headers = values[0]
+            LOGGER.info(f"Release notes headers: {headers}")
             column_mapping = self._create_release_notes_column_mapping(headers)
+            LOGGER.info(f"Release notes column mapping: {column_mapping}")
 
             data_rows = values[1:]
             release_notes = []
@@ -860,8 +871,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 release_note = self._parse_row_to_release_note(idx, row, column_mapping)
                 if release_note:
                     release_notes.append(release_note)
+                    LOGGER.debug(f"Parsed release note row {idx}: version={release_note.release_version}, doc_link={release_note.documentation_link}")
+                else:
+                    LOGGER.debug(f"Skipped row {idx} (failed parsing or validation)")
 
-            LOGGER.info(f"Retrieved {len(release_notes)} release notes")
+            LOGGER.info(f"Retrieved {len(release_notes)} release notes from sheet")
+            for note in release_notes:
+                LOGGER.info(f"  - {note.release_version}: doc={note.documentation_link}, desc_len={len(note.description) if note.description else 0}")
             return release_notes
 
         except Exception as e:
@@ -3079,7 +3095,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         column_name_mappings = {
             "row_number": ["ردیف", "Row"],
             "release_version": ["ریلیز اصلی", "Release Version", "Version"],
-            "release_components": ["اجزای ریلیز", "Release Components", "Components"],
+            "release_components": ["اجزای ریلیز", "Release Components", "Components", "Feature"],
             "person_hours": ["نفر ساعت", "Person Hours"],
             "involved_people": ["افراد درگیر", "Involved People"],
             "epic": ["Epic", "Epic"],
@@ -3167,7 +3183,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             release_components = get_mapped_value("release_components")
             description = get_mapped_value("description")
 
-            if not release_version or not release_components or not description:
+            # Only release_version and release_components are required
+            # description and documentation_link are optional
+            if not release_version or not release_components:
                 return None
 
             return ReleaseNoteEntity(

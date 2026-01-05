@@ -108,8 +108,13 @@ class SynthPMUseCase:
 
             # Read Features sheet once to avoid multiple reads in loop
             release_notes = await self.repository.get_release_notes()
-            release_notes_map = {rn.release_version: rn for rn in release_notes}
-            LOGGER.info(f"Loaded {len(release_notes_map)} release notes from Features sheet")
+            # Map by both release_version AND release_components (descriptive name)
+            # Since Tasks sheet uses descriptive names, not version numbers
+            release_notes_map = {}
+            for rn in release_notes:
+                release_notes_map[rn.release_version] = rn
+                release_notes_map[rn.release_components] = rn
+            LOGGER.info(f"Loaded {len(release_notes)} release notes from Features sheet (mapped by {len(release_notes_map)} keys)")
 
             # Group features by release column
             release_groups = self._group_features_by_release(features)
@@ -348,14 +353,21 @@ class SynthPMUseCase:
                 release_note = release_notes_map.get(release_name) if release_notes_map else None
                 if release_note:
                     description = self.repository._build_story_description(release_note)
+                    LOGGER.info(f"Building description for story {existing_story_key}: doc_link={release_note.documentation_link}, desc_len={len(release_note.description) if release_note.description else 0}")
                     try:
                         await self.repository.update_jira_task_description(existing_story_key, description)
-                        LOGGER.info(f"Updated description for story {existing_story_key} from release note")
+                        LOGGER.info(f"Updated description for story {existing_story_key} from release note (length: {len(description)})")
                     except Exception as e:
                         LOGGER.warning(f"Could not update description for story {existing_story_key}: {e}")
+                else:
+                    LOGGER.warning(f"No release note found for release '{release_name}' in release_notes_map (available: {list(release_notes_map.keys())})")
             else:
                 # Create the story
                 release_note = release_notes_map.get(release_name) if release_notes_map else None
+                if release_note:
+                    LOGGER.info(f"Creating new story for '{release_name}' with release note: doc_link={release_note.documentation_link}, desc_len={len(release_note.description) if release_note.description else 0}")
+                else:
+                    LOGGER.warning(f"Creating new story for '{release_name}' WITHOUT release note (available: {list(release_notes_map.keys())})")
                 story_key = await self.repository.create_release_story(
                     release_name=release_name,
                     features=valid_features,
