@@ -57,7 +57,7 @@ services:
     volumes:
       - .:/app
     command: >
-      python3 scripts/run_scheduled_sync.py
+      python3 scripts/sync/run_scheduled_sync.py
     restart: always
     environment:
       - SYNC_INTERVAL_MINUTES=10
@@ -68,22 +68,6 @@ services:
     networks:
       - jira-bot-network
 
-
-  # synth-pm-service:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: synth_pm
-  #   image: jira_telegram_bot:v3
-  #   volumes:
-  #     - .:/app
-  #   command: >
-  #     python3 scripts/run_synth_pm.py service
-  #   restart: always
-  #   environment:
-  #     - POSTGRES_HOST=postgres
-  #     - POSTGRES_PORT=5432
-
   synth-pm-multi-project-service:
     build:
       context: .
@@ -93,7 +77,7 @@ services:
     volumes:
       - .:/app
     command: >
-      python3 scripts/run_synth_pm_service.py
+      python3 scripts/notifications/run_synth_pm_service.py
     restart: always
     environment:
       # Comma-separated project keys or JSON array: ["PARSCHAT","PROJECT2"]
@@ -101,9 +85,8 @@ services:
       - SYNTH_PM_PROJECT_KEYS=
     networks:
       - jira-bot-network
-  
 
-  # deadline-notifier:
+  # deadline-notifier-service:
   #   build:
   #     context: .
   #     dockerfile: Dockerfile
@@ -112,6 +95,22 @@ services:
   #   volumes:
   #     - .:/app
   #   command: >
-  #     python3 jira_telegram_bot/frameworks/scheduler/cron_job.py
+  #     python3 scripts/notifications/run_deadline_notifier.py
   #   restart: always
+  #   networks:
+  #     - jira-bot-network
+
+  scheduled-reports-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scheduled_reports
+    image: jira_telegram_bot:v3
+    volumes:
+      - .:/app
+    command: >
+      python3 scripts/reports/run_scheduled_reports.py
+    restart: always
+    networks:
+      - jira-bot-network
 

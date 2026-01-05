@@ -62,3 +62,15 @@ jira-report-coverage: create-reports-dir
 # Run all Jira report tests with coverage
 test-jira-reports: create-reports-dir
 	$(PYTHON) scripts/run_tests.py --all
+
+# Jira Project Sync Commands
+sync-check:
+	$(PYTHON) scripts/sync/check_sync_status.py
+
+sync-last-month:
+	$(PYTHON) scripts/sync/sync_all_projects_last_month.py
+
+sync-custom:
+	@echo "Usage: make sync-custom ARGS='--days 7' or ARGS='--projects PROJ1 PROJ2 --since 2025-12-01'"
+	@echo "Run with ARGS variable set, e.g.: make sync-custom ARGS='--days 7'"
+	$(PYTHON) scripts/sync/sync_projects_date_range.py $(ARGS)
