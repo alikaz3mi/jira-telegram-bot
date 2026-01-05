@@ -344,12 +344,15 @@ class SynthPMUseCase:
                 LOGGER.info(f"Story already exists for release {release_name}: {existing_story_key}")
                 story_key = existing_story_key
                 
-                # Update story description to empty string (stories should have no description) # TODO: add the google doc link with a short description
-                try:
-                    await self.repository.update_jira_task_description(existing_story_key, "")
-                    LOGGER.debug(f"Updated description for story {existing_story_key} to empty string")
-                except Exception as e:
-                    LOGGER.warning(f"Could not update description for story {existing_story_key}: {e}")
+                # Update story description from release note if available
+                release_note = release_notes_map.get(release_name) if release_notes_map else None
+                if release_note:
+                    description = self.repository._build_story_description(release_note)
+                    try:
+                        await self.repository.update_jira_task_description(existing_story_key, description)
+                        LOGGER.info(f"Updated description for story {existing_story_key} from release note")
+                    except Exception as e:
+                        LOGGER.warning(f"Could not update description for story {existing_story_key}: {e}")
             else:
                 # Create the story
                 release_note = release_notes_map.get(release_name) if release_notes_map else None
