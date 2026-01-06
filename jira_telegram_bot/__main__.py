@@ -30,6 +30,9 @@ from jira_telegram_bot.frameworks.telegram.user_settings_handler import (
 from jira_telegram_bot.frameworks.telegram.get_current_stories_handler import (
     GetCurrentStoriesHandler,
 )
+from jira_telegram_bot.frameworks.telegram.daily_task_status_handler import (
+    DailyTaskStatusHandler,
+)
 from jira_telegram_bot.use_cases.telegram_commands.advanced_task_creation import AdvancedTaskCreation
 from jira_telegram_bot.use_cases.telegram_commands.board_summary_generator import BoardSummaryGenerator
 from jira_telegram_bot.use_cases.telegram_commands.create_task import JiraTaskCreation
@@ -38,7 +41,9 @@ from jira_telegram_bot.use_cases.telegram_commands.task_status import TaskStatus
 from jira_telegram_bot.use_cases.telegram_commands.transition_task import JiraTaskTransition
 from jira_telegram_bot.use_cases.telegram_commands.user_settings import UserSettingsConversation
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import GetCurrentStoriesUseCase
+from jira_telegram_bot.use_cases.telegram_commands.daily_task_status import DailyTaskStatus
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
+from jira_telegram_bot.frameworks.scheduler.ap_scheduler_service import APSchedulerService
 
 filterwarnings(
     action="ignore",
@@ -64,7 +69,8 @@ async def help_command(update, context):
         "6. **/get_users_time** - Get users' time spent on tasks\n"
         "7. **/advanced_task** - Create multiple related tasks using AI-powered task breakdown\n"
         "8. **/get_current_stories** - Get current stories in a sprint as XLSX report\n"
-        "9. **/cancel** - Cancel the current running operation"
+        "9. **/daily_status** - بررسی وضعیت تسک‌های روزانه\n"
+        "10. **/cancel** - Cancel the current running operation"
     )
     await update.message.reply_text(help_text)
     LOGGER.info("Displayed help information")
@@ -136,6 +142,7 @@ def setup_and_run():
     board_summary_generator_use_case = container[BoardSummaryGenerator]
     advanced_task_creation_use_case = container[AdvancedTaskCreation]
     get_current_stories_use_case = container[GetCurrentStoriesUseCase]
+    daily_task_status_use_case = container[DailyTaskStatus]
     speech_processor = container[SpeechProcessor]
 
     # Create handlers
@@ -152,6 +159,7 @@ def setup_and_run():
         speech_processor,
     )
     get_current_stories_handler = container[GetCurrentStoriesHandler]
+    daily_task_status_handler = DailyTaskStatusHandler(daily_task_status_use_case)
 
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(task_creation_handler.get_handler())
@@ -162,7 +170,30 @@ def setup_and_run():
     application.add_handler(task_get_users_time_handler.get_handler())
     application.add_handler(advanced_task_creation_handler.get_handler())
     application.add_handler(get_current_stories_handler.get_handler())
+    application.add_handler(daily_task_status_handler.get_handler())
     application.add_error_handler(error)
+    
+    # Setup scheduler for daily tasks
+    async def schedule_daily_tasks(application):
+        """Schedule daily task status checks."""
+        scheduler = APSchedulerService()
+        
+        async def daily_trigger():
+            await daily_task_status_use_case.trigger_for_all_users(application)
+        
+        # Schedule for 9:00 AM daily (adjust as needed)
+        await scheduler.schedule_daily_job(
+            job_func=daily_trigger,
+            hour=9,
+            minute=0,
+            job_name="daily_task_status_trigger",
+        )
+        await scheduler.start_scheduler()
+        LOGGER.info("Daily task status scheduler started")
+    
+    # Set post_init callback
+    application.post_init = schedule_daily_tasks
+    
     startup()
     
     # Start the bot

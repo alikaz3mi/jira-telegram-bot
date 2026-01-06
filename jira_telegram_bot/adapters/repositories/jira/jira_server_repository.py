@@ -1584,3 +1584,93 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.debug(f"Error getting department for {jira_username}: {e}")
         return None
+
+    def get_user_actionable_tasks(self, jira_username: str) -> List[Issue]:
+        """Get tasks that require user attention today.
+        
+        Args:
+            jira_username: Jira username to filter tasks for.
+            
+        Returns:
+            List of Jira issues requiring attention.
+        """
+        jql = (
+            f'assignee = "{jira_username}" AND resolution = Unresolved AND '
+            f'(Sprint in openSprints() AND ("Target start" <= now() OR "Target start" is EMPTY) '
+            f'OR Sprint is EMPTY AND ("Target start" <= now() OR "Target start" is EMPTY)) '
+            f'ORDER BY cf[10109] ASC'
+        )
+        
+        try:
+            issues = self.jira.search_issues(jql, maxResults=50)
+            return issues
+        except Exception as e:
+            LOGGER.error(f"Failed to fetch actionable tasks for {jira_username}: {e}")
+            return []
+
+    def log_work(
+        self,
+        issue_key: str,
+        time_spent_seconds: int,
+        comment: Optional[str] = None,
+    ) -> None:
+        """Log work time on an issue.
+        
+        Args:
+            issue_key: Jira issue key (e.g., "PROJ-123").
+            time_spent_seconds: Time spent in seconds.
+            comment: Optional work log comment.
+        """
+        try:
+            self.jira.add_worklog(
+                issue=issue_key,
+                timeSpentSeconds=time_spent_seconds,
+                comment=comment,
+            )
+            LOGGER.info(f"Logged {time_spent_seconds}s on {issue_key}")
+        except Exception as e:
+            LOGGER.error(f"Failed to log work on {issue_key}: {e}")
+            raise
+
+    def set_delay_reason(
+        self,
+        issue_key: str,
+        reason: str,
+        comment: Optional[str] = None,
+    ) -> None:
+        """Set delay reason on an issue.
+        
+        Args:
+            issue_key: Jira issue key.
+            reason: Delay reason value.
+            comment: Optional comment explaining the delay.
+        """
+        delay_reason_field = self.jira_delay_reason_id
+        
+        try:
+            issue = self.jira.issue(issue_key)
+            issue.update(fields={delay_reason_field: reason})
+            
+            if comment:
+                self.jira.add_comment(issue_key, comment)
+                
+            LOGGER.info(f"Set delay reason '{reason}' on {issue_key}")
+        except Exception as e:
+            LOGGER.error(f"Failed to set delay reason on {issue_key}: {e}")
+            raise
+
+    def get_available_transitions(self, issue_key: str) -> List[dict]:
+        """Get available transitions for an issue.
+        
+        Args:
+            issue_key: Jira issue key.
+            
+        Returns:
+            List of available transitions with id and name.
+        """
+        try:
+            transitions = self.jira.transitions(issue_key)
+            return [{"id": t["id"], "name": t["name"]} for t in transitions]
+        except Exception as e:
+            LOGGER.error(f"Failed to get transitions for {issue_key}: {e}")
+            return []

@@ -258,6 +258,9 @@ from jira_telegram_bot.adapters.repositories.task_story_repository import (
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
     GetCurrentStoriesUseCase,
 )
+from jira_telegram_bot.use_cases.telegram_commands.daily_task_status import (
+    DailyTaskStatus,
+)
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase
 from jira_telegram_bot.use_cases.webhooks import TelegramWebhookUseCase
 from jira_telegram_bot.entities.bugs_synchronization import BugImprovementSyncConfig
@@ -915,6 +918,14 @@ def configure_team_evaluation_dependencies(container: Container):
     container[SprintWebhookHandler] = Singleton(
         lambda c: SprintWebhookHandler(
             team_evaluation_use_case=c[SprintClosedTeamEvaluationUseCase],
+        ),
+    )
+
+    # Daily task status use case
+    container[DailyTaskStatus] = Singleton(
+        lambda c: DailyTaskStatus(
+            jira_repository=c[TaskManagerRepositoryInterface],
+            user_config=c[UserConfigInterface],
         ),
     )
 

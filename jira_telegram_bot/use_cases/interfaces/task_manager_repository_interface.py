@@ -764,3 +764,65 @@ class TaskManagerRepositoryInterface(ABC):
             Tuple of (eta_hours, total_hours).
         """
         pass
+
+    @abstractmethod
+    def get_user_actionable_tasks(self, jira_username: str) -> List[Issue]:
+        """Get tasks that require user attention today.
+        
+        Uses JQL filter:
+        assignee = {username} AND resolution = Unresolved AND 
+        (Sprint in openSprints() AND ("Target start" <= now() OR "Target start" is EMPTY) 
+        OR Sprint is EMPTY AND ("Target start" <= now() OR "Target start" is EMPTY)) 
+        ORDER BY cf[10109] ASC
+        
+        Args:
+            jira_username: Jira username to filter tasks for.
+            
+        Returns:
+            List of Jira issues requiring attention.
+        """
+        pass
+
+    @abstractmethod
+    def log_work(
+        self,
+        issue_key: str,
+        time_spent_seconds: int,
+        comment: Optional[str] = None,
+    ) -> None:
+        """Log work time on an issue.
+        
+        Args:
+            issue_key: Jira issue key (e.g., "PROJ-123").
+            time_spent_seconds: Time spent in seconds.
+            comment: Optional work log comment.
+        """
+        pass
+
+    @abstractmethod
+    def set_delay_reason(
+        self,
+        issue_key: str,
+        reason: str,
+        comment: Optional[str] = None,
+    ) -> None:
+        """Set delay reason on an issue.
+        
+        Args:
+            issue_key: Jira issue key.
+            reason: Delay reason value.
+            comment: Optional comment explaining the delay.
+        """
+        pass
+
+    @abstractmethod
+    def get_available_transitions(self, issue_key: str) -> List[dict]:
+        """Get available transitions for an issue.
+        
+        Args:
+            issue_key: Jira issue key.
+            
+        Returns:
+            List of available transitions with id and name.
+        """
+        pass
