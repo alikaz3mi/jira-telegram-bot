@@ -42,7 +42,7 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         "no_tasks": "🎉 تبریک! هیچ تسک فعالی برای امروز ندارید.",
         "task_header": "📋 تسک {index} از {total}",
         "task_details": (
-            "*کلید:* `{key}`\n"
+            "*کلید:* [{key}]({jira_url})\n"
             "*عنوان:* {summary}\n"
             "*وضعیت:* {status}\n"
             "*استوری پوینت:* {points}\n"
@@ -212,8 +212,12 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         points = getattr(issue.fields, "customfield_10106", None) or "-"
         deadline = getattr(issue.fields, "duedate", None) or "-"
         
+        jira_base_url = self.jira_repository.settings.domain
+        jira_url = f"{jira_base_url.scheme}://{jira_base_url.host}/browse/{issue.key}"
+        
         details = self.TEXTS["task_details"].format(
             key=issue.key,
+            jira_url=jira_url,
             summary=issue.fields.summary,
             status=issue.fields.status.name,
             points=points,
@@ -679,14 +683,18 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         """
         LOGGER.info("Triggering daily task status for all users")
         
-        all_users = self.user_config.get_all_users()
+        all_users_dict = self.user_config.get_all_user_configs()
+        all_users = list(all_users_dict.values())
         
         for user_cfg in all_users:
             try:
                 if not user_cfg.telegram_user_chat_id:
                     continue
+                
                     
                 jira_username = user_cfg.jira_username
+                if jira_username != 'a_kazemi':
+                    continue
                 tasks = self.jira_repository.get_user_actionable_tasks(jira_username)
                 
                 if not tasks:

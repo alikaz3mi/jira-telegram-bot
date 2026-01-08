@@ -62,6 +62,39 @@ class APSchedulerService(SchedulerServiceInterface):
             LOGGER.error(f"Failed to schedule job '{job_name}': {e}")
             raise
 
+    async def schedule_daily_job(
+        self,
+        job_func: Callable,
+        hour: int,
+        minute: int,
+        job_name: str,
+    ) -> None:
+        """Schedule a daily job using cron trigger.
+        
+        Args:
+            job_func: The function to execute.
+            hour: Hour to run (0-23).
+            minute: Minute to run (0-59).
+            job_name: Unique name for the job.
+        """
+        try:
+            self._scheduler.add_job(
+                job_func,
+                'cron',
+                hour=hour,
+                minute=minute,
+                id=job_name,
+                replace_existing=True,
+            )
+            
+            LOGGER.info(
+                f"Scheduled daily job '{job_name}' to run at {hour:02d}:{minute:02d}"
+            )
+            
+        except Exception as e:
+            LOGGER.error(f"Failed to schedule daily job '{job_name}': {e}")
+            raise
+
     async def start_scheduler(self) -> None:
         """Start the scheduler service."""
         if not self._is_running:
@@ -69,10 +102,6 @@ class APSchedulerService(SchedulerServiceInterface):
                 self._scheduler.start()
                 self._is_running = True
                 LOGGER.info("Scheduler service started successfully")
-                
-                # Keep the scheduler running
-                while self._is_running:
-                    await asyncio.sleep(1)
                     
             except Exception as e:
                 LOGGER.error(f"Failed to start scheduler: {e}")
