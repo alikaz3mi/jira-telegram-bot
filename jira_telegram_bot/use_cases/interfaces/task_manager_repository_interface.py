@@ -789,6 +789,7 @@ class TaskManagerRepositoryInterface(ABC):
         issue_key: str,
         time_spent_seconds: int,
         comment: Optional[str] = None,
+        started_date: Optional[str] = None,
     ) -> None:
         """Log work time on an issue.
         
@@ -796,6 +797,7 @@ class TaskManagerRepositoryInterface(ABC):
             issue_key: Jira issue key (e.g., "PROJ-123").
             time_spent_seconds: Time spent in seconds.
             comment: Optional work log comment.
+            started_date: Optional date when work started (YYYY-MM-DD format).
         """
         pass
 

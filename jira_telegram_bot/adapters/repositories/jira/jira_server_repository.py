@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from typing import Dict
 from typing import List
@@ -1588,11 +1588,13 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
     def get_user_actionable_tasks(self, jira_username: str) -> List[Issue]:
         """Get tasks that require user attention today.
         
+        Filters out tasks that have blocking dependencies not yet in review or done.
+        
         Args:
             jira_username: Jira username to filter tasks for.
             
         Returns:
-            List of Jira issues requiring attention.
+            List of Jira issues requiring attention with no blocking dependencies.
         """
         jql = (
             f'assignee = "{jira_username}" AND resolution = Unresolved AND '
@@ -1602,8 +1604,45 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         )
         
         try:
-            issues = self.jira.search_issues(jql, maxResults=50)
-            return issues
+            issues = self.jira.search_issues(jql, maxResults=50, expand="issuelinks")
+            
+            # Filter out issues with blocking dependencies
+            actionable_issues = []
+            review_done_statuses = [
+                "review", "done", "closed", "resolved", 
+                "in review", "code review", "testing",
+                "ready for test", "ready for testing"
+            ]
+            
+            for issue in issues:
+                has_blocking_dependency = False
+                
+                # Check if issue has linked issues (dependencies)
+                if hasattr(issue.fields, "issuelinks") and issue.fields.issuelinks:
+                    for link in issue.fields.issuelinks:
+                        # Check inward links (issues this one depends on)
+                        if hasattr(link, "inwardIssue"):
+                            dependency = link.inwardIssue
+                            dependency_status = dependency.fields.status.name.lower()
+                            
+                            # If dependency is not in review/done, this task is blocked
+                            if dependency_status not in review_done_statuses:
+                                LOGGER.debug(
+                                    f"Filtering out {issue.key} - blocked by {dependency.key} "
+                                    f"(status: {dependency.fields.status.name})"
+                                )
+                                has_blocking_dependency = True
+                                break
+                
+                if not has_blocking_dependency:
+                    actionable_issues.append(issue)
+            
+            LOGGER.info(
+                f"Found {len(actionable_issues)} actionable tasks for {jira_username} "
+                f"(filtered from {len(issues)} total)"
+            )
+            return actionable_issues
+            
         except Exception as e:
             LOGGER.error(f"Failed to fetch actionable tasks for {jira_username}: {e}")
             return []
@@ -1613,6 +1652,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         issue_key: str,
         time_spent_seconds: int,
         comment: Optional[str] = None,
+        started_date: Optional[str] = None,
     ) -> None:
         """Log work time on an issue.
         
@@ -1620,14 +1660,29 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             issue_key: Jira issue key (e.g., "PROJ-123").
             time_spent_seconds: Time spent in seconds.
             comment: Optional work log comment.
+            started_date: Optional date when work started (YYYY-MM-DD format).
         """
         try:
-            self.jira.add_worklog(
-                issue=issue_key,
-                timeSpentSeconds=time_spent_seconds,
-                comment=comment,
-            )
-            LOGGER.info(f"Logged {time_spent_seconds}s on {issue_key}")
+            
+            # Build worklog parameters
+            worklog_params = {
+                "issue": issue_key,
+                "timeSpentSeconds": time_spent_seconds,
+            }
+            
+            if comment:
+                worklog_params["comment"] = comment
+                
+            if started_date:
+                # Convert string date to timezone-aware datetime object
+                # Parse the date string
+                dt = datetime.strptime(started_date, "%Y-%m-%d")
+                # Make it timezone-aware (UTC)
+                dt_utc = dt.replace(hour=9, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+                worklog_params["started"] = dt_utc
+            
+            self.jira.add_worklog(**worklog_params)
+            LOGGER.info(f"Logged {time_spent_seconds}s on {issue_key} for date {started_date or 'today'}")
         except Exception as e:
             LOGGER.error(f"Failed to log work on {issue_key}: {e}")
             raise

@@ -29,13 +29,15 @@ class DailyTaskStatus(DailyTaskStatusInterface):
 
     (
         TASK_DISPLAY,
+        TIME_SPENT_DATE,
         TIME_SPENT,
         DELAY_REASON,
         DELAY_COMMENT,
         STATUS_TRANSITION,
+        POST_TRANSITION_ACTION,
         SUBTASK_REQUEST,
         SUBTASK_CONFIRM,
-    ) = range(7)
+    ) = range(9)
 
     TEXTS = {
         "greeting": "سلام! 👋\nوقت بررسی وضعیت تسک‌های امروز است.",
@@ -54,6 +56,10 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         "report_delay": "⚠️ گزارش تأخیر",
         "request_subtask": "➕ درخواست ساب‌تسک",
         "skip": "⏭ بعدی",
+        "select_date": "لطفاً روزی که روی تسک کار کرده‌اید را انتخاب کنید:",
+        "today": "امروز",
+        "yesterday": "دیروز",
+        "days_ago": "{days} روز پیش",
         "hours_prompt": "چند ساعت روی این تسک کار کرده‌اید؟",
         "hours_logged": "✅ {hours} ساعت برای تسک {key} ثبت شد.",
         "select_delay_reason": "لطفاً دلیل تأخیر را انتخاب کنید:",
@@ -68,6 +74,9 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         "delay_recorded": "✅ دلیل تأخیر ثبت شد.",
         "select_transition": "وضعیت جدید را انتخاب کنید:",
         "transition_done": "✅ وضعیت تسک به {status} تغییر کرد.",
+        "want_to_log_time": "آیا می‌خواهید زمان صرف شده را ثبت کنید؟",
+        "yes": "✅ بله",
+        "no": "❌ خیر",
         "subtask_prompt": "لطفاً عنوان ساب‌تسک مورد نظر را وارد کنید:",
         "subtask_sent_to_po": "✅ درخواست ساب‌تسک به مدیر پروژه ({po}) ارسال شد.",
         "subtask_request_for_po": (
@@ -145,6 +154,33 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         options = [f"{h} {self.TEXTS['hour_suffix']}" for h in self.HOURS_OPTIONS]
         data = [f"hours|{h}" for h in self.HOURS_OPTIONS]
         return self._build_keyboard(options, data, row_width=3, include_back=True)
+
+    def _build_date_keyboard(self) -> InlineKeyboardMarkup:
+        """Build keyboard for date selection (last 7 days).
+        
+        Returns:
+            InlineKeyboardMarkup with date options.
+        """
+        from datetime import datetime, timedelta
+        
+        options = []
+        data = []
+        
+        for days_back in range(7):
+            if days_back == 0:
+                label = self.TEXTS["today"]
+            elif days_back == 1:
+                label = self.TEXTS["yesterday"]
+            else:
+                label = self.TEXTS["days_ago"].format(days=days_back)
+            
+            date = datetime.now() - timedelta(days=days_back)
+            date_str = date.strftime("%Y-%m-%d")
+            
+            options.append(label)
+            data.append(f"date|{date_str}")
+        
+        return self._build_keyboard(options, data, row_width=2, include_back=True)
 
     def _build_task_action_keyboard(self) -> InlineKeyboardMarkup:
         """Build keyboard for task actions.
@@ -331,12 +367,12 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         action = query.data.split("|")[1]
         
         if action == "log_time":
-            keyboard = self._build_hours_keyboard()
+            keyboard = self._build_date_keyboard()
             await query.edit_message_text(
-                self.TEXTS["hours_prompt"],
+                self.TEXTS["select_date"],
                 reply_markup=keyboard,
             )
-            return self.TIME_SPENT
+            return self.TIME_SPENT_DATE
             
         elif action == "transition":
             session = context.user_data["daily_status_session"]
@@ -396,10 +432,15 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         hours = float(query.data.split("|")[1])
         session = context.user_data["daily_status_session"]
         current_key = session.tasks[session.current_task_index]
+        selected_date = context.user_data.get("selected_work_date")
         
         try:
             time_spent_seconds = int(hours * 3600)
-            self.jira_repository.log_work(current_key, time_spent_seconds)
+            self.jira_repository.log_work(
+                current_key, 
+                time_spent_seconds,
+                started_date=selected_date,
+            )
             
             session.updates.append(TaskStatusUpdate(
                 issue_key=current_key,
@@ -414,9 +455,42 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         except Exception as e:
             LOGGER.error(f"Failed to log work: {e}")
             await query.edit_message_text(self.TEXTS["error"])
+        
+        # Clear selected date
+        context.user_data.pop("selected_work_date", None)
             
         session.current_task_index += 1
         return await self._show_current_task(update, context)
+
+    async def handle_date_selection(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Handle date selection for time logging.
+        
+        Args:
+            update: Telegram update object.
+            context: Telegram callback context.
+            
+        Returns:
+            Next conversation state.
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "back":
+            return await self._show_current_task(update, context)
+        
+        selected_date = query.data.split("|")[1]
+        context.user_data["selected_work_date"] = selected_date
+        
+        keyboard = self._build_hours_keyboard()
+        await query.edit_message_text(
+            self.TEXTS["hours_prompt"],
+            reply_markup=keyboard,
+        )
+        return self.TIME_SPENT
 
     async def handle_delay_reason(
         self,
@@ -514,16 +588,59 @@ class DailyTaskStatus(DailyTaskStatusInterface):
             
             new_status = self.jira_repository.get_issue(current_key).fields.status.name
             
+            message = self.TEXTS["transition_done"].format(status=new_status)
+            message += f"\n\n{self.TEXTS['want_to_log_time']}"
+            
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(self.TEXTS["yes"], callback_data="post_trans|log_time"),
+                    InlineKeyboardButton(self.TEXTS["no"], callback_data="post_trans|skip"),
+                ]
+            ])
+            
             await query.edit_message_text(
-                self.TEXTS["transition_done"].format(status=new_status)
+                message,
+                reply_markup=keyboard,
             )
+            return self.POST_TRANSITION_ACTION
             
         except Exception as e:
             LOGGER.error(f"Failed to transition issue: {e}")
             await query.edit_message_text(self.TEXTS["error"])
             
-        session.current_task_index += 1
-        return await self._show_current_task(update, context)
+            session.current_task_index += 1
+            return await self._show_current_task(update, context)
+
+    async def handle_post_transition_action(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Handle action after transition (log time or skip).
+        
+        Args:
+            update: Telegram update object.
+            context: Telegram callback context.
+            
+        Returns:
+            Next conversation state.
+        """
+        query = update.callback_query
+        await query.answer()
+        
+        action = query.data.split("|")[1]
+        
+        if action == "log_time":
+            keyboard = self._build_date_keyboard()
+            await query.edit_message_text(
+                self.TEXTS["select_date"],
+                reply_markup=keyboard,
+            )
+            return self.TIME_SPENT_DATE
+        else:
+            session = context.user_data["daily_status_session"]
+            session.current_task_index += 1
+            return await self._show_current_task(update, context)
 
     async def handle_subtask_request(
         self,

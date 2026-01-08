@@ -45,6 +45,12 @@ class DailyTaskStatusHandler(TaskHandlerInterface):
                         pattern=r"^action\|",
                     ),
                 ],
+                self.use_case.TIME_SPENT_DATE: [
+                    CallbackQueryHandler(
+                        self.use_case.handle_date_selection,
+                        pattern=r"^(date\||back)",
+                    ),
+                ],
                 self.use_case.TIME_SPENT: [
                     CallbackQueryHandler(
                         self.use_case.handle_time_spent,
@@ -68,6 +74,12 @@ class DailyTaskStatusHandler(TaskHandlerInterface):
                     CallbackQueryHandler(
                         self.use_case.handle_transition,
                         pattern=r"^(transition\||back)",
+                    ),
+                ],
+                self.use_case.POST_TRANSITION_ACTION: [
+                    CallbackQueryHandler(
+                        self.use_case.handle_post_transition_action,
+                        pattern=r"^post_trans\|",
                     ),
                 ],
                 self.use_case.SUBTASK_REQUEST: [
