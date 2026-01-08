@@ -48,13 +48,13 @@ class DailyTaskStatusHandler(TaskHandlerInterface):
                 self.use_case.TIME_SPENT: [
                     CallbackQueryHandler(
                         self.use_case.handle_time_spent,
-                        pattern=r"^(hours\||back)$",
+                        pattern=r"^(hours\||back)",
                     ),
                 ],
                 self.use_case.DELAY_REASON: [
                     CallbackQueryHandler(
                         self.use_case.handle_delay_reason,
-                        pattern=r"^(delay\||back)$",
+                        pattern=r"^(delay\||back)",
                     ),
                 ],
                 self.use_case.DELAY_COMMENT: [
@@ -67,7 +67,7 @@ class DailyTaskStatusHandler(TaskHandlerInterface):
                 self.use_case.STATUS_TRANSITION: [
                     CallbackQueryHandler(
                         self.use_case.handle_transition,
-                        pattern=r"^(transition\||back)$",
+                        pattern=r"^(transition\||back)",
                     ),
                 ],
                 self.use_case.SUBTASK_REQUEST: [

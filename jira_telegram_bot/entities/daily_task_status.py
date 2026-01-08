@@ -7,16 +7,13 @@ from pydantic import BaseModel
 
 
 class DelayReason(str, Enum):
-    """Enumeration of possible delay reasons."""
+    """Enumeration of possible delay reasons mapped to Jira values."""
     
-    DEPENDENCY = "dependency"
-    UNCLEAR_REQUIREMENTS = "unclear_requirements"
-    TECHNICAL_ISSUES = "technical_issues"
-    OTHER_PRIORITIES = "other_priorities"
-    PERSONAL = "personal"
-    BLOCKED = "blocked"
-    WAITING_REVIEW = "waiting_review"
-    OTHER = "other"
+    UNCLEAR_EXPLANATION = "unclear explanation"
+    INCOMPLETE_DESIGN = "incomplete design"
+    BLOCKING_ISSUE = "blocking issue"
+    TECHNICAL_ISSUE = "technical issue"
+    LACK_OF_KNOWLEDGE = "lack of knowledge"
 
 
 class TaskStatusUpdate(BaseModel):

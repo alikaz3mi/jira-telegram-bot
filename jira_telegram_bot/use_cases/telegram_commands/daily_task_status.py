@@ -58,14 +58,11 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         "hours_logged": "✅ {hours} ساعت برای تسک {key} ثبت شد.",
         "select_delay_reason": "لطفاً دلیل تأخیر را انتخاب کنید:",
         "delay_reasons": {
-            DelayReason.DEPENDENCY: "🔗 وابستگی به تسک دیگر",
-            DelayReason.UNCLEAR_REQUIREMENTS: "❓ نامشخص بودن نیازمندی‌ها",
-            DelayReason.TECHNICAL_ISSUES: "🔧 مشکلات فنی",
-            DelayReason.OTHER_PRIORITIES: "📊 اولویت‌های دیگر",
-            DelayReason.PERSONAL: "👤 دلایل شخصی",
-            DelayReason.BLOCKED: "🚫 بلاک شده",
-            DelayReason.WAITING_REVIEW: "👀 در انتظار بررسی",
-            DelayReason.OTHER: "📝 سایر",
+            DelayReason.UNCLEAR_EXPLANATION: "❓ توضیح نامشخص",
+            DelayReason.INCOMPLETE_DESIGN: "🎨 طراحی ناقص",
+            DelayReason.BLOCKING_ISSUE: "🚫 مسئله بلاک کننده",
+            DelayReason.TECHNICAL_ISSUE: "🔧 مسئله فنی",
+            DelayReason.LACK_OF_KNOWLEDGE: "📚 کمبود دانش",
         },
         "delay_comment_prompt": "لطفاً توضیحات بیشتر را وارد کنید (یا /skip برای رد شدن):",
         "delay_recorded": "✅ دلیل تأخیر ثبت شد.",
@@ -606,7 +603,7 @@ class DailyTaskStatus(DailyTaskStatusInterface):
             User config for the PO, or None if not found.
         """
         try:
-            all_users = self.user_config.get_all_users()
+            all_users = self.user_config.get_all_user_configs()
             for user in all_users:
                 if hasattr(user, "projects") and user.projects:
                     for project in user.projects:

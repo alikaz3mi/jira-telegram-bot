@@ -1649,7 +1649,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         
         try:
             issue = self.jira.issue(issue_key)
-            issue.update(fields={delay_reason_field: reason})
+            # Delay reason is an option field, needs {"value": "..."} format
+            issue.update(fields={delay_reason_field: {"value": reason}})
             
             if comment:
                 self.jira.add_comment(issue_key, comment)
