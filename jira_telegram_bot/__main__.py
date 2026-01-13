@@ -184,12 +184,12 @@ def setup_and_run():
         # Schedule for 9:00 AM daily (adjust as needed)
         await scheduler.schedule_daily_job(
             job_func=daily_trigger,
-            hour=7,
-            minute=52,
+            hour=10,
+            minute=49,
             job_name="daily_task_status_trigger",
         )
         await scheduler.start_scheduler()
-        LOGGER.info("Daily task status scheduler started (runs at 7:52 AM daily)")
+        LOGGER.info("Daily task status scheduler started (runs at 10:25 AM daily)")
     
     # Set post_init callback
     application.post_init = schedule_daily_tasks

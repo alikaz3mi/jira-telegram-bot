@@ -1,6 +1,7 @@
 """Daily task status tracking use case."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -44,11 +45,19 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         "no_tasks": "🎉 تبریک! هیچ تسک فعالی برای امروز ندارید.",
         "task_header": "📋 تسک {index} از {total}",
         "task_details": (
-            "*کلید:* [{key}]({jira_url})\n"
-            "*عنوان:* {summary}\n"
-            "*وضعیت:* {status}\n"
-            "*استوری پوینت:* {points}\n"
-            "*ددلاین:* {deadline}"
+            "🎫 *تیکت:* [{key}]({jira_url})\n"
+            "📝 *عنوان:* {summary}\n"
+            "📊 *وضعیت:* {status}\n"
+            "⭐ *استوری پوینت:* {points}\n"
+            "🗓 *ددلاین:* {deadline}"
+        ),
+        "task_details_with_parent": (
+            "🎫 *تیکت:* [{key}]({jira_url})\n"
+            "📝 *عنوان:* {summary}\n"
+            "🔗 *استوری پدر:* {parent_summary}\n"
+            "📊 *وضعیت:* {status}\n"
+            "⭐ *استوری پوینت:* {points}\n"
+            "🗓 *ددلاین:* {deadline}"
         ),
         "select_action": "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
         "log_time": "⏱ ثبت زمان",
@@ -224,6 +233,30 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         data = [f"transition|{t['id']}" for t in transitions]
         return self._build_keyboard(options, data, row_width=2, include_back=True)
 
+    def _get_persian_date(self) -> str:
+        """Get current date in Persian format with day of week.
+        
+        Returns:
+            Formatted date string like 'شنبه 2026/01/10'.
+        """
+        now = datetime.now()
+        
+        # Persian weekday names
+        persian_weekdays = [
+            "دوشنبه",  # Monday
+            "سه‌شنبه",  # Tuesday
+            "چهارشنبه",  # Wednesday
+            "پنج‌شنبه",  # Thursday
+            "جمعه",  # Friday
+            "شنبه",  # Saturday
+            "یکشنبه",  # Sunday
+        ]
+        
+        weekday_name = persian_weekdays[now.weekday()]
+        date_str = now.strftime("%Y/%m/%d")
+        
+        return f"{weekday_name} {date_str}"
+
     def _format_task_message(
         self,
         issue: Any,
@@ -248,14 +281,38 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         jira_base_url = self.jira_repository.settings.domain
         jira_url = f"{jira_base_url.scheme}://{jira_base_url.host}/browse/{issue.key}"
         
-        details = self.TEXTS["task_details"].format(
-            key=issue.key,
-            jira_url=jira_url,
-            summary=issue.fields.summary,
-            status=issue.fields.status.name,
-            points=points,
-            deadline=deadline,
-        )
+        # Check if it's a subtask and get parent story summary
+        is_subtask = issue.fields.issuetype.name.lower() == "sub-task"
+        parent_summary = None
+        
+        if is_subtask and hasattr(issue.fields, "parent"):
+            try:
+                parent_issue = self.jira_repository.get_issue(issue.fields.parent.key)
+                if parent_issue:
+                    parent_summary = parent_issue.fields.summary
+            except Exception as e:
+                LOGGER.warning(f"Could not fetch parent for subtask {issue.key}: {e}")
+        
+        # Use appropriate template based on whether it's a subtask
+        if is_subtask and parent_summary:
+            details = self.TEXTS["task_details_with_parent"].format(
+                key=issue.key,
+                jira_url=jira_url,
+                summary=issue.fields.summary,
+                parent_summary=parent_summary,
+                status=issue.fields.status.name,
+                points=points,
+                deadline=deadline,
+            )
+        else:
+            details = self.TEXTS["task_details"].format(
+                key=issue.key,
+                jira_url=jira_url,
+                summary=issue.fields.summary,
+                status=issue.fields.status.name,
+                points=points,
+                deadline=deadline,
+            )
         
         return f"{header}\n\n{details}\n\n{self.TEXTS['select_action']}"
 
@@ -297,7 +354,10 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         context.user_data["daily_status_session"] = session
         context.user_data["daily_status_issues"] = {task.key: task for task in tasks}
         
-        await update.message.reply_text(self.TEXTS["greeting"])
+        # Add today's date to greeting
+        persian_date = self._get_persian_date()
+        greeting_with_date = f"{self.TEXTS['greeting']}\n\n📅 {persian_date}"
+        await update.message.reply_text(greeting_with_date)
         
         return await self._show_current_task(update, context)
 
