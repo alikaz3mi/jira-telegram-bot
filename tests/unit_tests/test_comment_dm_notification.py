@@ -13,7 +13,7 @@ class TestCommentDMNotification(unittest.IsolatedAsyncioTestCase):
     async def test_sends_dm_to_assignee_when_comment_from_other_user(self):
         """Should send DM to assignee when comment is from a different user."""
         # Setup mock data
-        issue_key = "PCT-1090"
+        issue_key = "PROJ1-1090"
         body = {
             "comment": {
                 "body": "Please review this task urgently.",
@@ -37,7 +37,7 @@ class TestCommentDMNotification(unittest.IsolatedAsyncioTestCase):
             
             # Mock user configs
             commenter_cfg = MagicMock()
-            commenter_cfg.telegram_username = "alikaz3mi"
+            commenter_cfg.telegram_username = "admin_user"
             commenter_cfg.telegram_user_chat_id = 100375147
             
             assignee_cfg = MagicMock()
@@ -62,13 +62,13 @@ class TestCommentDMNotification(unittest.IsolatedAsyncioTestCase):
             # Check DM to assignee
             dm_call = mock_send.call_args_list[1]
             self.assertEqual(dm_call[0][0], 163558016)  # assignee's chat_id
-            self.assertIn("@alikaz3mi", dm_call[0][1])  # commenter mention
-            self.assertIn("PCT-1090", dm_call[0][1])  # issue key
+            self.assertIn("@admin_user", dm_call[0][1])  # commenter mention
+            self.assertIn("PROJ1-1090", dm_call[0][1])  # issue key
             self.assertIn("Please review this task urgently", dm_call[0][1])  # comment body
 
     async def test_does_not_send_dm_when_assignee_comments_on_own_task(self):
         """Should NOT send DM to assignee when they comment on their own task."""
-        issue_key = "PCT-1090"
+        issue_key = "PROJ1-1090"
         body = {
             "comment": {
                 "body": "I'm working on this.",
@@ -103,7 +103,7 @@ class TestCommentDMNotification(unittest.IsolatedAsyncioTestCase):
 
     async def test_does_not_send_dm_when_no_assignee(self):
         """Should NOT send DM when task has no assignee."""
-        issue_key = "PCT-1090"
+        issue_key = "PROJ1-1090"
         body = {
             "comment": {
                 "body": "Anyone wants to take this?",
@@ -122,7 +122,7 @@ class TestCommentDMNotification(unittest.IsolatedAsyncioTestCase):
             mock_jira_repo.jira.issue.return_value = mock_issue
             
             commenter_cfg = MagicMock()
-            commenter_cfg.telegram_username = "alikaz3mi"
+            commenter_cfg.telegram_username = "admin_user"
             mock_lookup.return_value = commenter_cfg
             
             # Execute
@@ -133,10 +133,10 @@ class TestCommentDMNotification(unittest.IsolatedAsyncioTestCase):
 
     async def test_skips_telegram_originated_comments(self):
         """Should skip comments that originated from Telegram (to avoid loops)."""
-        issue_key = "PCT-1090"
+        issue_key = "PROJ1-1090"
         body = {
             "comment": {
-                "body": "h6. Comment from @alikaz3mi:\n\nThis comment came from Telegram",
+                "body": "h6. Comment from @admin_user:\n\nThis comment came from Telegram",
                 "author": {"name": "a_kazemi"},
             }
         }

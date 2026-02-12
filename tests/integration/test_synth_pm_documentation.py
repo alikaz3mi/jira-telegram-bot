@@ -117,7 +117,7 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
             jira_issue_key="PC-456",
         )
 
-        self.mock_settings.pm_project_key = "PARSCHAT"
+        self.mock_settings.pm_project_key = "MYPROJECT"
 
         # Mock repository methods
         self.mock_repository.get_project_info.return_value = {
@@ -155,7 +155,7 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Documentation updated", result["message"])
 
         # Verify repository calls
-        self.mock_repository.get_project_info.assert_called_once_with("PARSCHAT")
+        self.mock_repository.get_project_info.assert_called_once_with("MYPROJECT")
         self.mock_repository.update_jira_task_description.assert_called_once()
         self.mock_repository.update_developer_board_feature.assert_called_once()
 

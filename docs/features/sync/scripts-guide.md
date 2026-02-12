@@ -82,7 +82,7 @@ Configure projects in `.env` file:
 
 ```env
 # Comma-separated list of project keys
-SYNC_PROJECT_KEYS=PROJ1,PROJ2,PROJ3,FOLLOWUP,PARSCHAT
+SYNC_PROJECT_KEYS=PROJ1,PROJ2,PROJ3,PROJ4,MYPROJECT
 
 # Sync interval for scheduled sync (minutes)
 SYNC_INTERVAL_MINUTES=10

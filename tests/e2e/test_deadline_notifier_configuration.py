@@ -86,7 +86,7 @@ if __name__ == "__main__":
     os.environ.setdefault("TELEGRAM_GROUP_CHAT_IDS", "-1001234567890,-1009876543210")
     os.environ.setdefault(
         "DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES",
-        '["ali_kazemi", "a_heravi"]',
+        '["admin_user", "manager_user"]',
     )
 
     result = asyncio.run(test_deadline_notifier_configuration())

@@ -31,6 +31,7 @@ class TestFetchStoryDataUseCase(unittest.TestCase):
             task_manager=self.mock_task_manager,
             jira_base_url=self.jira_base_url,
             user_config=self.mock_user_config,
+            pm_project_key="PJ2",
         )
 
     def test_build_jql_without_days_back(self):
@@ -172,7 +173,7 @@ class TestFetchStoryDataUseCase(unittest.TestCase):
         mock_issue = Mock()
 
         mock_outward_issue = Mock()
-        mock_outward_issue.key = "PCD-123"
+        mock_outward_issue.key = "PJ2-123"
 
         mock_link = Mock()
         mock_link.outwardIssue = mock_outward_issue
@@ -181,7 +182,7 @@ class TestFetchStoryDataUseCase(unittest.TestCase):
 
         result = self.use_case._get_linked_pm_issue(mock_issue)
 
-        self.assertEqual(result, "PCD-123")
+        self.assertEqual(result, "PJ2-123")
 
     def test_parse_jira_datetime_with_timezone(self):
         """Test parsing Jira datetime with timezone."""

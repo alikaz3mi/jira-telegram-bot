@@ -61,7 +61,7 @@ services:
     restart: always
     environment:
       - SYNC_INTERVAL_MINUTES=10
-      - SYNC_PROJECT_KEYS=["PCT","PARSCHAT", "FOLLOWUP", "DASHBOARD", "PARS", "PCD", "AK", "DASH", "DEVOPS"]
+      - SYNC_PROJECT_KEYS=${SYNC_PROJECT_KEYS:-[]}
       - SYNC_FULL_SYNC=true
       - db_port=5432
       - db_host=postgres
@@ -80,7 +80,7 @@ services:
       python3 scripts/notifications/run_synth_pm_service.py
     restart: always
     environment:
-      # Comma-separated project keys or JSON array: ["PARSCHAT","PROJECT2"]
+      # Comma-separated project keys or JSON array: ["PROJECT1","PROJECT2"]
       # Leave empty to sync all projects
       - SYNTH_PM_PROJECT_KEYS=
     networks:

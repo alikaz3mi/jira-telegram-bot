@@ -162,12 +162,12 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
                 "0",
                 "0",
                 "",
-                "PARSCHAT-1",
+                "MYPROJECT-1",
             ],
         ]
         self.mock_sheets_gateway.get_sheet_values.return_value = existing_data
 
-        new_row = self._create_mock_story_row(key="PARSCHAT-2")
+        new_row = self._create_mock_story_row(key="MYPROJECT-2")
         self.mock_fetch_use_case.execute.return_value = [new_row]
 
         result = await self.use_case.execute_for_board("TEST", days_back=7)
@@ -185,26 +185,26 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(values), 34)
         self.assertEqual(values[0], 1)  # row_number
         self.assertEqual(values[1], "Test Task")  # task_title
-        self.assertIn("PARSCHAT-1", values[33])  # developer_board_issue_key
+        self.assertIn("MYPROJECT-1", values[33])  # developer_board_issue_key
 
     async def test_extract_developer_board_keys(self):
         """Test extraction of developer board issue keys."""
         features = [
-            self._create_mock_story_row(key="PARSCHAT-123"),
-            self._create_mock_story_row(key="PARSCHAT-456"),
+            self._create_mock_story_row(key="MYPROJECT-123"),
+            self._create_mock_story_row(key="MYPROJECT-456"),
         ]
 
         keys = self.mock_task_story_repository.extract_issue_keys_from_features(features)
 
         # Since it's a mock, we need to set up the return value
         self.mock_task_story_repository.extract_issue_keys_from_features = Mock(
-            return_value=["PARSCHAT-123", "PARSCHAT-456"]
+            return_value=["MYPROJECT-123", "MYPROJECT-456"]
         )
         keys = self.mock_task_story_repository.extract_issue_keys_from_features(features)
 
         self.assertEqual(len(keys), 2)
-        self.assertIn("PARSCHAT-123", keys)
-        self.assertIn("PARSCHAT-456", keys)
+        self.assertIn("MYPROJECT-123", keys)
+        self.assertIn("MYPROJECT-456", keys)
 
     async def test_format_date_returns_yyyy_mm_dd(self):
         """Test date formatting returns YYYY-MM-DD."""
@@ -278,17 +278,17 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
     async def test_merge_data_preserves_status(self):
         """Test that merge_data preserves sheet status for ۱, ۲, ۳, ۴, ۹, ۱۰."""
         # Create existing feature with preserved status
-        existing_base = self._create_mock_story_row(key="PARSCHAT-1")
+        existing_base = self._create_mock_story_row(key="MYPROJECT-1")
         existing_row = existing_base.model_copy(update={"status": "۱. ثبت و اولویت بندی"})
         
         # Mock repository to return existing features
         self.mock_task_story_repository.get_sheet_features = AsyncMock(return_value=[existing_row])
         self.mock_task_story_repository.extract_issue_keys_from_features = Mock(
-            return_value=["PARSCHAT-1"]
+            return_value=["MYPROJECT-1"]
         )
 
         # Jira says status is IN PROGRESS (would map to ۶)
-        base_row = self._create_mock_story_row(key="PARSCHAT-1")
+        base_row = self._create_mock_story_row(key="MYPROJECT-1")
         new_row = base_row.model_copy(update={"status": "۶. در حال پیاده سازی"})
         self.mock_fetch_use_case.execute.return_value = [new_row]
 
@@ -325,17 +325,17 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
     async def test_merge_data_preserves_sheet_status_for_protected_statuses(self):
         """Test that merge_data preserves sheet status for protected statuses."""
         # Create existing feature with preserved status
-        existing_base = self._create_mock_story_row(key="PARSCHAT-1")
+        existing_base = self._create_mock_story_row(key="MYPROJECT-1")
         existing_row = existing_base.model_copy(update={"status": "۱. ثبت و اولویت بندی"})
         
         # Mock repository to return existing features
         self.mock_task_story_repository.get_sheet_features = AsyncMock(return_value=[existing_row])
         self.mock_task_story_repository.extract_issue_keys_from_features = Mock(
-            return_value=["PARSCHAT-1"]
+            return_value=["MYPROJECT-1"]
         )
 
         # New row from Jira has different status but same other fields
-        base_row = self._create_mock_story_row(key="PARSCHAT-1")
+        base_row = self._create_mock_story_row(key="MYPROJECT-1")
         new_row = base_row.model_copy(update={"status": "۶. در حال پیاده سازی"})
         self.mock_fetch_use_case.execute.return_value = [new_row]
 
@@ -352,7 +352,7 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
         from datetime import datetime, timezone
         
         # Create existing feature
-        existing_base = self._create_mock_story_row(key="PARSCHAT-1")
+        existing_base = self._create_mock_story_row(key="MYPROJECT-1")
         existing_row = existing_base.model_copy(update={
             "status": "۶. در حال پیاده سازی",
             "deadline": datetime(2024, 1, 1, tzinfo=timezone.utc),
@@ -363,11 +363,11 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
         # Mock repository
         self.mock_task_story_repository.get_sheet_features = AsyncMock(return_value=[existing_row])
         self.mock_task_story_repository.extract_issue_keys_from_features = Mock(
-            return_value=["PARSCHAT-1"]
+            return_value=["MYPROJECT-1"]
         )
 
         # New row from Jira with changed deadline and progress
-        base_row = self._create_mock_story_row(key="PARSCHAT-1")
+        base_row = self._create_mock_story_row(key="MYPROJECT-1")
         new_row = base_row.model_copy(update={
             "status": "۶. در حال پیاده سازی",  # Same
             "deadline": datetime(2024, 2, 1, tzinfo=timezone.utc),  # Changed
@@ -414,7 +414,7 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result)
 
-    def _create_mock_story_row(self, key="PARSCHAT-1"):
+    def _create_mock_story_row(self, key="MYPROJECT-1"):
         """Create a mock SynthPMFeatureEntity for testing."""
         return SynthPMFeatureEntity(
             row_number=1,
@@ -447,7 +447,7 @@ class TestSyncStoryToSheetsUseCase(unittest.IsolatedAsyncioTestCase):
             acceptance_criteria=None,
             test_cases=None,
             po_notes=None,
-            jira_issue_key="PCD-123",
+            jira_issue_key="PJ2-123",
             developer_board_issue_key=key,
             version=None,
             times={"User One": 2, "User Two": 2},

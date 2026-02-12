@@ -15,7 +15,7 @@ async def run_team_evaluation_for_sprint(sprint_id: int, project_keys: list[str]
     
     Args:
         sprint_id: The Jira sprint ID
-        project_keys: List of project keys (e.g., ['PARSCHAT'])
+        project_keys: List of project keys (e.g., ['MYPROJECT'])
     """
     LOGGER.info(f"Running team evaluation for sprint {sprint_id}")
     LOGGER.info(f"Projects: {', '.join(project_keys)}")
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     
     # Get sprint ID from command line or use default
     sprint_id = int(sys.argv[1]) if len(sys.argv) > 1 else 392
-    project_keys = sys.argv[2:] if len(sys.argv) > 2 else ["PARSCHAT"]
+    project_keys = sys.argv[2:] if len(sys.argv) > 2 else ["MYPROJECT"]
     
     LOGGER.info("=" * 70)
     LOGGER.info("MANUAL TEAM EVALUATION RUN")

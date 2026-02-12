@@ -66,7 +66,7 @@ scripts/
 │   ├── test_delay_reason_extraction.py
 │   ├── test_delay_reason_simple.py
 │   ├── test_department_dependencies.py
-│   ├── test_pct_epic_sync.py
+│   ├── test_epic_sync.py
 │   ├── test_sprint_closed_webhook.py
 │   ├── test_sprint_closed_webhook.sh
 │   └── test_synth_pm_filtering.py

@@ -27,7 +27,7 @@ Added multiple fallback methods to find the Jira issue from group messages:
 # Code will:
 # 1. Try forward_origin/forward_from_message_id (not found)
 # 2. Look for entry with reply_message_id=7993 (not found - it's a comment)
-# 3. Look for entry with reply_message_id=7987 (FOUND - PCT-1093)
+# 3. Look for entry with reply_message_id=7987 (FOUND - PROJ1-1093)
 ```
 
 #### 2. Media Attachment Support
@@ -80,9 +80,9 @@ Improved handling for `GroupAnonymousBot`:
 [DEBUG] Processing Telegram update: message_id=7996, thread_id=7987
 [INFO] Handling group message with ID: 7996
 [INFO] Processing anonymous admin message in chat_id=-1002491201232
-[INFO] Found issue PCT-1093 from message_thread_id=7987
+[INFO] Found issue PROJ1-1093 from message_thread_id=7987
 [INFO] Successfully fetched media: comment_photo_7996.jpg
-[INFO] Added comment with 1 attachment(s) to PCT-1093
+[INFO] Added comment with 1 attachment(s) to PROJ1-1093
 ```
 
 ### Deployment

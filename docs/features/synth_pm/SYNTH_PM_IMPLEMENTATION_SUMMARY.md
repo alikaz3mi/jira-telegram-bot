@@ -44,11 +44,11 @@ Successfully transformed SynthPM from a static single-project system to a dynami
 {
   "projects": [
     {
-      "project_key": "PARSCHAT",
+      "project_key": "MYPROJECT",
       "spreadsheet_id": "1abc...",
       "boards": {
         "developer_board": {
-          "jira_board_key": "PARSCHAT",
+          "jira_board_key": "MYPROJECT",
           "sheet_name": "Developer Board",
           "data_range": "A2:AY"
         },
@@ -59,9 +59,9 @@ Successfully transformed SynthPM from a static single-project system to a dynami
         }
       },
       "telegram": {
-        "bot_token_env": "PARSCHAT_BOT_TOKEN",
-        "channel_id_env": "PARSCHAT_CHANNEL_ID",
-        "group_id_env": "PARSCHAT_GROUP_ID"
+        "bot_token_env": "MYPROJECT_BOT_TOKEN",
+        "channel_id_env": "MYPROJECT_CHANNEL_ID",
+        "group_id_env": "MYPROJECT_GROUP_ID"
       },
       "sync_settings": {
         "sync_interval_minutes": 30,
@@ -161,7 +161,7 @@ if not is_valid:
 python scripts/run_synth_pm.py list-projects
 
 # Sync specific project
-python scripts/run_synth_pm.py --project PARSCHAT
+python scripts/run_synth_pm.py --project MYPROJECT
 
 # Interactive selection
 python scripts/run_synth_pm.py
@@ -192,7 +192,7 @@ synth-pm-multi-project-service:
     - scripts/run_synth_pm_service.py
   container_name: synth_pm_multi_project
   environment:
-    - SYNTH_PM_PROJECT_KEYS=PARSCHAT,SYNTHPROD  # or ["PROJ1","PROJ2"]
+    - SYNTH_PM_PROJECT_KEYS=MYPROJECT,SYNTHPROD  # or ["PROJ1","PROJ2"]
   restart: always
   networks:
     - jira-bot-network
@@ -207,7 +207,7 @@ synth-pm-multi-project-service:
 docker-compose up -d synth-pm-multi-project-service
 
 # Start specific projects only
-SYNTH_PM_PROJECT_KEYS="PARSCHAT,SYNTHPROD" docker-compose up -d synth-pm-multi-project-service
+SYNTH_PM_PROJECT_KEYS="MYPROJECT,SYNTHPROD" docker-compose up -d synth-pm-multi-project-service
 
 # View logs
 docker-compose logs -f synth-pm-multi-project-service
@@ -327,7 +327,7 @@ Graceful shutdown on SIGTERM/SIGINT
 Projects can define custom mappings in `projects_info.json`:
 ```json
 {
-  "PARSCHAT": {
+  "MYPROJECT": {
     "status_mapping": {
       "google_sheet_to_jira": {
         "۱. ثبت و اولویت بندی": "BACKLOG",

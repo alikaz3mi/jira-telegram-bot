@@ -27,10 +27,10 @@ class TestPostgreSQLTeamEvaluationCalculationLogRepository(unittest.TestCase):
         
         self.sample_log = TeamEvaluationCalculationLog(
             sprint_id=123,
-            sprint_name="PARSCHAT SPRINT 50",
+            sprint_name="MYPROJECT SPRINT 50",
             developer_name="کاظمی",
             department="DevOps",
-            project="PARSCHAT",
+            project="MYPROJECT",
             calculation_type="score_component",
             metric_name="deadline_score",
             metric_value=85.5,
@@ -74,10 +74,10 @@ class TestPostgreSQLTeamEvaluationCalculationLogRepository(unittest.TestCase):
             self.sample_log,
             TeamEvaluationCalculationLog(
                 sprint_id=123,
-                sprint_name="PARSCHAT SPRINT 50",
+                sprint_name="MYPROJECT SPRINT 50",
                 developer_name="کاظمی",
                 department="DevOps",
-                project="PARSCHAT",
+                project="MYPROJECT",
                 calculation_type="metric",
                 metric_name="worklog_score",
                 metric_value=95.0,
@@ -87,10 +87,10 @@ class TestPostgreSQLTeamEvaluationCalculationLogRepository(unittest.TestCase):
             ),
             TeamEvaluationCalculationLog(
                 sprint_id=123,
-                sprint_name="PARSCHAT SPRINT 50",
+                sprint_name="MYPROJECT SPRINT 50",
                 developer_name="کاظمی",
                 department="DevOps",
-                project="PARSCHAT",
+                project="MYPROJECT",
                 calculation_type="final_score",
                 metric_name="quality_score_total",
                 metric_value=78.0,
@@ -126,10 +126,10 @@ class TestPostgreSQLTeamEvaluationCalculationLogRepository(unittest.TestCase):
         # Create mock models
         mock_model_1 = Mock(spec=TeamEvaluationCalculationLogModel)
         mock_model_1.sprint_id = 123
-        mock_model_1.sprint_name = "PARSCHAT SPRINT 50"
+        mock_model_1.sprint_name = "MYPROJECT SPRINT 50"
         mock_model_1.developer_name = "کاظمی"
         mock_model_1.department = "DevOps"
-        mock_model_1.project = "PARSCHAT"
+        mock_model_1.project = "MYPROJECT"
         mock_model_1.calculation_type = "metric"
         mock_model_1.metric_name = "test_metric"
         mock_model_1.metric_value = 100.0
@@ -164,10 +164,10 @@ class TestPostgreSQLTeamEvaluationCalculationLogRepository(unittest.TestCase):
         # Create mock model
         mock_model = Mock(spec=TeamEvaluationCalculationLogModel)
         mock_model.sprint_id = 123
-        mock_model.sprint_name = "PARSCHAT SPRINT 50"
+        mock_model.sprint_name = "MYPROJECT SPRINT 50"
         mock_model.developer_name = "کاظمی"
         mock_model.department = "DevOps"
-        mock_model.project = "PARSCHAT"
+        mock_model.project = "MYPROJECT"
         mock_model.calculation_type = "final_score"
         mock_model.metric_name = "quality_score_total"
         mock_model.metric_value = 75.0
@@ -217,10 +217,10 @@ class TestPostgreSQLTeamEvaluationCalculationLogRepository(unittest.TestCase):
         # Create a mock model
         mock_model = Mock(spec=TeamEvaluationCalculationLogModel)
         mock_model.sprint_id = 123
-        mock_model.sprint_name = "PARSCHAT SPRINT 50"
+        mock_model.sprint_name = "MYPROJECT SPRINT 50"
         mock_model.developer_name = "کاظمی"
         mock_model.department = "DevOps"
-        mock_model.project = "PARSCHAT"
+        mock_model.project = "MYPROJECT"
         mock_model.calculation_type = "score_component"
         mock_model.metric_name = "deadline_score"
         mock_model.metric_value = 85.5

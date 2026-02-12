@@ -11,7 +11,7 @@ The deadline notifier can be configured using environment variables or settings 
 | `DEADLINE_NOTIFIER_LOOKAHEAD_DAYS` | `7` | Number of days to look ahead for deadlines |
 | `DEADLINE_NOTIFIER_ADDITIONAL_JQL` | `""` | Additional JQL filter to apply to deadline queries |
 | `DEADLINE_NOTIFIER_CRON_SCHEDULE` | `"0 9 * * *"` | Cron schedule for deadline notifications (default: 9 AM daily) |
-| `DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES` | `["ali_kazemi", "a_heravi"]` | JSON array of Jira usernames who receive filtered group notifications |
+| `DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES` | `["admin_user", "manager_user"]` | JSON array of Jira usernames who receive filtered group notifications |
 
 ### Group Chat Configuration
 
@@ -25,9 +25,9 @@ The deadline notifier can be configured using environment variables or settings 
 ```env
 # Deadline Notifier Settings
 DEADLINE_NOTIFIER_LOOKAHEAD_DAYS=7
-DEADLINE_NOTIFIER_ADDITIONAL_JQL="project = PARSCHAT AND Sprint in openSprints() and assignee is not EMPTY"
+DEADLINE_NOTIFIER_ADDITIONAL_JQL="project = MYPROJECT AND Sprint in openSprints() and assignee is not EMPTY"
 DEADLINE_NOTIFIER_CRON_SCHEDULE="0 9 * * *"
-DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES=["ali_kazemi", "a_heravi"]
+DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES=["admin_user", "manager_user"]
 
 # Group Chat Configuration
 TELEGRAM_GROUP_CHAT_IDS="-1001234567890,-1009876543210"
@@ -36,7 +36,7 @@ TELEGRAM_GROUP_CHAT_IDS="-1001234567890,-1009876543210"
 ### Shell Export
 ```bash
 export DEADLINE_NOTIFIER_LOOKAHEAD_DAYS=7
-export DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES='["ali_kazemi", "a_heravi"]'
+export DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES='["admin_user", "manager_user"]'
 export TELEGRAM_GROUP_CHAT_IDS="-1001234567890,-1009876543210"
 ```
 
@@ -57,7 +57,7 @@ export TELEGRAM_GROUP_CHAT_IDS="-1001234567890,-1009876543210"
 
 ### Adding a New User to Filtered Notifications
 ```bash
-export DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES='["ali_kazemi", "a_heravi", "new_user"]'
+export DEADLINE_NOTIFIER_GROUP_NOTIFICATION_USERNAMES='["admin_user", "manager_user", "new_user"]'
 ```
 
 ### Setting Custom Lookahead Period
@@ -67,7 +67,7 @@ export DEADLINE_NOTIFIER_LOOKAHEAD_DAYS=14
 
 ### Custom JQL Filter
 ```bash
-export DEADLINE_NOTIFIER_ADDITIONAL_JQL="project in (PARSCHAT, VANGUARD) AND Sprint in openSprints()"
+export DEADLINE_NOTIFIER_ADDITIONAL_JQL="project in (MYPROJECT, VANGUARD) AND Sprint in openSprints()"
 ```
 
 ### Multiple Group Chats

@@ -117,7 +117,7 @@ Backend: Oct 17-19 (3 days, must complete before UI/UX starts on Oct 22)
 The system uses `projects_info.json` to determine component leads:
 ```json
 {
-  "PARSCHAT": {
+  "MYPROJECT": {
     "components": [
       { "name": "Front-end", "lead": "z_lotfian" },
       { "name": "Backend", "lead": "m_samei" },

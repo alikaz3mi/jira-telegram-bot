@@ -90,7 +90,7 @@ container[ScheduledReportUseCase] = Singleton(
     lambda c: ScheduledReportUseCase(
         report_use_case=c[GenerateJiraReportUseCase],
         scheduler_service=c[SchedulerServiceInterface],
-        project_keys=["PARSCHAT", "PCT"],
+        project_keys=["MYPROJECT", "PROJ1"],
     ),
 )
 ```
@@ -155,7 +155,7 @@ container[ScheduledReportUseCase] = Singleton(
 ### Projects Configured
 ```python
 # In config_dependency_injection.py
-project_keys=["PARSCHAT", "PCT"]
+project_keys=["MYPROJECT", "PROJ1"]
 ```
 
 ### Execution Frequency

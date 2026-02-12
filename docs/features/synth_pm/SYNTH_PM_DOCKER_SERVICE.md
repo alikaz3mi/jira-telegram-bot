@@ -33,9 +33,9 @@ synth-pm-multi-project-service:
     # Leave empty to sync all projects in config
     - SYNTH_PM_PROJECT_KEYS=
     # Or specify specific projects:
-    # - SYNTH_PM_PROJECT_KEYS=PARSCHAT,PROJECT2
+    # - SYNTH_PM_PROJECT_KEYS=MYPROJECT,PROJECT2
     # Or as JSON:
-    # - SYNTH_PM_PROJECT_KEYS=["PARSCHAT","PROJECT2"]
+    # - SYNTH_PM_PROJECT_KEYS=["MYPROJECT","PROJECT2"]
   networks:
     - jira-bot-network
 ```
@@ -44,7 +44,7 @@ synth-pm-multi-project-service:
 
 | Variable | Description | Example | Default |
 |----------|-------------|---------|---------|
-| `SYNTH_PM_PROJECT_KEYS` | Projects to sync | `PARSCHAT,PROJ2` or `["PARSCHAT"]` | All projects |
+| `SYNTH_PM_PROJECT_KEYS` | Projects to sync | `MYPROJECT,PROJ2` or `["MYPROJECT"]` | All projects |
 | `SYNTH_PM_TELEGRAM_BOT_TOKEN` | Telegram bot token (per project) | `123456:ABC...` | Required |
 | `SYNTH_PM_TELEGRAM_CHANNEL_ID` | Telegram channel ID (per project) | `-100123456789` | Required |
 | `SYNTH_PM_TELEGRAM_GROUP_ID` | Telegram group ID (per project) | `-100987654321` | Required |
@@ -57,18 +57,18 @@ synth-pm-multi-project-service:
 {
   "projects": [
     {
-      "project_key": "PARSCHAT",
+      "project_key": "MYPROJECT",
       "spreadsheet_id": "1TCvcE_IsP6jpHp3pVfjND9Kys8rfsB5fp2Sx0LILwm4",
       "google_sheets_token_path": "pm-684f8662ca98.json",
       "boards": {
         "developer_board": {
-          "jira_board_key": "PARSCHAT",
-          "sheet_name": "ParsChat Features",
+          "jira_board_key": "MYPROJECT",
+          "sheet_name": "MyProject Features",
           "data_range": "A2:AY",
           "enabled": true
         },
         "pm_board": {
-          "jira_board_key": "PCD",
+          "jira_board_key": "PROJ2",
           "sheet_name": "Release Notes",
           "data_range": "A2:AO",
           "enabled": true
@@ -93,7 +93,7 @@ synth-pm-multi-project-service:
 
 ```json
 {
-  "PARSCHAT": {
+  "MYPROJECT": {
     "project_info": { ... },
     "status_mapping": {
       "google_sheet_to_jira": {
@@ -177,7 +177,7 @@ Edit `docker-compose.yml` to specify projects:
 
 ```yaml
 environment:
-  - SYNTH_PM_PROJECT_KEYS=PARSCHAT,PROJECT2
+  - SYNTH_PM_PROJECT_KEYS=MYPROJECT,PROJECT2
 ```
 
 Then restart:
@@ -192,13 +192,13 @@ docker-compose restart synth-pm-multi-project-service
 python scripts/run_synth_pm.py sync
 
 # Sync specific project
-python scripts/run_synth_pm.py sync --project PARSCHAT
+python scripts/run_synth_pm.py sync --project MYPROJECT
 
 # List available projects
 python scripts/run_synth_pm.py list-projects
 
 # Test connections
-python scripts/run_synth_pm.py test --project PARSCHAT
+python scripts/run_synth_pm.py test --project MYPROJECT
 ```
 
 ## Service Behavior
@@ -228,7 +228,7 @@ For each project, every sync cycle:
 
 Each sync reports:
 ```
-[PARSCHAT] Sync completed - 
+[MYPROJECT] Sync completed - 
   Created: 3 PM, 5 dev | 
   Updated: 2 PM, 8 dev | 
   Skipped: 4 | 

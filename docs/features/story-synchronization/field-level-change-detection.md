@@ -128,8 +128,8 @@ The system logs detailed information about changes:
 
 ```
 [INFO] Incremental sync: 0 new, 5 updates (before filtering)
-[DEBUG] PARSCHAT-123: deadline changed from 2024-01-01 to 2024-02-01
-[DEBUG] PARSCHAT-456: progress (times) changed
+[DEBUG] MYPROJECT-123: deadline changed from 2024-01-01 to 2024-02-01
+[DEBUG] MYPROJECT-456: progress (times) changed
 [INFO] After field-level filtering: 2 rows have actual changes
 [INFO] Updating 3 cells
 ```

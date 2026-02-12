@@ -16,14 +16,14 @@ class TestFindGroupChatByIssuePrioritization(unittest.TestCase):
         data = {
             "1637": {
                 "type": "jira_issue_mapping",
-                "issue_key": "PCT-1090",
+                "issue_key": "PROJ1-1090",
                 "channel_chat_id": -1002309379531,
                 "group_chat_id": -1002309379531,  # Same as channel - not forwarded
                 "metadata": {"content_type": "photo"},
             },
             "1638": {
                 "type": "jira_issue_mapping",
-                "issue_key": "PCT-1090",
+                "issue_key": "PROJ1-1090",
                 "channel_chat_id": -1002309379531,
                 "group_chat_id": -1002491201232,  # Different - forwarded to group
                 "reply_message_id": 7952,
@@ -31,7 +31,7 @@ class TestFindGroupChatByIssuePrioritization(unittest.TestCase):
             },
             "1639": {
                 "type": "jira_issue_mapping",
-                "issue_key": "PCT-1090",
+                "issue_key": "PROJ1-1090",
                 "channel_chat_id": -1002309379531,
                 "group_chat_id": -1002491201232,
                 "reply_message_id": 7953,
@@ -39,7 +39,7 @@ class TestFindGroupChatByIssuePrioritization(unittest.TestCase):
             },
         }
 
-        result = self.data_store.find_group_chat_by_issue(data, "PCT-1090")
+        result = self.data_store.find_group_chat_by_issue(data, "PROJ1-1090")
 
         self.assertIsNotNone(result)
         self.assertIn("reply_message_id", result)
@@ -121,26 +121,26 @@ class TestFindGroupChatByIssuePrioritization(unittest.TestCase):
         data = {
             "1637": {
                 "type": "jira_issue_mapping",
-                "issue_key": "PCT-1090",
+                "issue_key": "PROJ1-1090",
                 "channel_chat_id": -1002309379531,
                 "group_chat_id": -1002309379531,
                 "metadata": {
                     "created_at": 1762934418,
                     "creator_id": 7810734788,
-                    "creator_username": "ParschatAI_support202",
+                    "creator_username": "support_bot_user",
                     "content_type": "photo",
                     "message_type": "channel_post",
                 },
             },
             "1638": {
                 "type": "jira_issue_mapping",
-                "issue_key": "PCT-1090",
+                "issue_key": "PROJ1-1090",
                 "channel_chat_id": -1002309379531,
                 "group_chat_id": -1002491201232,
                 "metadata": {
                     "created_at": 1762934418,
                     "creator_id": 7810734788,
-                    "creator_username": "ParschatAI_support202",
+                    "creator_username": "support_bot_user",
                     "content_type": "photo",
                     "message_type": "channel_post",
                     "forwarded_at": 1762934426,
@@ -149,13 +149,13 @@ class TestFindGroupChatByIssuePrioritization(unittest.TestCase):
             },
             "1639": {
                 "type": "jira_issue_mapping",
-                "issue_key": "PCT-1090",
+                "issue_key": "PROJ1-1090",
                 "channel_chat_id": -1002309379531,
                 "group_chat_id": -1002491201232,
                 "metadata": {
                     "created_at": 1762934418,
                     "creator_id": 7810734788,
-                    "creator_username": "ParschatAI_support202",
+                    "creator_username": "support_bot_user",
                     "content_type": "photo",
                     "message_type": "channel_post",
                     "forwarded_at": 1762934426,
@@ -164,7 +164,7 @@ class TestFindGroupChatByIssuePrioritization(unittest.TestCase):
             },
         }
 
-        result = self.data_store.find_group_chat_by_issue(data, "PCT-1090")
+        result = self.data_store.find_group_chat_by_issue(data, "PROJ1-1090")
 
         # Should pick one of the forwarded entries (1638 or 1639), not 1637
         self.assertIsNotNone(result)

@@ -20,7 +20,7 @@ Bot stores mapping:
   telegram_message_id: 12345,
   chat_id: -1001234567890,
   jira_comment_id: "10001",
-  issue_key: "PCT-123"
+  issue_key: "PROJ1-123"
 }
 ```
 
@@ -54,7 +54,7 @@ The mapping is stored in `data_store.json` with the following structure:
     "telegram_message_id": 12345,
     "chat_id": -1001234567890,
     "jira_comment_id": "10001",
-    "issue_key": "PCT-123",
+    "issue_key": "PROJ1-123",
     "created_at": 1699876543,
     "type": "comment_mapping"
   }

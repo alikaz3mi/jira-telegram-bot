@@ -1226,7 +1226,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             sprint_info: Sprint information
             current_jalali_year: Current Jalali year
             board_id: Board ID where sprint should be created
-            board_key: Board key for sprint naming (e.g., 'FollowUpper', 'PARSCHAT')
+            board_key: Board key for sprint naming (e.g., 'BoardA', 'PROJECT1')
             
         Returns:
             Created sprint object

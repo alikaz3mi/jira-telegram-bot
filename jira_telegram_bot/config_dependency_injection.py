@@ -107,6 +107,7 @@ from jira_telegram_bot.settings.google_sheets_settings import (
 from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
 from jira_telegram_bot.settings.jira_settings import JiraConnectionType
+from jira_telegram_bot.settings.jira_sync_settings import JiraSyncSettings
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 from jira_telegram_bot.settings.postgre_db_settings import PostgresSettings
 from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
@@ -390,6 +391,7 @@ def _configure_settings(container: Container) -> None:
     )
     container[FastAPISettings] = Singleton(lambda: FastAPISettings())
     container[DeadlineNotifierSettings] = Singleton(lambda: DeadlineNotifierSettings())
+    container[JiraSyncSettings] = Singleton(lambda: JiraSyncSettings())
 
 
 def _configure_database(container: Container) -> None:
@@ -653,7 +655,7 @@ def _configure_use_cases(container: Container) -> None:
         lambda c: ScheduledReportUseCase(
             report_use_case=c[GenerateJiraReportUseCase],
             scheduler_service=c[SchedulerServiceInterface],
-            project_keys=["PCT","PARSCHAT", "FOLLOWUP", "DASHBOARD", "PARS", "PCD", "AK", "DASH", "DEVOPS"],
+            project_keys=c[JiraSyncSettings].sync_project_keys,
         ),
     )
     container[SyncJiraIssueUseCase] = Singleton(
@@ -698,6 +700,7 @@ def _configure_use_cases(container: Container) -> None:
             task_manager=c[TaskManagerRepositoryInterface],
             jira_base_url=f"{c[JiraConnectionSettings].domain.scheme}://{c[JiraConnectionSettings].domain.host}",
             user_config=c[UserConfigInterface],
+            pm_project_key=c[JiraSyncSettings].pm_project_key,
         ),
     )
 

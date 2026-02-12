@@ -24,8 +24,8 @@ async def test_team_evaluation():
         # Create a test event - replace with actual sprint data
         test_event = SprintClosedEvent(
             sprint_id=123,  # Replace with actual sprint ID
-            sprint_name="PARSCHAT Sprint 47",
-            project_keys=["PARSCHAT"],  # Replace with actual project keys
+            sprint_name="MYPROJECT Sprint 47",
+            project_keys=["MYPROJECT"],  # Replace with actual project keys
             ended_at=datetime.now(),
         )
 

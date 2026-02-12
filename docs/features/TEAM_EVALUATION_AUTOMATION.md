@@ -158,7 +158,7 @@ python scripts/run_team_evaluation.py \
 # Using sprint name
 python scripts/run_team_evaluation.py \
   --sprint-name "Sprint 47" \
-  --project-keys PARSCHAT \
+  --project-keys MYPROJECT \
   --sheet-id dummy_id
 ```
 

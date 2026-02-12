@@ -170,13 +170,13 @@ elif "video" in channel_post:
 ```
 [INFO] Processing video: file_id=BAACAgQAAyEFAA..., size=4.14MB
 [INFO] Successfully fetched media: single_video.mp4
-[INFO] Task created (single) successfully! Link: https://jira.../browse/PCT-1084
+[INFO] Task created (single) successfully! Link: https://jira.../browse/PROJ1-1084
 ```
 
 ### Large Video Case:
 ```
 [WARNING] Video file too large (29.19MB > 20MB limit). Ticket will be created without video attachment. File ID: BAACAgQAAyEFAA...
-[INFO] Task created (single) successfully! Link: https://jira.../browse/PCT-1085
+[INFO] Task created (single) successfully! Link: https://jira.../browse/PROJ1-1085
 ```
 
 ### Error Case:
@@ -184,7 +184,7 @@ elif "video" in channel_post:
 [INFO] Processing video: file_id=BAACAgQAAyEFAA..., size=18.50MB
 [ERROR] Failed to get file path for file_id=BAACAgQAAyEFAA..., status=400, description: Bad Request: file is too big
 [ERROR] Error fetching media single_video.mp4: Failed to get file path for file_id=BAACAgQAAyEFAA..., status=400, description: Bad Request: file is too big. Skipping attachment.
-[INFO] Task created (single) successfully! Link: https://jira.../browse/PCT-1086
+[INFO] Task created (single) successfully! Link: https://jira.../browse/PROJ1-1086
 ```
 
 ---

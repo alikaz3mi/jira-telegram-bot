@@ -99,7 +99,7 @@ def main() -> None:
         print("  3. Example SQL:")
         print("     UPDATE jira_tasks_enhanced")
         print("     SET delay_reason = 'Blocked by external dependency'")
-        print("     WHERE key = 'PARSCHAT-1234';")
+        print("     WHERE key = 'MYPROJECT-1234';")
 
 
 if __name__ == "__main__":

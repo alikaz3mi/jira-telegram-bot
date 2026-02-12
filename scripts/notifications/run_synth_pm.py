@@ -203,7 +203,7 @@ def main():
     parser.add_argument(
         "--project",
         "-p",
-        help="Project key to sync (e.g., PARSCHAT). If not specified, uses first project in config.",
+        help="Project key to sync (e.g., MYPROJECT). If not specified, uses first project in config.",
     )
 
     # Filtering options

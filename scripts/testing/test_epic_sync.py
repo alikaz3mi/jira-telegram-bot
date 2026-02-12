@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Test script to sync a few PCT issues and check epic extraction."""
+"""Test script to sync a few PROJ1 issues and check epic extraction."""
 import asyncio
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.config_dependency_injection import configure_container
 from jira_telegram_bot.use_cases.sync_jira_issue_use_case import SyncJiraIssueUseCase
 
-async def test_pct_epic_sync():
-    """Test syncing PCT issues with epic links."""
+async def test_epic_sync():
+    """Test syncing PROJ1 issues with epic links."""
     try:
-        LOGGER.info("Testing PCT epic sync...")
+        LOGGER.info("Testing PROJ1 epic sync...")
         
         container = configure_container()
         sync_use_case = container[SyncJiraIssueUseCase]
         
-        # Sync just a few recent PCT issues
+        # Sync just a few recent PROJ1 issues
         result = await sync_use_case.bulk_sync_issues(
-            project_key="PCT",
+            project_key="PROJ1",
             full_sync=False
         )
         
@@ -26,4 +26,4 @@ async def test_pct_epic_sync():
         raise
 
 if __name__ == "__main__":
-    asyncio.run(test_pct_epic_sync())
+    asyncio.run(test_epic_sync())

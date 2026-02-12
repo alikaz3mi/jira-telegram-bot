@@ -28,6 +28,7 @@ class FetchStoryDataUseCase:
         task_manager: TaskManagerRepositoryInterface,
         jira_base_url: str,
         user_config: UserConfigInterface,
+        pm_project_key: str = "",
     ):
         """Initialize the use case.
 
@@ -35,10 +36,12 @@ class FetchStoryDataUseCase:
             task_manager: Task manager repository interface.
             jira_base_url: Base URL for Jira.
             user_config: User configuration interface.
+            pm_project_key: Project key prefix for the PM board (e.g. "PM").
         """
         self.task_manager = task_manager
         self.jira_base_url = jira_base_url
         self.user_config = user_config
+        self.pm_project_key = pm_project_key
 
     def execute(
         self,
@@ -329,14 +332,15 @@ class FetchStoryDataUseCase:
         """
         try:
             if hasattr(issue.fields, "issuelinks"):
+                pm_prefix = f"{self.pm_project_key}-" if self.pm_project_key else ""
                 for link in issue.fields.issuelinks:
                     if hasattr(link, "outwardIssue"):
                         linked = link.outwardIssue
-                        if linked.key.startswith("PCD-"):
+                        if pm_prefix and linked.key.startswith(pm_prefix):
                             return linked.key
                     elif hasattr(link, "inwardIssue"):
                         linked = link.inwardIssue
-                        if linked.key.startswith("PCD-"):
+                        if pm_prefix and linked.key.startswith(pm_prefix):
                             return linked.key
         except Exception as e:
             LOGGER.error(f"Error getting linked PM issue for {issue.key}: {e}")

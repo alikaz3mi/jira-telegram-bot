@@ -265,7 +265,7 @@ class SyncBugImprovementToSheetsUseCase:
             if len(row) >= 20:
                 issue_key_value = row[19]
                 if issue_key_value:
-                    match = re.search(r"PARSCHAT-\d+", str(issue_key_value))
+                    match = re.search(r"[A-Z][A-Z0-9_]+-\d+", str(issue_key_value))
                     if match:
                         issue_keys.append(match.group(0))
         return issue_keys
@@ -355,7 +355,7 @@ class SyncBugImprovementToSheetsUseCase:
             self._format_date(row.deadline),
             row.involved_user_from_label or "",
             self._format_date(row.initial_delivery_time),
-            f'=HYPERLINK("https://jira.parstechai.com/browse/{row.issue_key}";"{row.issue_key}")',
+            f'=HYPERLINK("{self.jira_base_url}/browse/{row.issue_key}";"{row.issue_key}")',
         ]
 
     def _convert_sheet_row_to_entity(self, row_data: List) -> Optional[BugImprovementSheetRow]:
@@ -379,7 +379,7 @@ class SyncBugImprovementToSheetsUseCase:
             elif "HYPERLINK" in issue_key_cell:
                 # Extract from formula
                 import re
-                match = re.search(r'PARSCHAT-\d+', issue_key_cell)
+                match = re.search(r'[A-Z][A-Z0-9_]+-\d+', issue_key_cell)
                 if match:
                     issue_key = match.group(0)
 

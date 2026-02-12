@@ -80,7 +80,7 @@ class UserConfig(UserConfigInterface):
         
         Args:
             username: Telegram username
-            board_name: Name of the board (e.g., 'PARSCHAT', 'PCT')
+            board_name: Name of the board (e.g., 'PROJECT1', 'PROJECT2')
             
         Returns:
             Role string (e.g., 'admin', 'member', 'viewer') or None if not found
@@ -173,7 +173,7 @@ class UserConfig(UserConfigInterface):
 
         Args:
             username: Jira username
-            project_key: Project key (e.g., "PARSCHAT")
+            project_key: Project key (e.g., "PROJECT1")
             component: Component name (e.g., "AI", "Backend", "Frontend", "UI/UX", "DevOps")
 
         Returns:

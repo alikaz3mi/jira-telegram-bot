@@ -375,7 +375,7 @@ class SprintClosedTeamEvaluationUseCase:
         """
         user_config = self.user_config_service.get_user_config_by_jira_username(username)
         if user_config and user_config.user_components:
-            # user_components is a dict like {"PARSCHAT": "Front-end"}
+            # user_components is a dict like {"PROJECT1": "Front-end"}
             return user_config.user_components.get(project_key)
         return None
 

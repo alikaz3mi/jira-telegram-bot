@@ -35,7 +35,7 @@ class MockJiraServer:
         Returns:
             Created issue data
         """
-        issue_key = f"PCT-{self.issue_counter}"
+        issue_key = f"PROJ1-{self.issue_counter}"
         self.issue_counter += 1
 
         issue = {
@@ -426,7 +426,7 @@ class TestCreateTicketE2E(unittest.TestCase):
         self.assertIn(issue["key"], self.mock_jira.comments)
 
         # Verify comment was added
-        self.assertIn("PCT-1", self.mock_jira.comments)
+        self.assertIn("PROJ1-1", self.mock_jira.comments)
 
     def test_telegram_webhook_done_command(self):
         """Test telegram webhook handles /done command."""
@@ -520,7 +520,7 @@ class TestCreateTicketE2E(unittest.TestCase):
     def test_jira_webhook_status_change(self):
         """Test Jira webhook handles status change."""
         self.mock_data_store.find_channel_post_by_issue.return_value = {
-            "issue_key": "PCT-2",
+            "issue_key": "PROJ1-2",
             "group_chat_id": -12345,
             "reply_message_id": 101,
         }
@@ -529,7 +529,7 @@ class TestCreateTicketE2E(unittest.TestCase):
             "webhookEvent": "jira:issue_updated",
             "issue_event_type_name": "issue_updated",
             "issue": {
-                "key": "PCT-2",
+                "key": "PROJ1-2",
                 "fields": {"summary": "Test Issue", "status": {"name": "In Progress"}},
             },
             "changelog": {
@@ -550,7 +550,7 @@ class TestCreateTicketE2E(unittest.TestCase):
     def test_jira_webhook_comment_added(self):
         """Test Jira webhook handles comment added."""
         self.mock_data_store.find_channel_post_by_issue.return_value = {
-            "issue_key": "PCT-3",
+            "issue_key": "PROJ1-3",
             "group_chat_id": -12345,
             "reply_message_id": 102,
         }
@@ -562,7 +562,7 @@ class TestCreateTicketE2E(unittest.TestCase):
                 "author": {"name": "jira_user", "displayName": "Jira User"},
             },
             "issue": {
-                "key": "PCT-3",
+                "key": "PROJ1-3",
                 "fields": {"summary": "Test Issue"},
             },
         }

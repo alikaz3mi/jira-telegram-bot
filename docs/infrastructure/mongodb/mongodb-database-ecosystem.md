@@ -240,19 +240,19 @@ erDiagram
 
 ```mermaid
 graph TB
-    subgraph "Project: PARSCHAT"
-        P1[Project Key: PARSCHAT]
+    subgraph "Project: MYPROJECT"
+        P1[Project Key: MYPROJECT]
 
         subgraph "Jira Integration"
-            J1[Jira Server: jira.parstechai.com]
-            J2[Projects: PARSCHAT, PCD]
+            J1[Jira Server: jira.example.com]
+            J2[Projects: MYPROJECT, PROJ2]
             J3[Issues & Workflows]
         end
 
         subgraph "Telegram Integration"
-            T1[Channel: #parschat-updates]
+            T1[Channel: #myproject-updates]
             T2[Group: Development Team]
-            T3[Bot: @parschat_bot]
+            T3[Bot: @myproject_bot]
             T4[Notifications & Messages]
         end
 
@@ -260,7 +260,7 @@ graph TB
             G1[Sheets: Team Evaluation]
             G2[Docs: Project Documentation]
             G3[Drive: Project Files]
-            G4[Service Account: parschat-svc]
+            G4[Service Account: myproject-svc]
         end
 
         subgraph "Team Members"
@@ -295,8 +295,8 @@ graph TB
 
 ```mermaid
 graph LR
-    subgraph "Project A: PARSCHAT"
-        PA[PARSCHAT]
+    subgraph "Project A: MYPROJECT"
+        PA[MYPROJECT]
         JA[Jira Server A]
         TA[Telegram Bot A]
         GA[Google Sheets A]
@@ -311,8 +311,8 @@ graph LR
         TeB[Team B]
     end
 
-    subgraph "Project C: PCD"
-        PC[PCD]
+    subgraph "Project C: PROJ2"
+        PC[PROJ2]
         JC[Jira Server C]
         TC[Telegram Bot C]
         GC[Google Sheets C]
@@ -366,9 +366,9 @@ sequenceDiagram
     participant DB as MongoDB
 
     Note over J,DB: Issue Creation Flow
-    J->>+DB: Create Issue PARSCHAT-123
+    J->>+DB: Create Issue MYPROJECT-123
     DB->>+N: Trigger notification routing
-    N->>+T: Post to #parschat-updates channel
+    N->>+T: Post to #myproject-updates channel
     T-->>DB: Store telegram_session mapping
     N->>+G: Update Team Evaluation sheet
     G-->>DB: Store sheet row reference
@@ -396,12 +396,12 @@ graph TD
     B -->|Status Change| E[Check Workflow Rules]
     B -->|Error Alert| F[Check Escalation Rules]
 
-    C --> G{Project: PARSCHAT?}
+    C --> G{Project: MYPROJECT?}
     D --> H{Team: Backend?}
     E --> I{Status: Done?}
     F --> J{Severity: Critical?}
 
-    G -->|Yes| K[Route to #parschat-updates]
+    G -->|Yes| K[Route to #myproject-updates]
     G -->|No| L[Route to default channel]
 
     H -->|Yes| M[Route to Backend Group]
@@ -567,12 +567,12 @@ graph LR
 ```json
 {
   "_id": "ObjectId",
-  "project_key": "PARSCHAT",
-  "project_name": "ParsChat Development",
+  "project_key": "MYPROJECT",
+  "project_name": "MyProject Development",
   "jira_connection_id": "jira_server_main",
   "google_services": {
-    "sheets_service_id": "parschat_sheets_svc",
-    "docs_service_id": "parschat_docs_svc",
+    "sheets_service_id": "myproject_sheets_svc",
+    "docs_service_id": "myproject_docs_svc",
     "primary_sheet_id": "1TCvcE_IsP6jpHp3pVfjND9Kys8rfsB5fp2Sx0LILwm4",
     "project_folder_id": "1BxYZ9876543210abcdef"
   },
@@ -580,17 +580,17 @@ graph LR
     "primary_channel_id": -1001234567890,
     "notification_channel_id": -1001234567891,
     "team_group_id": -1001234567892,
-    "bot_integration_id": "parschat_bot_main"
+    "bot_integration_id": "myproject_bot_main"
   },
   "team_assignments": [
     {
-      "user_id": "alikaz3mi",
+      "user_id": "admin_user",
       "role": "DevOps Lead",
       "department": "DevOps",
       "access_level": "admin"
     },
     {
-      "user_id": "msameim181",
+      "user_id": "dev_user_1",
       "role": "Backend Developer",
       "department": "Backend",
       "access_level": "developer"
@@ -625,14 +625,14 @@ graph LR
   "_id": "ObjectId",
   "connection_id": "jira_server_main",
   "connection_type": "server",
-  "domain": "https://jira.parstechai.com",
-  "username": "ali_kazemi",
+  "domain": "https://jira.example.com",
+  "username": "admin_user",
   "password": "encrypted_password_hash",
   "token": null,
   "email": null,
   "is_primary": true,
   "is_active": true,
-  "projects": ["PARSCHAT", "PCD", "RADTHARN"],
+  "projects": ["MYPROJECT", "PROJ2", "RADTHARN"],
   "api_config": {
     "timeout": 30,
     "retry_attempts": 3,
@@ -647,16 +647,16 @@ graph LR
 ```json
 {
   "_id": "ObjectId",
-  "integration_id": "parschat_bot_main",
+  "integration_id": "myproject_bot_main",
   "bot_token": "encrypted_bot_token",
-  "bot_username": "parschat_bot",
+  "bot_username": "myproject_bot",
   "integration_type": "project",
   "channels": [
     {
       "channel_id": -1001234567890,
-      "channel_name": "parschat-updates",
+      "channel_name": "myproject-updates",
       "channel_type": "public",
-      "project_associations": ["PARSCHAT"],
+      "project_associations": ["MYPROJECT"],
       "allowed_operations": ["post", "edit", "delete"],
       "notification_types": ["deadlines", "progress", "status"]
     }
@@ -664,9 +664,9 @@ graph LR
   "groups": [
     {
       "group_id": -1001234567892,
-      "group_name": "ParsChat Development Team",
+      "group_name": "MyProject Development Team",
       "team_associations": ["Backend", "Frontend", "DevOps"],
-      "allowed_users": ["alikaz3mi", "msameim181", "jhamed"],
+      "allowed_users": ["admin_user", "dev_user_1", "dev_user_2"],
       "permissions": {
         "can_create_issues": true,
         "can_update_status": true,
@@ -674,7 +674,7 @@ graph LR
       }
     }
   ],
-  "project_associations": ["PARSCHAT"],
+  "project_associations": ["MYPROJECT"],
   "notification_rules": [
     {
       "rule_id": "deadline_alerts",
@@ -683,7 +683,7 @@ graph LR
       "conditions": {
         "days_before": 2,
         "priority": ["High", "Highest"],
-        "project": "PARSCHAT"
+        "project": "MYPROJECT"
       }
     }
   ],
@@ -747,7 +747,7 @@ db.notification_tracking.createIndex({ "expires_at": 1 }, { expireAfterSeconds: 
 ```javascript
 // Get complete ecosystem for a project
 db.project_ecosystem_mappings.aggregate([
-  { $match: { "project_key": "PARSCHAT", "is_active": true } },
+  { $match: { "project_key": "MYPROJECT", "is_active": true } },
   {
     $lookup: {
       from: "jira_connections",
@@ -779,7 +779,7 @@ db.project_ecosystem_mappings.aggregate([
 ```javascript
 // Get all projects assigned to a user
 db.project_ecosystem_mappings.find({
-  "team_assignments.user_id": "alikaz3mi",
+  "team_assignments.user_id": "admin_user",
   "is_active": true
 }, {
   "project_key": 1,
@@ -792,7 +792,7 @@ db.project_ecosystem_mappings.find({
 ```javascript
 // Get notification routing for project deadlines
 db.project_ecosystem_mappings.aggregate([
-  { $match: { "project_key": "PARSCHAT" } },
+  { $match: { "project_key": "MYPROJECT" } },
   {
     $lookup: {
       from: "telegram_integrations",

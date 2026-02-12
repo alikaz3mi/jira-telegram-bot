@@ -16,10 +16,10 @@ class TestTeamEvaluationCalculationLog(unittest.TestCase):
         
         log = TeamEvaluationCalculationLog(
             sprint_id=123,
-            sprint_name="PARSCHAT SPRINT 50",
+            sprint_name="MYPROJECT SPRINT 50",
             developer_name="کاظمی",
             department="DevOps",
-            project="PARSCHAT",
+            project="MYPROJECT",
             calculation_type="score_component",
             metric_name="deadline_score",
             metric_value=85.5,
@@ -32,10 +32,10 @@ class TestTeamEvaluationCalculationLog(unittest.TestCase):
         )
         
         self.assertEqual(log.sprint_id, 123)
-        self.assertEqual(log.sprint_name, "PARSCHAT SPRINT 50")
+        self.assertEqual(log.sprint_name, "MYPROJECT SPRINT 50")
         self.assertEqual(log.developer_name, "کاظمی")
         self.assertEqual(log.department, "DevOps")
-        self.assertEqual(log.project, "PARSCHAT")
+        self.assertEqual(log.project, "MYPROJECT")
         self.assertEqual(log.calculation_type, "score_component")
         self.assertEqual(log.metric_name, "deadline_score")
         self.assertEqual(log.metric_value, 85.5)
@@ -50,10 +50,10 @@ class TestTeamEvaluationCalculationLog(unittest.TestCase):
         """Test creating a calculation log with optional fields as None."""
         log = TeamEvaluationCalculationLog(
             sprint_id=123,
-            sprint_name="PARSCHAT SPRINT 50",
+            sprint_name="MYPROJECT SPRINT 50",
             developer_name="کاظمی",
             department="DevOps",
-            project="PARSCHAT",
+            project="MYPROJECT",
             calculation_type="metric",
             metric_name="development_task_count",
             metric_value=5.0,

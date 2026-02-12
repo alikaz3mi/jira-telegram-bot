@@ -23,7 +23,7 @@ class DeadlineNotifierSettings(BaseSettings):
         description="Cron schedule for deadline notifications (default: 9 AM daily)",
     )
     GROUP_NOTIFICATION_USERNAMES: List[str] = Field(
-        default=["ali_kazemi", "a_heravi"],
+        default=[],
         description="List of Jira usernames who receive group notifications with filtered content",
     )
 

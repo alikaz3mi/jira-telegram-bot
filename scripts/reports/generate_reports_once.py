@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.app_container import get_container
@@ -17,7 +18,9 @@ async def main() -> None:
         report_use_case = container[GenerateJiraReportUseCase]
         
         # Configure project keys as needed
-        project_keys = ["PCT"]
+        project_keys = os.environ.get(
+            "SYNC_PROJECT_KEYS", ""
+        ).strip("[]").replace('"', '').split(",") if os.environ.get("SYNC_PROJECT_KEYS") else []
         
         reports = await report_use_case.generate_multi_project_report(project_keys)
         

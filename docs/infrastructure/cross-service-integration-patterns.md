@@ -159,7 +159,7 @@ sequenceDiagram
     Note over JI,NT: New Issue Creation with Cross-Service Linking
 
     %% Issue creation
-    JI->>+WH: New issue PARSCHAT-124 created
+    JI->>+WH: New issue MYPROJECT-124 created
     WH->>+LSM: Process new issue event
 
     %% Link service processing
@@ -188,7 +188,7 @@ sequenceDiagram
     LSM->>+DB: Create cross_service_link (issue ↔ sheet)
     LSM->>+DB: Create cross_service_link (telegram ↔ sheet)
 
-    Note over DB: Links established with correlation_id: PARSCHAT-124
+    Note over DB: Links established with correlation_id: MYPROJECT-124
 
     %% Log integration activity
     LSM->>+NT: Log cross-service creation activity
@@ -332,8 +332,8 @@ sequenceDiagram
     Note over J,CV: Bidirectional Synchronization Flow
 
     %% Initial change in Jira
-    J->>+ES: Issue PARSCHAT-124 status: To Do → In Progress
-    ES->>+DB: Get cross-service links for PARSCHAT-124
+    J->>+ES: Issue MYPROJECT-124 status: To Do → In Progress
+    ES->>+DB: Get cross-service links for MYPROJECT-124
     DB-->>ES: Links: telegram_msg:456, sheet_row:15
 
     %% Validate sync requirements
@@ -364,7 +364,7 @@ sequenceDiagram
     %% User changes priority in Google Sheets
     G->>+ES: Cell changed: Priority High → Highest
     ES->>+DB: Get cross-service links for sheet_row:15
-    DB-->>ES: Links: jira_issue:PARSCHAT-124, telegram_msg:456
+    DB-->>ES: Links: jira_issue:MYPROJECT-124, telegram_msg:456
 
     %% Conflict detection
     ES->>+CV: Check for Jira field conflicts
@@ -374,7 +374,7 @@ sequenceDiagram
 
     %% Reverse sync
     par Jira Update
-        ES->>+J: Update PARSCHAT-124 priority to Highest
+        ES->>+J: Update MYPROJECT-124 priority to Highest
         J->>J: Set priority field
         J-->>ES: Issue updated successfully
         ES->>+DB: Log sync activity (Sheets→Jira)

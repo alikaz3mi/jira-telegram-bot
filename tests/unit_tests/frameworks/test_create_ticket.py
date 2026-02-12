@@ -582,13 +582,13 @@ class TestEdgeCases(unittest.TestCase):
 class TestProjectKeyConstant(unittest.TestCase):
     """Test project key constant usage."""
 
-    def test_project_key_is_pct(self):
-        """Test that JIRA_PROJECT_KEY is set to PCT."""
+    def test_project_key_is_proj1(self):
+        """Test that JIRA_PROJECT_KEY is set to PROJ1."""
         from jira_telegram_bot.frameworks.fast_api.create_ticket import (
             JIRA_PROJECT_KEY,
         )
 
-        self.assertEqual(JIRA_PROJECT_KEY, "PCT")
+        self.assertEqual(JIRA_PROJECT_KEY, "PROJ1")
 
     def test_task_data_uses_correct_project_key(self):
         """Test that created task uses the correct project key."""
@@ -609,7 +609,7 @@ class TestProjectKeyConstant(unittest.TestCase):
 
             task_data = create_task_data("test_user", parsed_fields, "")
 
-            self.assertEqual(task_data.project_key, "PCT")
+            self.assertEqual(task_data.project_key, "PROJ1")
 
 
 class TestLabelHandling(unittest.TestCase):
@@ -824,7 +824,7 @@ class TestChannelPostHandling(unittest.TestCase):
 
         mock_task_data = Mock()
         mock_create_task.return_value = mock_task_data
-        mock_jira_repo.create_task.return_value = "PCT-123"
+        mock_jira_repo.create_task.return_value = "PROJ1-123"
 
         channel_post = {
             "message_id": 100,
@@ -835,7 +835,7 @@ class TestChannelPostHandling(unittest.TestCase):
 
         result = await handle_channel_post(channel_post)
 
-        self.assertEqual(result["issue_key"], "PCT-123")
+        self.assertEqual(result["issue_key"], "PROJ1-123")
 
 
 class TestAutoForwardHandling(unittest.TestCase):
@@ -853,7 +853,7 @@ class TestAutoForwardHandling(unittest.TestCase):
 
         existing_entry = {
             "channel_message_id": 100,
-            "issue_key": "PCT-123",
+            "issue_key": "PROJ1-123",
             "channel_chat_id": -1001234567890,
         }
         mock_data_store.find_channel_post_by_message_id.return_value = existing_entry
@@ -867,7 +867,7 @@ class TestAutoForwardHandling(unittest.TestCase):
 
         result = await handle_auto_forward_message(message)
 
-        self.assertEqual(result["issue_key"], "PCT-123")
+        self.assertEqual(result["issue_key"], "PROJ1-123")
         mock_send.assert_called_once()
 
     @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.telegram_post_data_store")
@@ -929,7 +929,7 @@ class TestGroupCommentHandling(unittest.TestCase):
             handle_group_comment,
         )
 
-        mock_entry = {"issue_key": "PCT-123"}
+        mock_entry = {"issue_key": "PROJ1-123"}
         mock_data_store.find_by_group_chat_and_message_id.return_value = mock_entry
 
         message = {
@@ -942,7 +942,7 @@ class TestGroupCommentHandling(unittest.TestCase):
 
         result = await handle_group_comment(message)
 
-        self.assertEqual(result["issue_key"], "PCT-123")
+        self.assertEqual(result["issue_key"], "PROJ1-123")
         mock_jira_repo.add_comment.assert_called_once()
 
     @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.telegram_post_data_store")
@@ -970,7 +970,7 @@ class TestGroupCommentHandling(unittest.TestCase):
             handle_group_comment,
         )
 
-        mock_entry = {"issue_key": "PCT-123", "metadata": {"creator_username": "creator"}}
+        mock_entry = {"issue_key": "PROJ1-123", "metadata": {"creator_username": "creator"}}
         mock_data_store.find_by_group_chat_and_message_id.return_value = mock_entry
         mock_data_store.load_data_store.return_value = {}
 
@@ -1150,12 +1150,12 @@ class TestJiraIntegration(unittest.TestCase):
     @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
     async def test_create_task_calls_jira_repo(self, mock_jira_repo):
         """Test that create_task calls jira_repository.create_task."""
-        mock_jira_repo.create_task.return_value = "PCT-999"
+        mock_jira_repo.create_task.return_value = "PROJ1-999"
 
         mock_task_data = Mock()
         result = mock_jira_repo.create_task(mock_task_data)
 
-        self.assertEqual(result, "PCT-999")
+        self.assertEqual(result, "PROJ1-999")
         mock_jira_repo.create_task.assert_called_once_with(mock_task_data)
 
     @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
@@ -1163,10 +1163,10 @@ class TestJiraIntegration(unittest.TestCase):
         """Test that transition_task calls jira_repository.transition_task."""
         mock_jira_repo.transition_task.return_value = None
 
-        result = mock_jira_repo.transition_task("PCT-123", "done")
+        result = mock_jira_repo.transition_task("PROJ1-123", "done")
 
         self.assertIsNone(result)
-        mock_jira_repo.transition_task.assert_called_once_with("PCT-123", "done")
+        mock_jira_repo.transition_task.assert_called_once_with("PROJ1-123", "done")
 
     @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.jira_repository")
     async def test_add_comment_calls_jira_repo(self, mock_jira_repo):
@@ -1174,7 +1174,7 @@ class TestJiraIntegration(unittest.TestCase):
         mock_jira_repo.add_comment.return_value = None
 
         comment_text = "Test comment"
-        result = mock_jira_repo.add_comment("PCT-123", comment_text, "test_user")
+        result = mock_jira_repo.add_comment("PROJ1-123", comment_text, "test_user")
 
         self.assertIsNone(result)
         mock_jira_repo.add_comment.assert_called_once()
@@ -1269,7 +1269,7 @@ class TestConcurrencyScenarios(unittest.TestCase):
 
         existing_entry = {
             "channel_message_id": 100,
-            "issue_key": "PCT-123",
+            "issue_key": "PROJ1-123",
             "channel_chat_id": -1001234567890,
         }
         mock_data_store.find_channel_post_by_message_id.return_value = existing_entry
@@ -1291,8 +1291,8 @@ class TestConcurrencyScenarios(unittest.TestCase):
         result1 = await handle_auto_forward_message(message1)
         result2 = await handle_auto_forward_message(message2)
 
-        self.assertEqual(result1["issue_key"], "PCT-123")
-        self.assertEqual(result2["issue_key"], "PCT-123")
+        self.assertEqual(result1["issue_key"], "PROJ1-123")
+        self.assertEqual(result2["issue_key"], "PROJ1-123")
 
 
 class TestJiraWebhookScenarios(unittest.TestCase):
@@ -1355,7 +1355,7 @@ class TestErrorHandling(unittest.TestCase):
         mock_jira_repo.transition_task.side_effect = Exception("Transition not allowed")
 
         with self.assertRaises(Exception):
-            mock_jira_repo.transition_task("PCT-123", "invalid_status")
+            mock_jira_repo.transition_task("PROJ1-123", "invalid_status")
 
     @patch("jira_telegram_bot.frameworks.fast_api.create_ticket.parse_jira_prompt")
     async def test_parse_jira_prompt_failure(self, mock_parse):
@@ -1710,7 +1710,7 @@ class TestTelegramLinkHelpers(unittest.TestCase):
         )
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description="Original description",
             task_type="Task",
@@ -1729,7 +1729,7 @@ class TestTelegramLinkHelpers(unittest.TestCase):
         )
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description="",
             task_type="Task",
@@ -1747,7 +1747,7 @@ class TestTelegramLinkHelpers(unittest.TestCase):
         )
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description=None,
             task_type="Task",
@@ -1770,11 +1770,11 @@ class TestTelegramLinkHelpers(unittest.TestCase):
             mock_settings.domain = "https://jira.example.com/"
 
             message = format_issue_created_message(
-                "PCT-123", "https://t.me/c/123/456"
+                "PROJ1-123", "https://t.me/c/123/456"
             )
 
             self.assertIn("Jira Issue Created:", message)
-            self.assertIn("Jira: https://jira.example.com/browse/PCT-123", message)
+            self.assertIn("Jira: https://jira.example.com/browse/PROJ1-123", message)
             self.assertIn("Telegram: https://t.me/c/123/456", message)
 
     def test_extract_channel_info_from_forward_new_format(self):
@@ -1865,7 +1865,7 @@ class TestCommentEventWithMentions(unittest.TestCase):
             }
         }
 
-        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+        await handle_comment_event(body, -1002491201232, 8177, "PROJ1-1113")
 
         # Verify send_telegram_message was called with parse_mode=None
         mock_send_message.assert_called()
@@ -1913,7 +1913,7 @@ class TestCommentEventWithMentions(unittest.TestCase):
             }
         }
 
-        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+        await handle_comment_event(body, -1002491201232, 8177, "PROJ1-1113")
 
         # Verify DM was sent with parse_mode="html"
         dm_calls = [call for call in mock_send_message.call_args_list if call[0][0] == 123456789]
@@ -1945,7 +1945,7 @@ class TestCommentEventWithMentions(unittest.TestCase):
             }
         }
 
-        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+        await handle_comment_event(body, -1002491201232, 8177, "PROJ1-1113")
 
         # Verify no messages were sent
         mock_send_message.assert_not_called()
@@ -1999,7 +1999,7 @@ class TestCommentEventWithMentions(unittest.TestCase):
         }
 
         # Should not raise exception
-        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+        await handle_comment_event(body, -1002491201232, 8177, "PROJ1-1113")
 
 
 class TestMediaGroupWithTelegramLink(unittest.TestCase):
@@ -2016,7 +2016,7 @@ class TestMediaGroupWithTelegramLink(unittest.TestCase):
         )
 
         mock_issue = Mock()
-        mock_issue.key = "PCT-123"
+        mock_issue.key = "PROJ1-123"
         mock_jira_repo.create_task.return_value = mock_issue
         mock_data_store.load_data_store.return_value = {"100": {}}
 
@@ -2029,7 +2029,7 @@ class TestMediaGroupWithTelegramLink(unittest.TestCase):
         ]
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description="Original description",
             task_type="Task",
@@ -2057,7 +2057,7 @@ class TestSingleMessageWithTelegramLink(unittest.TestCase):
         )
 
         mock_issue = Mock()
-        mock_issue.key = "PCT-456"
+        mock_issue.key = "PROJ1-456"
         mock_jira_repo.create_task.return_value = mock_issue
 
         channel_post = {
@@ -2067,7 +2067,7 @@ class TestSingleMessageWithTelegramLink(unittest.TestCase):
         }
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description="Test description",
             task_type="Task",
@@ -2112,7 +2112,7 @@ class TestTelegramLinkHelperFunctions(unittest.TestCase):
         )
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description="Original description",
             task_type="Task",
@@ -2131,7 +2131,7 @@ class TestTelegramLinkHelperFunctions(unittest.TestCase):
         )
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description="",
             task_type="Task",
@@ -2149,7 +2149,7 @@ class TestTelegramLinkHelperFunctions(unittest.TestCase):
         )
 
         task_data = TaskData(
-            project_key="PCT",
+            project_key="PROJ1",
             summary="Test",
             description=None,
             task_type="Task",
@@ -2166,10 +2166,10 @@ class TestTelegramLinkHelperFunctions(unittest.TestCase):
             format_issue_created_message,
         )
 
-        message = format_issue_created_message("PCT-123", "https://t.me/c/456/789")
+        message = format_issue_created_message("PROJ1-123", "https://t.me/c/456/789")
         
         self.assertIn("Jira Issue Created:", message)
-        self.assertIn("PCT-123", message)
+        self.assertIn("PROJ1-123", message)
         self.assertIn("https://t.me/c/456/789", message)
         self.assertIn("Jira:", message)
         self.assertIn("Telegram:", message)
@@ -2263,7 +2263,7 @@ class TestCommentEventWithPersianText(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+        await handle_comment_event(body, -1002491201232, 8177, "PROJ1-1113")
 
         # Verify send_telegram_message was called with parse_mode=None
         mock_send.assert_called()
@@ -2297,8 +2297,8 @@ class TestCommentEventWithPersianText(unittest.IsolatedAsyncioTestCase):
 
         # Setup mocks
         mock_convert_mentions.return_value = (
-            "Check this out @alikaz3mi",
-            ["alikaz3mi"],
+            "Check this out @admin_user",
+            ["admin_user"],
         )
         mock_get_mentions.return_value = []
         
@@ -2313,7 +2313,7 @@ class TestCommentEventWithPersianText(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+        await handle_comment_event(body, -1002491201232, 8177, "PROJ1-1113")
 
         # Verify parse_mode=None is used
         call_args = mock_send.call_args
@@ -2366,7 +2366,7 @@ class TestCommentEventWithPersianText(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        await handle_comment_event(body, -1002491201232, 8177, "PCT-1113")
+        await handle_comment_event(body, -1002491201232, 8177, "PROJ1-1113")
 
         # Find the DM call (second call)
         self.assertEqual(mock_send.call_count, 2)

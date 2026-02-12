@@ -11,15 +11,15 @@ def main():
         jira_repo = JiraServerRepository(settings=settings)
         
         # Search for issues with delay_reason set
-        LOGGER.info("Searching for PARSCHAT issues with Delay Reason...")
-        jql = "project = PARSCHAT AND 'Delay Reason' is not EMPTY ORDER BY updated DESC"
+        LOGGER.info("Searching for MYPROJECT issues with Delay Reason...")
+        jql = "project = MYPROJECT AND 'Delay Reason' is not EMPTY ORDER BY updated DESC"
         
         issues = jira_repo.search_for_issues(jql, max_results=10)
         
         if not issues:
             LOGGER.warning("No issues found with Delay Reason set")
-            LOGGER.info("Trying any recent PARSCHAT issues...")
-            jql = "project = PARSCHAT ORDER BY updated DESC"
+            LOGGER.info("Trying any recent MYPROJECT issues...")
+            jql = "project = MYPROJECT ORDER BY updated DESC"
             issues = jira_repo.search_for_issues(jql, max_results=10)
         
         LOGGER.info(f"Found {len(issues)} issues")

@@ -639,7 +639,7 @@ class SyncStoryToSheetsUseCase:
         pm_key_formula = ""
         if row.jira_issue_key:
             pm_key_formula = (
-                f'=HYPERLINK("https://jira.parstechai.com/browse/{row.jira_issue_key}";'
+                f'=HYPERLINK("{self.jira_base_url}/browse/{row.jira_issue_key}";'
                 f'"{row.jira_issue_key}")'
             )
         values.append(pm_key_formula)
@@ -647,7 +647,7 @@ class SyncStoryToSheetsUseCase:
         dev_key_formula = ""
         if row.developer_board_issue_key:
             dev_key_formula = (
-                f'=HYPERLINK("https://jira.parstechai.com/browse/{row.developer_board_issue_key}";'
+                f'=HYPERLINK("{self.jira_base_url}/browse/{row.developer_board_issue_key}";'
                 f'"{row.developer_board_issue_key}")'
             )
         values.append(dev_key_formula)

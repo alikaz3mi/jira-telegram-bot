@@ -594,7 +594,7 @@ ScheduledReportUseCase
 - Batch process dashboard generation
 
 ### Scalability
-- Handle multiple projects (current: PARSCHAT, PCT)
+- Handle multiple projects (current: MYPROJECT, PROJ1)
 - Support adding new metrics without code changes
 - Allow custom dashboard configurations
 - Support multiple output formats

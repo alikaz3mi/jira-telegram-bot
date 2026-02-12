@@ -309,7 +309,7 @@ class FetchBugImprovementDataUseCase:
         """Extract sprint number from name or ID.
 
         Args:
-            sprint_name: Sprint name (e.g., 'Sprint 55', 'ParsChat Sprint 55').
+            sprint_name: Sprint name (e.g., 'Sprint 55', 'Project Sprint 55').
             sprint_id: Sprint ID.
 
         Returns:

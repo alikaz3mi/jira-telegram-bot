@@ -50,7 +50,7 @@ class TestEditedMessageHandling(unittest.IsolatedAsyncioTestCase):
         mock_user_cfg.jira_username = "test_jira_user"
         mock_user_config.get_user_config.return_value = mock_user_cfg
         
-        mock_data_store.find_issue_key_from_message_id.return_value = "PCT-123"
+        mock_data_store.find_issue_key_from_message_id.return_value = "PROJ1-123"
         mock_data_store.load_data_store.return_value = {}
         
         # Mock the comment creation to return a comment with ID
@@ -66,7 +66,7 @@ class TestEditedMessageHandling(unittest.IsolatedAsyncioTestCase):
             telegram_message_id=12345,
             chat_id=-1001234567890,
             jira_comment_id="10001",
-            issue_key="PCT-123"
+            issue_key="PROJ1-123"
         )
         
         self.assertEqual(result["status"], "success")
@@ -88,7 +88,7 @@ class TestEditedMessageHandling(unittest.IsolatedAsyncioTestCase):
             "telegram_message_id": 12345,
             "chat_id": -1001234567890,
             "jira_comment_id": "10001",
-            "issue_key": "PCT-123"
+            "issue_key": "PROJ1-123"
         }
         
         # Mock Jira API calls
@@ -103,7 +103,7 @@ class TestEditedMessageHandling(unittest.IsolatedAsyncioTestCase):
         result = await handle_edited_message(self.edited_message)
         
         # Verify the correct comment was updated
-        mock_jira_repo.jira.comment.assert_called_once_with("PCT-123", "10001")
+        mock_jira_repo.jira.comment.assert_called_once_with("PROJ1-123", "10001")
         mock_comment.update.assert_called_once()
         
         # Check the updated body contains "edited" marker and new text
@@ -159,7 +159,7 @@ class TestEditedMessageHandling(unittest.IsolatedAsyncioTestCase):
         
         mock_data_store.find_comment_mapping.return_value = {
             "jira_comment_id": "10001",
-            "issue_key": "PCT-123"
+            "issue_key": "PROJ1-123"
         }
         
         # Mock Jira API to raise exception
@@ -187,7 +187,7 @@ class TestEditedMessageHandling(unittest.IsolatedAsyncioTestCase):
         
         mock_data_store.find_comment_mapping.return_value = {
             "jira_comment_id": "10001",
-            "issue_key": "PCT-123"
+            "issue_key": "PROJ1-123"
         }
         
         mock_comment = MagicMock()
@@ -227,7 +227,7 @@ class TestEditedMessageHandling(unittest.IsolatedAsyncioTestCase):
         
         mock_data_store.find_comment_mapping.return_value = {
             "jira_comment_id": "10001",
-            "issue_key": "PCT-123"
+            "issue_key": "PROJ1-123"
         }
         
         mock_comment = MagicMock()
@@ -261,7 +261,7 @@ class TestDataStoreMappingMethods(unittest.TestCase):
             telegram_message_id=12345,
             chat_id=-1001234567890,
             jira_comment_id="10001",
-            issue_key="PCT-123"
+            issue_key="PROJ1-123"
         )
         
         # Verify save was called with correct structure
@@ -271,7 +271,7 @@ class TestDataStoreMappingMethods(unittest.TestCase):
         expected_key = "-1001234567890_12345_comment"
         self.assertIn(expected_key, saved_data)
         self.assertEqual(saved_data[expected_key]["jira_comment_id"], "10001")
-        self.assertEqual(saved_data[expected_key]["issue_key"], "PCT-123")
+        self.assertEqual(saved_data[expected_key]["issue_key"], "PROJ1-123")
         self.assertEqual(saved_data[expected_key]["type"], "comment_mapping")
 
     @patch("jira_telegram_bot.adapters.repositories.file_storage.TelegramPostDataStore.load_data_store")
@@ -284,7 +284,7 @@ class TestDataStoreMappingMethods(unittest.TestCase):
                 "telegram_message_id": 12345,
                 "chat_id": -1001234567890,
                 "jira_comment_id": "10001",
-                "issue_key": "PCT-123",
+                "issue_key": "PROJ1-123",
                 "type": "comment_mapping"
             }
         }
@@ -297,7 +297,7 @@ class TestDataStoreMappingMethods(unittest.TestCase):
         
         self.assertIsNotNone(result)
         self.assertEqual(result["jira_comment_id"], "10001")
-        self.assertEqual(result["issue_key"], "PCT-123")
+        self.assertEqual(result["issue_key"], "PROJ1-123")
 
     @patch("jira_telegram_bot.adapters.repositories.file_storage.TelegramPostDataStore.load_data_store")
     def test_find_comment_mapping_not_found(self, mock_load):

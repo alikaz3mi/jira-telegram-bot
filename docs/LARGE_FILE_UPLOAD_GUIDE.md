@@ -310,7 +310,7 @@ Jira has built-in limits for attachment sizes. You need to configure:
 
 ```bash
 curl -X PUT \
-  'https://jira.parstechai.com/rest/api/2/application-properties/jira.attachment.size' \
+  'https://jira.example.com/rest/api/2/application-properties/jira.attachment.size' \
   -H 'Authorization: Basic YOUR_BASE64_CREDENTIALS' \
   -H 'Content-Type: application/json' \
   -d '{"value": "104857600"}'  # 100MB in bytes
@@ -358,7 +358,7 @@ max_wal_size = 2GB
 
 ```bash
 curl -X GET \
-  'https://jira.parstechai.com/rest/api/2/application-properties/jira.attachment.size' \
+  'https://jira.example.com/rest/api/2/application-properties/jira.attachment.size' \
   -H 'Authorization: Basic YOUR_BASE64_CREDENTIALS'
 ```
 
@@ -416,7 +416,7 @@ async def limit_upload_size(request: Request, call_next):
 
 ### For Your Use Case (Telegram → Jira)
 
-Based on your `.env` showing `jira.parstechai.com`, here's what you should configure:
+Based on your `.env` showing `jira.example.com`, here's what you should configure:
 
 #### 1. **Application Level (Immediate)**
 ```python
@@ -473,7 +473,7 @@ proxy_request_buffering off;
 ### Test 4: Check Jira Attachment
 ```bash
 # If you implemented download for large files:
-curl -X GET "https://jira.parstechai.com/rest/api/2/issue/PCT-1234/attachments" \
+curl -X GET "https://jira.example.com/rest/api/2/issue/PROJ1-1234/attachments" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 

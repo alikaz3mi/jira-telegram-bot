@@ -15,16 +15,15 @@ async def test_delay_reason_extraction():
         jira_service = container[JiraDataServiceInterface]
         jira_repo = container[JiraReportRepositoryInterface]
         
-        # Find some PARSCHAT issues to test
-        LOGGER.info("Searching for PARSCHAT issues with delay_reason...")
-        jql = "project = PARSCHAT AND 'Delay Reason' is not EMPTY ORDER BY updated DESC"
+        LOGGER.info("Searching for MYPROJECT issues with delay_reason...")
+        jql = "project = MYPROJECT AND 'Delay Reason' is not EMPTY ORDER BY updated DESC"
         
         issues = jira_service._jira_repository.search_for_issues(jql, max_results=5)
         
         if not issues:
             LOGGER.warning("No issues found with delay_reason field set")
-            LOGGER.info("Trying to fetch any recent PARSCHAT issues...")
-            jql = "project = PARSCHAT ORDER BY updated DESC"
+            LOGGER.info("Trying to fetch any recent MYPROJECT issues...")
+            jql = "project = MYPROJECT ORDER BY updated DESC"
             issues = jira_service._jira_repository.search_for_issues(jql, max_results=5)
         
         LOGGER.info(f"Found {len(issues)} issues to test")

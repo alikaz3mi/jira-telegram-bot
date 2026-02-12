@@ -25,11 +25,11 @@ Test department dependency resolution.
 python scripts/testing/test_department_dependencies.py
 ```
 
-### `test_pct_epic_sync.py`
-Test PCT epic synchronization.
+### `test_epic_sync.py`
+Test PROJ1 epic synchronization.
 
 ```bash
-python scripts/testing/test_pct_epic_sync.py
+python scripts/testing/test_epic_sync.py
 ```
 
 ### `test_sprint_closed_webhook.py`

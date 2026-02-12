@@ -11,11 +11,14 @@ from tqdm import tqdm
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.adapters.repositories.jira.jira_server_repository import JiraServerRepository
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+from jira_telegram_bot.settings.jira_sync_settings import JiraSyncSettings
 
 
 JIRA_SETTINGS = JiraConnectionSettings()
+_SYNC_SETTINGS = JiraSyncSettings()
 
 jira_repository = JiraServerRepository(settings=JIRA_SETTINGS)
+project_key = _SYNC_SETTINGS.sync_project_keys[0] if _SYNC_SETTINGS.sync_project_keys else "PROJECT1"
 
 
 def remove_illegal_chars(value):
@@ -49,7 +52,7 @@ def get_tasks_info():
     issues = []
     while True:
         batch = jira_repository.jira.search_issues(
-            "project = PARSCHAT",
+            f"project = {project_key}",
             startAt=start_at,
             maxResults=max_results,
         )

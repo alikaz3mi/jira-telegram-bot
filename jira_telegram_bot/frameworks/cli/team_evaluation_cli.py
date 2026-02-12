@@ -41,7 +41,7 @@ Examples:
   %(prog)s --sprint-id 123 --project-keys PROJ1,PROJ2 --sheet-id your_sheet_id
 
   # Use sprint name instead of ID
-  %(prog)s --sprint-name "Sprint 47" --project-keys PARSCHAT --sheet-id your_sheet_id
+  %(prog)s --sprint-name "Sprint 47" --project-keys PROJECT1 --sheet-id your_sheet_id
 
   # Dry run mode (don't write to sheets)
   %(prog)s --sprint-id 123 --project-keys PROJ1 --sheet-id your_sheet_id --dry-run

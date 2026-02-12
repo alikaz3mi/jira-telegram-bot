@@ -1,4 +1,4 @@
-"""Script to update epic links for specific PARSCHAT tasks.
+"""Script to update epic links for specific MYPROJECT tasks.
 
 This script updates the epic links of tasks that are linked to specific epics,
 changing them to new epic values according to the mapping defined.
@@ -72,7 +72,7 @@ def update_epic_links():
             continue
         
         epics = jira_repo.jira.search_issues(
-            f'project = PARSCHAT AND issuetype = Epic AND '
+            f'project = MYPROJECT AND issuetype = Epic AND '
             f'summary ~ "{new_epic_name}"',
             maxResults=10,
         )

@@ -29,7 +29,7 @@ async def find_recent_sprints():
             
         if sprints:
             LOGGER.info(f"\nUse this command to re-run evaluation:")
-            LOGGER.info(f"python scripts/manual_team_evaluation.py {sprints[0][0]} PARSCHAT")
+            LOGGER.info(f"python scripts/manual_team_evaluation.py {sprints[0][0]} MYPROJECT")
             
         return [s[0] for s in sprints]
     finally:

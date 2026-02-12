@@ -51,7 +51,7 @@ Projects are configured via environment variables in your `.env` file:
 
 ```env
 # List of project keys to synchronize (comma-separated)
-SYNC_PROJECT_KEYS=PROJECT1,PROJECT2,PROJECT3,FOLLOWUP,PARSCHAT
+SYNC_PROJECT_KEYS=PROJECT1,PROJECT2,PROJECT3,PROJ4,MYPROJECT
 
 # Sync interval in minutes (for scheduled sync)
 SYNC_INTERVAL_MINUTES=10

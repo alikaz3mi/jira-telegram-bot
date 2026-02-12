@@ -41,7 +41,7 @@ class TelegramPostDataStore:
 
         Args:
             channel_post_id: The ID of the post in the channel
-            issue_key: The Jira issue key (e.g. PCT-123)
+            issue_key: The Jira issue key (e.g. PROJECT-123)
             channel_chat_id: ID of the channel where message was posted
             group_id: ID of the group where the message was forwarded
             message_data: The full message data containing metadata

@@ -9,7 +9,7 @@ This document contains detailed mermaid diagrams showing the complete architectu
 graph TB
     subgraph "External Services"
         subgraph "Jira Instances"
-            JS[Jira Server: jira.parstechai.com]
+            JS[Jira Server: jira.example.com]
             JC[Jira Cloud: atlassian.net]
         end
 
@@ -197,21 +197,21 @@ graph TB
 ### Project-Centric Integration Model
 ```mermaid
 graph TB
-    subgraph "Project: PARSCHAT"
+    subgraph "Project: MYPROJECT"
         subgraph "Project Configuration"
-            PC[Project Ecosystem Mapping<br/>Key: PARSCHAT]
+            PC[Project Ecosystem Mapping<br/>Key: MYPROJECT]
         end
 
         subgraph "Jira Integration"
-            JI[Jira Server Connection<br/>jira.parstechai.com]
-            JP[Project Keys: PARSCHAT, PCD]
+            JI[Jira Server Connection<br/>jira.example.com]
+            JP[Project Keys: MYPROJECT, PROJ2]
             JW[Workflows & Issues]
         end
 
         subgraph "Telegram Integration"
-            TC[Channel: #parschat-updates<br/>ID: -1001234567890]
+            TC[Channel: #myproject-updates<br/>ID: -1001234567890]
             TG[Group: Development Team<br/>ID: -1001234567892]
-            TB[Bot: @parschat_bot]
+            TB[Bot: @myproject_bot]
         end
 
         subgraph "Google Services"
@@ -221,13 +221,13 @@ graph TB
         end
 
         subgraph "Team Members"
-            U1[👤 alikaz3mi<br/>DevOps Lead]
-            U2[👤 msameim181<br/>Backend Dev]
-            U3[👤 jhamed<br/>Frontend Dev]
+            U1[👤 admin_user<br/>DevOps Lead]
+            U2[👤 dev_user_1<br/>Backend Dev]
+            U3[👤 dev_user_2<br/>Frontend Dev]
         end
 
         subgraph "Notification Routing"
-            NDeadline[🚨 Deadline Alerts<br/>→ #parschat-updates]
+            NDeadline[🚨 Deadline Alerts<br/>→ #myproject-updates]
             NProgress[📊 Progress Updates<br/>→ Development Team]
             NStatus[🔄 Status Changes<br/>→ Google Sheet + Channel]
             NError[❌ Error Alerts<br/>→ Admin Group]
@@ -297,8 +297,8 @@ graph TB
 ```mermaid
 erDiagram
     PROJECT_ECOSYSTEM_MAPPINGS {
-        string project_key PK "PARSCHAT"
-        string project_name "ParsChat Development"
+        string project_key PK "MYPROJECT"
+        string project_name "MyProject Development"
         string jira_connection_id FK "jira_server_main"
         object google_services "Service configs"
         object telegram_integration "Bot configs"
@@ -312,23 +312,23 @@ erDiagram
     JIRA_CONNECTIONS {
         string connection_id PK "jira_server_main"
         string connection_type "server|cloud"
-        string domain "jira.parstechai.com"
-        string username "ali_kazemi"
+        string domain "jira.example.com"
+        string username "admin_user"
         string password "encrypted"
         string token "for cloud"
         boolean is_primary "true"
-        array projects "PARSCHAT,PCD"
+        array projects "MYPROJECT,PROJ2"
         datetime created_at
         datetime updated_at
     }
 
     TELEGRAM_INTEGRATIONS {
-        string integration_id PK "parschat_bot_main"
+        string integration_id PK "myproject_bot_main"
         string bot_token "encrypted"
-        string bot_username "parschat_bot"
+        string bot_username "myproject_bot"
         array channels "Channel configs"
         array groups "Group configs"
-        array project_associations "PARSCHAT"
+        array project_associations "MYPROJECT"
         array notification_rules "Routing rules"
         boolean is_active "true"
         datetime created_at
@@ -336,10 +336,10 @@ erDiagram
     }
 
     GOOGLE_SERVICES_CONFIG {
-        string service_id PK "parschat_sheets_svc"
+        string service_id PK "myproject_sheets_svc"
         string service_type "sheets|docs|drive"
         object credentials_json "Service account"
-        array project_associations "PARSCHAT"
+        array project_associations "MYPROJECT"
         array scope_permissions "Sheets read/write"
         boolean is_active "true"
         datetime created_at
@@ -347,11 +347,11 @@ erDiagram
     }
 
     USER_PROFILES {
-        string user_id PK "alikaz3mi"
-        string telegram_username "alikaz3mi"
+        string user_id PK "admin_user"
+        string telegram_username "admin_user"
         int telegram_user_chat_id "123456789"
-        string jira_username "ali_kazemi"
-        string google_sheet_name "Ali Kazemi"
+        string jira_username "admin_user"
+        string google_sheet_name "Admin User"
         object user_components "DevOps,Backend"
         boolean is_active "true"
         datetime last_seen
@@ -360,9 +360,9 @@ erDiagram
 
     PROGRESS_REPORTS {
         string report_id PK "auto-generated"
-        string assignee FK "alikaz3mi"
-        string project_key FK "PARSCHAT"
-        string sprint_id "PARSCHAT Sprint 1"
+        string assignee FK "admin_user"
+        string project_key FK "MYPROJECT"
+        string sprint_id "MYPROJECT Sprint 1"
         datetime reported_at
         object report_period "2025-09-01 to 2025-09-07"
         array completed_tasks "Task IDs"
@@ -376,9 +376,9 @@ erDiagram
     TELEGRAM_SESSIONS {
         string session_id PK "auto-generated"
         int channel_post_id "123"
-        string issue_key "PARSCHAT-123"
+        string issue_key "MYPROJECT-123"
         int channel_chat_id "-1001234567890"
-        string user_id FK "alikaz3mi"
+        string user_id FK "admin_user"
         string message_type "deadline_notification"
         object metadata "Issue details"
         boolean is_active "true"
@@ -388,7 +388,7 @@ erDiagram
     NOTIFICATION_TRACKING {
         string notification_id PK "auto-generated"
         string notification_type "deadline_alert"
-        object target_entity "Issue PARSCHAT-123"
+        object target_entity "Issue MYPROJECT-123"
         object recipient "Channel/User info"
         string channel "telegram|email|sms"
         datetime sent_at
@@ -399,11 +399,11 @@ erDiagram
 
     WORKFLOW_STATES {
         string state_id PK "auto-generated"
-        string issue_key "PARSCHAT-123"
-        string project_key FK "PARSCHAT"
+        string issue_key "MYPROJECT-123"
+        string project_key FK "MYPROJECT"
         string from_status "In Progress"
         string to_status "Done"
-        string assignee FK "alikaz3mi"
+        string assignee FK "admin_user"
         datetime transition_at
         object transition_metadata "User, reason"
         datetime created_at
@@ -446,10 +446,10 @@ sequenceDiagram
     Note over J,N: Issue Status Change Event
 
     %% Initial event
-    J->>+WH: Issue PARSCHAT-123 status: In Progress → Done
+    J->>+WH: Issue MYPROJECT-123 status: In Progress → Done
     WH->>+DB: Find project ecosystem mapping
 
-    Note over DB: Query: project_ecosystem_mappings.find({project_key: "PARSCHAT"})
+    Note over DB: Query: project_ecosystem_mappings.find({project_key: "MYPROJECT"})
 
     DB-->>WH: Project config with integrations
     WH->>+PEM: Process status change event
@@ -464,7 +464,7 @@ sequenceDiagram
     %% Parallel service updates
     par Telegram Update
         PEM->>+T: Find linked telegram session
-        T->>DB: Query: telegram_sessions.find({issue_key: "PARSCHAT-123"})
+        T->>DB: Query: telegram_sessions.find({issue_key: "MYPROJECT-123"})
         DB-->>T: Session with message_id: 456
         T->>T: Edit message with new status
         T->>+N: Log telegram notification
@@ -506,9 +506,9 @@ graph TD
     F --> G
 
     G --> H[📋 Get Project Ecosystem Mapping]
-    H --> I{Project: PARSCHAT?}
+    H --> I{Project: MYPROJECT?}
 
-    I -->|Yes| J[Load PARSCHAT Config]
+    I -->|Yes| J[Load MYPROJECT Config]
     I -->|No| K[Load Default Config]
 
     J --> L{Event Severity}
@@ -710,7 +710,7 @@ sequenceDiagram
     Note over US,ALERT: Real-Time Metrics Pipeline
 
     %% User action triggers
-    US->>+WF: Complete task PARSCHAT-123
+    US->>+WF: Complete task MYPROJECT-123
     WF->>+DB: Update workflow_states
     WF->>+DB: Log to user_activity_logs
     WF->>+DB: Update progress_reports

@@ -126,10 +126,8 @@ def fetch_and_store_commits():
     )
 
     for project in tqdm(projects):
-        if not (
-            "parschat" in project.name.lower()
-            or "schedule" in project.name.lower()
-            or "auth" in project.name.lower()
+        if gl_settings.project_name_filters and not any(
+            f in project.name.lower() for f in gl_settings.project_name_filters
         ):
             continue
 

@@ -24,7 +24,7 @@ class MockJiraIssue:
         """Initialize mock Jira issue.
 
         Args:
-            key: Issue key (e.g., "PCT-123")
+            key: Issue key (e.g., "PROJ1-123")
             summary: Issue summary
         """
         self.key = key
@@ -55,7 +55,7 @@ class MockJiraRepository:
         Returns:
             Mock Jira issue
         """
-        issue_key = f"PCT-{self.issue_counter}"
+        issue_key = f"PROJ1-{self.issue_counter}"
         self.issue_counter += 1
         issue = MockJiraIssue(issue_key, task_data.summary)
         self.issues[issue_key] = {
@@ -323,7 +323,7 @@ class TestCreateTicketIntegration(unittest.TestCase):
         # Verify task was created
         self.assertIn("issue_key", result)
         issue_key = result["issue_key"]
-        self.assertTrue(issue_key.startswith("PCT-"))
+        self.assertTrue(issue_key.startswith("PROJ1-"))
 
         # Verify task in Jira repo
         self.assertIn(issue_key, self.mock_jira_repo.issues)
@@ -377,7 +377,7 @@ class TestCreateTicketIntegration(unittest.TestCase):
         self.mock_data_store.save_channel_post(
             message_id=100,
             channel_chat_id=-1001234567890,
-            issue_key="PCT-1",
+            issue_key="PROJ1-1",
             metadata={"creator_username": "test_user"},
         )
 
@@ -393,13 +393,13 @@ class TestCreateTicketIntegration(unittest.TestCase):
         result = await handle_auto_forward_message(auto_forward_message)
 
         # Verify result
-        self.assertEqual(result["issue_key"], "PCT-1")
+        self.assertEqual(result["issue_key"], "PROJ1-1")
 
         # Verify message was sent to group
         self.assertTrue(len(self.mock_telegram_api.messages_sent) > 0)
         last_message = self.mock_telegram_api.messages_sent[-1]
         self.assertEqual(last_message["chat"]["id"], -12345)
-        self.assertIn("PCT-1", last_message["text"])
+        self.assertIn("PROJ1-1", last_message["text"])
 
     async def test_handle_group_comment_adds_comment_to_jira(self):
         """Test group comment adds comment to Jira issue."""
@@ -409,7 +409,7 @@ class TestCreateTicketIntegration(unittest.TestCase):
 
         # Create existing post with group chat info
         self.mock_data_store.data["100"] = {
-            "issue_key": "PCT-1",
+            "issue_key": "PROJ1-1",
             "group_chat_id": -12345,
             "reply_message_id": 200,
         }
@@ -422,7 +422,7 @@ class TestCreateTicketIntegration(unittest.TestCase):
             description="Test",
             task_type="Task",
             labels=["test"],
-            project_key="PCT",
+            project_key="PROJ1",
         )
         self.mock_jira_repo.create_task(task_data)
 
@@ -439,9 +439,9 @@ class TestCreateTicketIntegration(unittest.TestCase):
         result = await handle_group_comment(comment_message)
 
         # Verify comment was added
-        self.assertEqual(result["issue_key"], "PCT-1")
-        self.assertIn("PCT-1", self.mock_jira_repo.comments)
-        comments = self.mock_jira_repo.comments["PCT-1"]
+        self.assertEqual(result["issue_key"], "PROJ1-1")
+        self.assertIn("PROJ1-1", self.mock_jira_repo.comments)
+        comments = self.mock_jira_repo.comments["PROJ1-1"]
         self.assertEqual(len(comments), 1)
         self.assertEqual(comments[0]["text"], "This is a comment on the task")
 
@@ -465,7 +465,7 @@ class TestCreateTicketIntegration(unittest.TestCase):
             description="Test",
             task_type="Task",
             labels=["test"],
-            project_key="PCT",
+            project_key="PROJ1",
         )
         issue = self.mock_jira_repo.create_task(task_data)
 
@@ -506,7 +506,7 @@ class TestCreateTicketIntegration(unittest.TestCase):
             description="Test",
             task_type="Task",
             labels=["test"],
-            project_key="PCT",
+            project_key="PROJ1",
             assignee="test_assignee",
         )
         issue = self.mock_jira_repo.create_task(task_data)
@@ -660,7 +660,7 @@ class TestCreateTicketWebhookIntegration(unittest.TestCase):
             description="Test",
             task_type="Task",
             labels=["test"],
-            project_key="PCT",
+            project_key="PROJ1",
         )
         issue = self.mock_jira_repo.create_task(task_data)
 

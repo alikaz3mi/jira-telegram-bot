@@ -110,7 +110,7 @@ class RandomTaskConstants:
     ]
 
     ASSIGNEES = [
-        "alikaz3mi",
+        "admin_user",
         "admin",
     ]
 

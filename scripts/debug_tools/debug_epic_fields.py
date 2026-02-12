@@ -8,9 +8,8 @@ def check_epic_issue():
     container = configure_container()
     jira_repo = container[JiraServerRepository]
     
-    # Get an epic from PARSCHAT
-    print("Fetching PARSCHAT epic...")
-    epic_key = "PARSCHAT-3340"
+    print("Fetching MYPROJECT epic...")
+    epic_key = "MYPROJECT-3340"
     
     try:
         epic = jira_repo._jira.issue(epic_key)

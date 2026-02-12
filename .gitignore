@@ -22,3 +22,6 @@ __pycache__
 
 bulk_task.py
 .coverage
+
+# Migration artifacts
+scripts/jira_project_migration/migration_results.json

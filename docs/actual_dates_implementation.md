@@ -112,7 +112,7 @@ jira-sync-service:
   command: python3 scripts/run_scheduled_sync.py
   environment:
     - SYNC_INTERVAL_MINUTES=10
-    - SYNC_PROJECT_KEYS=["PCT","PARSCHAT","FOLLOWUP","DASHBOARD"]
+    - SYNC_PROJECT_KEYS=["PROJ1","MYPROJECT","PROJ4","PROJ5"]
 ```
 
 ## Verification
@@ -127,7 +127,7 @@ SELECT
     actual_end_date,
     resolved_at
 FROM jira_tasks_enhanced
-WHERE project = 'PARSCHAT'
+WHERE project = 'MYPROJECT'
     AND actual_start_date IS NOT NULL
 ORDER BY key
 LIMIT 10;
@@ -189,7 +189,7 @@ Run the backfill on a single test project first:
 
 ```python
 # Modify scripts/backfill_actual_dates.py
-project_keys = ["PCT"]  # Test project only
+project_keys = ["PROJ1"]  # Test project only
 ```
 
 Then verify results before running on all projects.

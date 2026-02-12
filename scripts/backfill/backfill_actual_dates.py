@@ -5,6 +5,7 @@ This script reads actual_start_date and actual_end_date from Jira custom fields
 (set by Jira listener) and syncs them to PostgreSQL for all projects.
 """
 import asyncio
+import os
 import sys
 
 from jira_telegram_bot import LOGGER
@@ -20,7 +21,9 @@ async def main():
     if len(sys.argv) > 1:
         project_keys = sys.argv[1].split(",")
     else:
-        project_keys = ["PCT", "PARSCHAT", "PCD", "FOLLOWUP", "DASH"]
+        project_keys = os.environ.get(
+            "SYNC_PROJECT_KEYS", ""
+        ).strip("[]").replace('"', '').split(",") if os.environ.get("SYNC_PROJECT_KEYS") else []
     
     LOGGER.info("=" * 60)
     LOGGER.info("Starting Actual Dates Backfill via Sync")

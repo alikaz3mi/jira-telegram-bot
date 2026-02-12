@@ -140,7 +140,7 @@ def setup_container() -> Container:
     child_container[UserSettingsConversation] = Singleton(
         lambda c: UserSettingsConversation(
             c[UserConfigInterface],
-            ["alikaz3mi"],
+            c[TelegramConnectionSettings].ALLOWED_USERS,
             c[UserAuthenticationInterface]
         )
     )
@@ -148,7 +148,7 @@ def setup_container() -> Container:
     child_container[TaskGetUsersTime] = Singleton(
         lambda c: TaskGetUsersTime(
             c[TaskManagerRepositoryInterface],
-            ["alikaz3mi", "hamed_ahmadi1991"]  # Users to track
+            c[TelegramConnectionSettings].ALLOWED_USERS,
         )
     )
     

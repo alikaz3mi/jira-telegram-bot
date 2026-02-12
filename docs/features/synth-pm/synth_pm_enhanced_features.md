@@ -32,7 +32,7 @@
 - بروزرسانی گوگل شیت با ساعت‌های باقی‌مانده
 
 ### 7. ✅ پست تلگرام فقط برای Release Notes
-- دیگر تسک‌های ParsChat Features مستقیماً در تلگرام پست نمی‌شوند
+- دیگر تسک‌های MyProject Features مستقیماً در تلگرام پست نمی‌شوند
 - فقط Release Notes در تلگرام منتشر می‌شوند
 - امکان ویرایش Release Notes در تلگرام
 
@@ -45,20 +45,20 @@
 ### راه‌اندازی
 ```bash
 # همگام‌سازی یکباره
-python scripts/run_synth_parschat.py sync
+python scripts/run_synth_myproject.py sync
 
 # سرویس پس‌زمینه
-python scripts/run_synth_parschat.py service
+python scripts/run_synth_myproject.py service
 
 # تست اتصالات
-python scripts/run_synth_parschat.py test
+python scripts/run_synth_myproject.py test
 ```
 
 ### گوگل شیت Setup
-1. **ورک‌شیت ParsChat Features**: حاوی تسک‌ها و فیچرها
+1. **ورک‌شیت MyProject Features**: حاوی تسک‌ها و فیچرها
 2. **ورک‌شیت Release Notes**: حاوی نسخه‌های منتشرشده
 
-### ستون‌های مورد نیاز در ParsChat Features:
+### ستون‌های مورد نیاز در MyProject Features:
 - وظیفه (Task Title)
 - Epic
 - ریلیز (Release)
@@ -80,17 +80,17 @@ Sprint-2: ۱۴۰۳/۰۸/۰۸: ۱۴۰۳/۰۸/۱۴
 
 ### همگام‌سازی دستی
 ```http
-POST /synth-parschat/sync
+POST /synth-myproject/sync
 ```
 
 ### Webhook های Jira
 ```http
-POST /synth-parschat/jira-webhook
+POST /synth-myproject/jira-webhook
 ```
 
 ### بروزرسانی گوگل شیت
 ```http
-POST /synth-parschat/sheet-update
+POST /synth-myproject/sheet-update
 {
     "row_number": 5,
     "updates": {
@@ -134,7 +134,7 @@ POST /synth-parschat/sheet-update
 ```bash
 # Google Sheets
 SYNTH_PM_GOOGLE_SHEETS_ID=your_sheet_id
-SYNTH_PM_GOOGLE_SHEETS_TOKEN_PATH=parschat-token.json
+SYNTH_PM_GOOGLE_SHEETS_TOKEN_PATH=myproject-token.json
 
 # Jira Projects
 SYNTH_PM_JIRA_PROJECT_KEY=PM Board
@@ -185,6 +185,5 @@ SYNTH_PM_SYNC_INTERVAL_MINUTES=5
 4. **Time Tracking API**: پیاده‌سازی کامل worklog API در Jira repository
 
 ```bash
-# برای تست عملکرد
-python scripts/run_synth_parschat.py test
+python scripts/run_synth_myproject.py test
 ```

@@ -14,10 +14,10 @@ class TestCalculationLogger(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.sprint_id = 123
-        self.sprint_name = "PARSCHAT SPRINT 50"
+        self.sprint_name = "MYPROJECT SPRINT 50"
         self.developer = "کاظمی"
         self.department = "DevOps"
-        self.project = "PARSCHAT"
+        self.project = "MYPROJECT"
 
     def test_log_task_classification(self):
         """Test logging task classification metrics."""

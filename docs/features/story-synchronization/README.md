@@ -75,8 +75,8 @@ Edit `config/story_sync_config.json`:
   "mappings": [
     {
       "spreadsheet_id": "1TCvcE_IsP6jpHp3pVfjND9Kys8rfsB5fp2Sx0LILwm4",
-      "sheet_name": "ParsChat Features",
-      "board_key": "PARSCHAT",
+      "sheet_name": "MyProject Features",
+      "board_key": "MYPROJECT",
       "gid": 1054397609
     }
   ]
@@ -144,7 +144,7 @@ python scripts/sync_stories.py sync --full
 
 #### Sync Specific Boards (Last 30 Days)
 ```bash
-python scripts/sync_stories.py sync --boards PARSCHAT
+python scripts/sync_stories.py sync --boards MYPROJECT
 ```
 
 #### Sync All Boards (Last 30 Days - Default)
@@ -228,8 +228,8 @@ Each developer has a dedicated column (AD-AU) showing their total logged hours o
 
 ### Issue Key Tracking
 
-- **jira_issue_key** (Column AV): PM board issue (e.g., PCD-973) - linked from developer board story
-- **developer_board_issue_key** (Column AW): Developer board issue (e.g., PARSCHAT-4382) - primary key for sync
+- **jira_issue_key** (Column AV): PM board issue (e.g., PROJ2-973) - linked from developer board story
+- **developer_board_issue_key** (Column AW): Developer board issue (e.g., MYPROJECT-4382) - primary key for sync
 
 ## Technical Details
 

@@ -38,7 +38,7 @@ This document summarizes the comprehensive test suite created for the `create_ti
 Simulates a complete Jira server with full issue lifecycle management:
 
 **Features**:
-- Issue creation with auto-incrementing keys (`PCT-1`, `PCT-2`, etc.)
+- Issue creation with auto-incrementing keys (`PROJ1-1`, `PROJ1-2`, etc.)
 - Issue transitions (status changes)
 - Comment management
 - Issue lookup by key
@@ -162,7 +162,7 @@ Tests webhook payload handling:
 #### 2. ⚠️ `test_telegram_webhook_done_command`
 **Issue**: `/done` command treated as comment, transition not triggered  
 **Root Cause**: Command processing logic may not be working as expected  
-**Log**: "Added comment to Jira issue PCT-1" (should trigger transition)  
+**Log**: "Added comment to Jira issue PROJ1-1" (should trigger transition)  
 **Required Fix**: Review `process_command` function to ensure `/done` triggers transitions
 
 #### 3. ⚠️ `test_complete_flow_channel_to_group_to_done`

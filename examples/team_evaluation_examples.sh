@@ -1,7 +1,7 @@
 echo "Example 1: Basic sprint evaluation"
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --dry-run
 
@@ -11,7 +11,7 @@ echo ""
 echo "Example 2: Using sprint name"
 python scripts/run_team_evaluation.py \
     --sprint-name "Sprint 47" \
-    --project-keys "PARSCHAT,PROJ2" \
+    --project-keys "MYPROJECT,PROJ2" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --tab-name "Q4 Team Evaluation" \
     --dry-run
@@ -22,7 +22,7 @@ echo ""
 echo "Example 3: Custom work schedule"
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --weekly-hours 40 \
     --workdays "1,2,3,4,5" \
@@ -35,7 +35,7 @@ echo ""
 echo "Example 4: Custom scoring weights"
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --score-weights '{"deadline": 0.4, "worklog": 0.3, "high_priority": 0.2, "defects": 0.1}' \
     --defect-thresholds '{"support_per_story": 0.2, "tester_per_story": 0.3, "max_penalty": 50}' \
@@ -47,7 +47,7 @@ echo ""
 echo "Example 5: Verbose mode"
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --verbose \
     --dry-run

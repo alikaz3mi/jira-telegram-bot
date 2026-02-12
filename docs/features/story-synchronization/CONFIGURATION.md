@@ -20,7 +20,7 @@ Each mapping defines the relationship between a Jira board and a Google Sheet:
 |-------|------|----------|---------|-------------|
 | `spreadsheet_id` | string | Yes | - | Google Sheets spreadsheet ID (found in the URL) |
 | `sheet_name` | string | Yes | - | Name of the specific sheet/tab within the spreadsheet |
-| `board_key` | string | Yes | - | Jira board/project key (e.g., "PARSCHAT") |
+| `board_key` | string | Yes | - | Jira board/project key (e.g., "MYPROJECT") |
 | `gid` | integer | Yes | - | Google Sheet tab GID (numeric identifier) |
 | `data_range` | string | No | `"A2:AW"` | Column range for sync operations |
 
@@ -46,8 +46,8 @@ The `data_range` field specifies the columns to read/write during sync operation
   "mappings": [
     {
       "spreadsheet_id": "1TCvcE_IsP6jpHp3pVfjND9Kys8rfsB5fp2Sx0LILwm4",
-      "sheet_name": "ParsChat Features",
-      "board_key": "PARSCHAT",
+      "sheet_name": "MyProject Features",
+      "board_key": "MYPROJECT",
       "gid": 1054397609,
       "data_range": "A2:AW"
     }

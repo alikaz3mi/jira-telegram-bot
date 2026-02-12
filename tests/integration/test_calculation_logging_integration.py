@@ -48,8 +48,8 @@ class TestCalculationLoggingIntegration(unittest.IsolatedAsyncioTestCase):
         row = TeamEvaluationRow(
             developer_name="کاظمی",
             department="DevOps",
-            project="PARSCHAT",
-            sprint="PARSCHAT SPRINT 50",
+            project="MYPROJECT",
+            sprint="MYPROJECT SPRINT 50",
             development_count=5,
             bug_count=3,
             support_count=2,
@@ -115,10 +115,10 @@ class TestCalculationLoggingIntegration(unittest.IsolatedAsyncioTestCase):
         for log in saved_logs:
             self.assertIsInstance(log, TeamEvaluationCalculationLog)
             self.assertEqual(log.sprint_id, 123)
-            self.assertEqual(log.sprint_name, "PARSCHAT SPRINT 50")
+            self.assertEqual(log.sprint_name, "MYPROJECT SPRINT 50")
             self.assertEqual(log.developer_name, "کاظمی")
             self.assertEqual(log.department, "DevOps")
-            self.assertEqual(log.project, "PARSCHAT")
+            self.assertEqual(log.project, "MYPROJECT")
         
         # Verify specific log types are present
         metric_names = [log.metric_name for log in saved_logs]
@@ -235,10 +235,10 @@ class TestCalculationLoggingIntegration(unittest.IsolatedAsyncioTestCase):
         """Test the _create_calculation_log helper method."""
         log = self.use_case._create_calculation_log(
             sprint_id=123,
-            sprint_name="PARSCHAT SPRINT 50",
+            sprint_name="MYPROJECT SPRINT 50",
             developer_name="کاظمی",
             department="DevOps",
-            project="PARSCHAT",
+            project="MYPROJECT",
             calculation_type="metric",
             metric_name="test_metric",
             metric_value=100.0,
@@ -250,10 +250,10 @@ class TestCalculationLoggingIntegration(unittest.IsolatedAsyncioTestCase):
         
         self.assertIsInstance(log, TeamEvaluationCalculationLog)
         self.assertEqual(log.sprint_id, 123)
-        self.assertEqual(log.sprint_name, "PARSCHAT SPRINT 50")
+        self.assertEqual(log.sprint_name, "MYPROJECT SPRINT 50")
         self.assertEqual(log.developer_name, "کاظمی")
         self.assertEqual(log.department, "DevOps")
-        self.assertEqual(log.project, "PARSCHAT")
+        self.assertEqual(log.project, "MYPROJECT")
         self.assertEqual(log.calculation_type, "metric")
         self.assertEqual(log.metric_name, "test_metric")
         self.assertEqual(log.metric_value, 100.0)

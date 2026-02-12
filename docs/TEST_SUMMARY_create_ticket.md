@@ -104,7 +104,7 @@ Edge case scenarios:
 
 ### 6. TestProjectKeyConstant (2 tests)
 Project key validation:
-- ✅ JIRA_PROJECT_KEY is "PCT"
+- ✅ JIRA_PROJECT_KEY is "PROJ1"
 - ✅ TaskData uses correct project key
 
 ### 7. TestLabelHandling (3 tests)

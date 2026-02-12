@@ -96,7 +96,7 @@ class UserConfigInterface(ABC):
 
         Args:
             username: JIRA username
-            project_key: Project key (e.g., "PARSCHAT")
+            project_key: Project key (e.g., "PROJECT1")
 
         Returns:
             Component name or None if not found
@@ -114,7 +114,7 @@ class UserConfigInterface(ABC):
 
         Args:
             username: Jira username
-            project_key: Project key (e.g., "PARSCHAT")
+            project_key: Project key (e.g., "PROJECT1")
             component: Component name (e.g., "AI", "Backend", "Frontend", "UI/UX", "DevOps")
 
         Returns:

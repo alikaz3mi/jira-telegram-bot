@@ -8,14 +8,14 @@ The Team Evaluation CLI allows you to compute developer performance metrics for 
 # Basic usage with sprint ID
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --dry-run
 
 # Using sprint name instead of ID
 python scripts/run_team_evaluation.py \
     --sprint-name "Sprint 47" \
-    --project-keys "PARSCHAT,PROJ2" \
+    --project-keys "MYPROJECT,PROJ2" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs"
 ```
 
@@ -23,7 +23,7 @@ python scripts/run_team_evaluation.py \
 
 1. **Environment Setup**: Create a `.env` file or set environment variables:
    ```env
-   GOOGLE_SHEETS_CREDENTIALS_PATH=./parschat-684f8662ca98.json
+   GOOGLE_SHEETS_CREDENTIALS_PATH=./google-sheets-credentials.json
    JIRA_SERVER=https://your-company.atlassian.net
    JIRA_USERNAME=your-email@company.com
    JIRA_API_TOKEN=your-jira-api-token
@@ -72,7 +72,7 @@ python scripts/run_team_evaluation.py \
 ```bash
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --dry-run
 ```
@@ -82,7 +82,7 @@ python scripts/run_team_evaluation.py \
 ```bash
 python scripts/run_team_evaluation.py \
     --sprint-name "Sprint 47" \
-    --project-keys "PARSCHAT,BACKEND,FRONTEND" \
+    --project-keys "MYPROJECT,BACKEND,FRONTEND" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --tab-name "Q4 Evaluation"
 ```
@@ -92,7 +92,7 @@ python scripts/run_team_evaluation.py \
 ```bash
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --weekly-hours 40 \
     --workdays "1,2,3,4,5" \
@@ -104,7 +104,7 @@ python scripts/run_team_evaluation.py \
 ```bash
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --score-weights '{"deadline": 0.4, "worklog": 0.3, "high_priority": 0.2, "defects": 0.1}' \
     --defect-thresholds '{"support_per_story": 0.2, "tester_per_story": 0.3, "max_penalty": 50}'
@@ -115,7 +115,7 @@ python scripts/run_team_evaluation.py \
 ```bash
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --verbose \
     --dry-run
@@ -159,7 +159,7 @@ Always test with `--dry-run` first to see what would be computed without writing
 ```bash
 python scripts/run_team_evaluation.py \
     --sprint-id 123 \
-    --project-keys "PARSCHAT" \
+    --project-keys "MYPROJECT" \
     --sheet-id "1-TLlnTLfK0qKU2XNr0TgFT96-mNzJoSYgLuLlnPNdJs" \
     --dry-run \
     --verbose

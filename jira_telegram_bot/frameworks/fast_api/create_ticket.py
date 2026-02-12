@@ -49,6 +49,7 @@ from jira_telegram_bot.adapters.services.telegram.telegram_gateway import (
 from jira_telegram_bot.adapters.user_config import UserConfig
 from jira_telegram_bot.entities.task import TaskData
 from jira_telegram_bot.settings.jira_settings import JiraConnectionSettings
+from jira_telegram_bot.settings.jira_sync_settings import JiraSyncSettings
 from jira_telegram_bot.settings.telegram_settings import TelegramConnectionSettings
 from jira_telegram_bot.use_cases.ai_agents.create_ticketing_issue import (
     parse_jira_prompt,
@@ -61,6 +62,7 @@ from jira_telegram_bot.utils.mention_parser import (
 
 JIRA_SETTINGS = JiraConnectionSettings()
 TELEGRAM_SETTINGS = TelegramConnectionSettings()
+_SYNC_SETTINGS = JiraSyncSettings()
 app = FastAPI()
 telegram_post_data_store = TelegramPostDataStore()
 jira_repository = JiraServerRepository(JIRA_SETTINGS)
@@ -178,7 +180,7 @@ def extract_channel_info_from_forward(message: Dict[str, Any]) -> tuple[int | No
     return None, None
 
 
-JIRA_PROJECT_KEY = "PCT"
+JIRA_PROJECT_KEY = _SYNC_SETTINGS.sync_project_keys[0] if _SYNC_SETTINGS.sync_project_keys else "PROJECT1"
 MEDIA_GROUP_STORE: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 MEDIA_GROUP_METADATA: Dict[str, float] = {}
 GROUP_TIMEOUT_SECONDS = 5.0
@@ -703,24 +705,18 @@ async def process_command(
     data_store = telegram_post_data_store.load_data_store()
     store_entry = telegram_post_data_store.find_channel_post_by_issue(data_store, issue_key)
     if "/done" in text.lower():
-        # Allow the original creator, PCT admins, or a superadmin to mark as done
         allowed_to_mark_done = False
 
-        # Creator of the post can always mark as done
         if store_entry and store_entry.get("metadata", {}).get("creator_username") == message_from:
             allowed_to_mark_done = True
 
-        # Try to resolve user config and check roles (PCT admin or superadmin)
         if not allowed_to_mark_done and message_from:
             try:
                 user_cfg = user_config.get_user_config(message_from)
-                # Check board_roles if present
                 board_roles = getattr(user_cfg, "board_roles", None) if user_cfg else None
                 if isinstance(board_roles, dict):
-                    # PCT admin explicitly allowed
-                    if board_roles.get("PCT") == "admin":
+                    if board_roles.get(JIRA_PROJECT_KEY) == "admin":
                         allowed_to_mark_done = True
-                    # Global superadmin role allowed (if any board has role 'superadmin')
                     if any(role == "superadmin" for role in board_roles.values()):
                         allowed_to_mark_done = True
             except Exception:
@@ -889,7 +885,7 @@ async def jira_webhook_endpoint(request: Request):
                         summary = None
 
                     dm_message = (
-                        f"<b>📋 New Task Assigned to You from ParsChat Support Team</b>\n\n"
+                        f"<b>📋 New Task Assigned to You from Support Team</b>\n\n"
                         f"<b>Task:</b> {issue_key}\n"
                         + (f"<b>Summary:</b> {summary}\n" if summary else "")
                         + f"<b>Link:</b> {issue_link}"

@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 import sys
 
-# Add project root to path
-sys.path.insert(0, "/home/ali/projects/Radtharn/jira-telegram-bot")
 
 from jira_telegram_bot import LOGGER  # noqa: E402
 from jira_telegram_bot.adapters.repositories.calendar.api_calendar_repository import (  # noqa: E402

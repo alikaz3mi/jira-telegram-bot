@@ -44,10 +44,10 @@ adapters/
 |--------|------|-------------|
 | `id` | SERIAL PRIMARY KEY | Auto-incrementing ID |
 | `sprint_id` | INTEGER | Sprint identifier |
-| `sprint_name` | VARCHAR(255) | Sprint name (e.g., "PARSCHAT SPRINT 50") |
+| `sprint_name` | VARCHAR(255) | Sprint name (e.g., "MYPROJECT SPRINT 50") |
 | `developer_name` | VARCHAR(255) | Developer name |
 | `department` | VARCHAR(255) | Department (AI, DevOps, Backend, etc.) |
-| `project` | VARCHAR(255) | Project code (PARSCHAT, DASH, PARS, etc.) |
+| `project` | VARCHAR(255) | Project code (MYPROJECT, PROJ6, PROJ3, etc.) |
 | `calculation_type` | VARCHAR(50) | Type: metric, score_component, penalty, bonus, final_score |
 | `metric_name` | VARCHAR(255) | Metric identifier (e.g., "development_task_count") |
 | `metric_value` | FLOAT | Calculated value |
@@ -201,7 +201,7 @@ The calculation logging is integrated into `SprintClosedTeamEvaluationUseCase`:
 # Logs are automatically created during evaluation
 await use_case.execute(
     sprint_id=123,
-    project="PARSCHAT",
+    project="MYPROJECT",
     dry_run=False
 )
 
@@ -277,10 +277,10 @@ from jira_telegram_bot.use_cases.team_evaluation.calculation_logger import Calcu
 # Task classification (returns 4 logs)
 logs = CalculationLogger.log_task_classification(
     sprint_id=123,
-    sprint_name="PARSCHAT SPRINT 50",
+    sprint_name="MYPROJECT SPRINT 50",
     developer_name="کاظمی",
     department="DevOps",
-    project="PARSCHAT",
+    project="MYPROJECT",
     dev_count=8,
     bug_count=2,
     support_count=1,

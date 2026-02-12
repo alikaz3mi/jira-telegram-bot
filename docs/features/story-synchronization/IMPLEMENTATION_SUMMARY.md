@@ -91,10 +91,10 @@ Implemented a complete story synchronization feature that automatically syncs Ji
 ### 3. Configuration
 
 - **`config/story_sync_config.json`**: Board-to-sheet mappings
-  - Configured for ParsChat Features sheet
+  - Configured for MyProject Features sheet
   - Spreadsheet ID: 1TCvcE_IsP6jpHp3pVfjND9Kys8rfsB5fp2Sx0LILwm4
-  - Sheet name: "ParsChat Features"
-  - Board key: PARSCHAT
+  - Sheet name: "MyProject Features"
+  - Board key: MYPROJECT
 
 ### 4. Script (`scripts/sync_stories.py`)
 

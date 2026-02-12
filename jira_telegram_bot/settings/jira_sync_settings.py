@@ -30,3 +30,8 @@ class JiraSyncSettings(BaseSettings):
         default=True,
         description="Whether to perform full sync or incremental sync"
     )
+
+    pm_project_key: str = Field(
+        default="",
+        description="Jira project key for the PM board used to find linked issues"
+    )
