@@ -1289,8 +1289,8 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         """Link two Jira issues with a specified relationship.
 
         Args:
-            dependent_issue_key: The issue that depends on another (outward issue)
-            dependency_issue_key: The issue that is depended upon (inward issue)
+            dependent_issue_key: The issue that depends on another (inward side, e.g. 'is blocked by')
+            dependency_issue_key: The issue that is depended upon (outward side, e.g. 'blocks')
             link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
 
         Returns:
@@ -1339,13 +1339,14 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
                 return False
 
             # Create the issue link
+            # outward side = dependency (e.g. 'blocks'), inward side = dependent (e.g. 'is blocked by')
             self.jira.create_issue_link(
                 type=selected_link_type,
-                inwardIssue=dependency_issue_key,
-                outwardIssue=dependent_issue_key,
+                inwardIssue=dependent_issue_key,
+                outwardIssue=dependency_issue_key,
             )
             LOGGER.info(
-                f"Successfully linked issues: {dependent_issue_key} -> {dependency_issue_key} ({selected_link_type})",
+                f"Successfully linked issues: {dependency_issue_key} -> {dependent_issue_key} ({selected_link_type})",
             )
             return True
         except Exception as e:

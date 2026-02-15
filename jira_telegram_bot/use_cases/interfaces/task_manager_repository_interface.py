@@ -361,8 +361,8 @@ class TaskManagerRepositoryInterface(ABC):
             Link two Jira issues with a specified relationship.
 
             Args:
-                dependent_issue_key: The issue that depends on another (outward issue)
-                dependency_issue_key: The issue that is depended upon (inward issue)
+                dependent_issue_key: The issue that depends on another (inward side, e.g. 'is blocked by')
+                dependency_issue_key: The issue that is depended upon (outward side, e.g. 'blocks')
                 link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
 
             Returns:
@@ -601,8 +601,8 @@ class TaskManagerRepositoryInterface(ABC):
         Link two Jira issues with a specified relationship.
 
         Args:
-            dependent_issue_key: The issue that depends on another (outward issue)
-            dependency_issue_key: The issue that is depended upon (inward issue)
+            dependent_issue_key: The issue that depends on another (inward side, e.g. 'is blocked by')
+            dependency_issue_key: The issue that is depended upon (outward side, e.g. 'blocks')
             link_type: The type of link (e.g., "Dependency", "Blocks", "Relates")
 
         Returns:

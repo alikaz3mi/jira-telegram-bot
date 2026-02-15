@@ -532,6 +532,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             except Exception as e:
                 LOGGER.warning(f"Could not transition issue to {jira_status}: {e}")
 
+            try:
+                linked_deps = self._link_dependencies_by_summary(
+                    pm_board_issue.key,
+                    feature,
+                    self.pm_project_key,
+                )
+                LOGGER.info(f"Linked {linked_deps} dependencies for PM Board task {pm_board_issue.key}")
+            except Exception as e:
+                LOGGER.warning(
+                    f"Could not link dependencies for PM Board task {pm_board_issue.key}: {e}",
+                )
+
             await self.update_developer_board_feature(
                 feature.sheet_row_number,
                 {"jira_issue_key": pm_board_issue.key},
@@ -649,6 +661,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if not issue:
                 LOGGER.warning(f"Jira issue {feature.jira_issue_key} not found")
                 return False
+
+            try:
+                linked_deps = self._link_dependencies_by_summary(
+                    feature.jira_issue_key,
+                    feature,
+                    self.pm_project_key,
+                )
+                LOGGER.info(f"Updated {linked_deps} dependencies for PM Board task {feature.jira_issue_key}")
+            except Exception as e:
+                LOGGER.warning(
+                    f"Could not update dependencies for PM Board task {feature.jira_issue_key}: {e}",
+                )
 
             update_fields = {}
 
@@ -2518,14 +2542,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         for link in existing_links:
             link_type = link.get("type", {}).get("name", "")
             if link_type == "Blocks":
-                # Check if this is an inward link (something blocks this issue)
                 inward_issue = link.get("inwardIssue", {})
                 if inward_issue:
                     inward_key = inward_issue.get("key")
                     if inward_key:
                         existing_blocking_keys.add(inward_key)
-                        # If this link shouldn't exist anymore, mark for removal
                         if inward_key not in desired_dependency_keys:
+                            links_to_remove.append(link.get("id"))
+                outward_issue = link.get("outwardIssue", {})
+                if outward_issue:
+                    outward_key = outward_issue.get("key")
+                    if outward_key:
+                        existing_blocking_keys.add(outward_key)
+                        if outward_key not in desired_dependency_keys:
                             links_to_remove.append(link.get("id"))
         
         # Remove links that no longer should exist
