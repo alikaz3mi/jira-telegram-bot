@@ -428,10 +428,8 @@ class SynthPMUseCase:
                         sync_results["updated_developer_board_tasks"] = (
                             sync_results.get("updated_developer_board_tasks", 0) + 1
                         )
-                    else:
-                        error_msg = f"Failed to update subtask {feature.developer_board_issue_key} for: {feature.task_title}"
-                        LOGGER.error(error_msg)
-                        sync_results["errors"].append(error_msg)
+                    elif update_success is False:
+                        LOGGER.debug(f"No changes needed for subtask {feature.developer_board_issue_key}")
                     continue
                     
                 # Check if status allows Developer Board task creation
@@ -547,10 +545,8 @@ class SynthPMUseCase:
                     sync_results["updated_developer_board_tasks"] = (
                         sync_results.get("updated_developer_board_tasks", 0) + 1
                     )
-                else:
-                    error_msg = f"Failed to update developer board task {feature.developer_board_issue_key} for: {feature.task_title}"
-                    LOGGER.error(error_msg)
-                    sync_results["errors"].append(error_msg)
+                elif update_success is False:
+                    LOGGER.debug(f"No changes needed for developer board task {feature.developer_board_issue_key}")
                 continue
                 
             # Check if status allows Developer Board task creation
@@ -686,10 +682,8 @@ class SynthPMUseCase:
                 success = await self.repository.update_jira_task_from_feature(feature)
                 if success:
                     sync_results["updated_jira_tasks"] += 1
-                else:
-                    sync_results["errors"].append(
-                        f"Failed to update Jira task: {feature.jira_issue_key}",
-                    )
+                elif success is False:
+                    LOGGER.debug(f"No changes needed for PM board task {feature.jira_issue_key}")
 
                 if feature.developer_board_issue_key:
                     assignees = self._extract_assignees_from_feature(feature)

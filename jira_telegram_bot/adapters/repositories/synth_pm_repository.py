@@ -843,8 +843,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 update_fields["project"] = {"key": self.pm_project_key}
                 issue.update(fields=update_fields)
                 LOGGER.info(f"Updated Jira task {feature.jira_issue_key}")
+                return True
 
-            return True
+            LOGGER.debug(f"No field changes needed for PM board task {feature.jira_issue_key}")
+            return False
 
         except Exception as e:
             LOGGER.error(f"Error updating Jira task {feature.jira_issue_key}: {e}")
@@ -1389,18 +1391,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     # Subtasks automatically inherit epic from parent story, no need to remove epic from them explicitly
                     if issue.fields.issuetype.name == "Story":
                         LOGGER.debug(f"Epic removed from story {issue.key} - subtasks will automatically inherit this change")
-            if feature_dates_str:
-                if (
-                    feature_dates_str.get("target_start")
-                    != issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
-                ):
-                    update_fields[self.jira_repository.jira_target_start_id] = feature_dates_str.get("target_start")
-
-                if (
-                    feature_dates_str.get("target_end")
-                    != issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
-                ):
-                    update_fields[self.jira_repository.jira_target_end_id] = feature_dates_str.get("target_end")
 
             if feature.task_title:
                 if feature.task_title != issue.fields.summary:
@@ -1743,8 +1733,10 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if update_fields:
                 issue.update(fields=update_fields)
                 LOGGER.info(f"Updated task {feature.developer_board_issue_key} with {update_fields}")
+                return True
 
-            return True
+            LOGGER.debug(f"No field changes needed for {feature.developer_board_issue_key}")
+            return False
 
         except Exception as e:
             LOGGER.error(
