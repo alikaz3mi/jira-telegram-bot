@@ -137,7 +137,7 @@ class TaskGetUsersTime:
                 
                 author_name = wl.author.displayName
                 time_spent_seconds = wl.timeSpentSeconds or 0
-                comment = (wl.comment or "").lower()
+                comment = (getattr(wl, 'comment', None) or "").lower()
 
                 # Update total time
                 user_data_map[author_name]["total_time"] += time_spent_seconds
