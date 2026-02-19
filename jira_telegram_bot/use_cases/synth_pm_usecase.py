@@ -382,6 +382,11 @@ class SynthPMUseCase:
                     sync_results["errors"].append(f"Failed to create story for release: {release_name}")
                     return None
             
+            release_note = release_notes_map.get(release_name) if release_notes_map else None
+
+            await self._write_story_key_to_sheet(story_key, release_note)
+            await self._sync_story_dependencies(story_key, release_note)
+
             # Get existing subtasks from Jira to detect deletions
             existing_jira_subtasks = set()
             try:
@@ -506,6 +511,64 @@ class SynthPMUseCase:
             LOGGER.error(error_msg)
             sync_results["errors"].append(error_msg)
             return None
+
+    async def _write_story_key_to_sheet(
+        self,
+        story_key: str,
+        release_note: Optional[ReleaseNoteEntity],
+    ) -> None:
+        """Write story issue key back to the Issue Link column in Features sheet.
+
+        Args:
+            story_key: Jira story issue key
+            release_note: Release note entity with the row number
+        """
+        if not release_note:
+            return
+        try:
+            if release_note.issue_link == story_key:
+                return
+            success = await self.repository.update_release_note(
+                release_note.row_number,
+                {"issue_link": story_key},
+            )
+            if success:
+                LOGGER.info(
+                    f"Updated Issue Link for release '{release_note.release_components}' "
+                    f"row {release_note.row_number} with story {story_key}"
+                )
+            else:
+                LOGGER.warning(
+                    f"Failed to write story key {story_key} to sheet "
+                    f"row {release_note.row_number}"
+                )
+        except Exception as e:
+            LOGGER.warning(
+                f"Could not write story key {story_key} to sheet "
+                f"row {release_note.row_number}: {e}"
+            )
+
+    async def _sync_story_dependencies(
+        self,
+        story_key: str,
+        release_note: Optional[ReleaseNoteEntity],
+    ) -> None:
+        """Sync dependency links between stories based on release note dependencies.
+
+        Args:
+            story_key: Current story issue key
+            release_note: Release note entity with dependencies information
+        """
+        if not release_note:
+            return
+        try:
+            await self.repository.link_story_dependencies(
+                story_key, release_note,
+            )
+        except Exception as e:
+            LOGGER.warning(
+                f"Could not sync story dependencies for {story_key}: {e}"
+            )
 
     async def _create_regular_tasks_for_features(
         self,

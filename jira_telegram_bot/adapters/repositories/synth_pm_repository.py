@@ -952,8 +952,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             True if successful, False otherwise
         """
         try:
-            if not self.project_config.boards.pm_board or not self.project_config.boards.pm_board.enabled:
-                LOGGER.error("PM board not configured or disabled")
+            if not self.project_config.boards.pm_board:
+                LOGGER.error("PM board not configured")
                 return False
 
             pm_board_config = self.project_config.boards.pm_board
@@ -2526,7 +2526,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"Error searching for dependency '{dep_summary}': {e}"
                     )
 
-        # Get existing "Blocks" links for this issue
+        # Get existing "Blocks" links for this issue (inward direction only)
+        # Only manage outward links — from the dependent issue's perspective,
+        # the blocker appears as outwardIssue. Inward links represent issues
+        # that THIS issue blocks (managed by the OTHER issue's dependency sync)
+        # and must not be touched here.
         existing_links = self.jira_repository.get_issue_links(issue_key)
         existing_blocking_keys = set()
         links_to_remove = []
@@ -2534,13 +2538,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         for link in existing_links:
             link_type = link.get("type", {}).get("name", "")
             if link_type == "Blocks":
-                inward_issue = link.get("inwardIssue", {})
-                if inward_issue:
-                    inward_key = inward_issue.get("key")
-                    if inward_key:
-                        existing_blocking_keys.add(inward_key)
-                        if inward_key not in desired_dependency_keys:
-                            links_to_remove.append(link.get("id"))
                 outward_issue = link.get("outwardIssue", {})
                 if outward_issue:
                     outward_key = outward_issue.get("key")
@@ -2754,12 +2751,15 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         
         return "\n".join(description_parts) if description_parts else ""
 
-    async def _link_story_dependencies(
+    async def link_story_dependencies(
         self,
         story_key: str,
         release_note: ReleaseNoteEntity,
     ) -> None:
-        """Link story dependencies based on release note dependencies field.
+        """Idempotently sync story dependency links based on release note.
+
+        Checks existing outward "Blocks" links, adds missing ones and
+        removes stale ones — same approach used for subtask linking.
 
         Args:
             story_key: Current story issue key
@@ -2767,63 +2767,84 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         try:
             if not release_note.dependencies or not release_note.dependencies.strip():
-                LOGGER.debug(f"No dependencies specified for story {story_key}")
                 return
-            
-            # Parse comma-separated dependency release names
-            dependency_names = [dep.strip() for dep in release_note.dependencies.split(",") if dep.strip()]
-            
+
+            dependency_names = [
+                dep.strip()
+                for dep in release_note.dependencies.split(",")
+                if dep.strip()
+            ]
             if not dependency_names:
-                LOGGER.debug(f"No valid dependencies found for story {story_key}")
                 return
-            
-            LOGGER.info(f"Processing {len(dependency_names)} dependencies for story {story_key}: {dependency_names}")
-            
-            # Find and link each dependency story
-            linked_count = 0
-            for dependency_release_name in dependency_names:
+
+            desired_keys = set()
+            for dep_name in dependency_names:
+                dep_key = await self.get_story_by_release_name(dep_name)
+                if dep_key and dep_key != story_key:
+                    desired_keys.add(dep_key)
+                elif not dep_key:
+                    LOGGER.warning(
+                        f"Dependency story not found for '{dep_name}', "
+                        f"skipping link for story {story_key}"
+                    )
+
+            existing_links = self.jira_repository.get_issue_links(story_key)
+            existing_outward_keys = set()
+            links_to_remove = []
+
+            for link in existing_links:
+                link_type = link.get("type", {}).get("name", "")
+                if link_type == "Blocks":
+                    outward_issue = link.get("outwardIssue", {})
+                    if outward_issue:
+                        outward_key = outward_issue.get("key")
+                        if outward_key:
+                            existing_outward_keys.add(outward_key)
+                            if outward_key not in desired_keys:
+                                links_to_remove.append(link.get("id"))
+
+            removed = 0
+            for link_id in links_to_remove:
                 try:
-                    # Search for the dependency story by release name
-                    dependency_story_key = await self.get_story_by_release_name(dependency_release_name)
-                    
-                    if not dependency_story_key:
-                        LOGGER.warning(
-                            f"Dependency story not found for release '{dependency_release_name}', "
-                            f"skipping link for story {story_key}"
-                        )
-                        continue
-                    
-                    # Create "Blocks" link: dependency_story_key blocks story_key
-                    # This means story_key depends on (is blocked by) dependency_story_key
-                    link_created = self.jira_repository.create_issue_link(
-                        link_type="Blocks",
-                        inward_issue=story_key,  # This story is blocked
-                        outward_issue=dependency_story_key,  # By the dependency story
-                    )
-                    
-                    if link_created:
-                        linked_count += 1
-                        LOGGER.info(
-                            f"Linked dependency: {dependency_story_key} ({dependency_release_name}) "
-                            f"blocks {story_key} ({release_note.release_version})"
-                        )
-                    else:
-                        LOGGER.warning(
-                            f"Failed to create link between {dependency_story_key} and {story_key}"
-                        )
-                        
-                except Exception as link_error:
+                    self.jira_repository.delete_issue_link(link_id)
+                    removed += 1
+                except Exception as e:
                     LOGGER.error(
-                        f"Error linking dependency '{dependency_release_name}' for story {story_key}: {link_error}"
+                        f"Error removing story link {link_id} from "
+                        f"{story_key}: {e}"
                     )
-            
-            if linked_count > 0:
-                LOGGER.info(f"Successfully linked {linked_count}/{len(dependency_names)} dependencies for story {story_key}")
-            else:
-                LOGGER.warning(f"No dependencies were linked for story {story_key}")
-                
+
+            added = 0
+            for dep_key in desired_keys:
+                if dep_key not in existing_outward_keys:
+                    try:
+                        self.jira_repository.link_issues(
+                            dependent_issue_key=story_key,
+                            dependency_issue_key=dep_key,
+                            link_type="Blocks",
+                        )
+                        LOGGER.info(
+                            f"Linked story dependency: {dep_key} blocks "
+                            f"{story_key}"
+                        )
+                        added += 1
+                    except Exception as e:
+                        LOGGER.error(
+                            f"Error linking story {dep_key} to "
+                            f"{story_key}: {e}"
+                        )
+
+            if added > 0 or removed > 0:
+                LOGGER.info(
+                    f"Story dependency sync for {story_key}: "
+                    f"added {added}, removed {removed}, "
+                    f"total {len(desired_keys)}"
+                )
+
         except Exception as e:
-            LOGGER.error(f"Error linking story dependencies for {story_key}: {e}")
+            LOGGER.error(
+                f"Error syncing story dependencies for {story_key}: {e}"
+            )
 
     async def _update_story_deadline_after_subtasks(
         self,
@@ -3148,6 +3169,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "pipeline_green_rate": ["Pipeline Green Rate (0-1)", "Pipeline Green Rate"],
             "checklist_completion": ["Checklist Completion (0-1)", "Checklist Completion"],
             "readiness_score": ["Readiness Score (0-100)", "Readiness Score"],
+            "issue_link": ["Issue Link", "issue_link", "Issue link", "Jira Story Key"],
             "notes_risks": ["Notes / Risks", "Notes", "Risks"],
             "telegram_message_id": ["Telegram Message ID", "Message ID"],
             "last_updated": ["Last Updated", "Updated"],
@@ -3244,6 +3266,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 pipeline_green_rate=get_mapped_value("pipeline_green_rate") if get_mapped_value("pipeline_green_rate") else None,
                 checklist_completion=get_mapped_value("checklist_completion") if get_mapped_value("checklist_completion") else None,
                 readiness_score=get_mapped_value("readiness_score") if get_mapped_value("readiness_score") else None,
+                issue_link=get_mapped_value("issue_link") if get_mapped_value("issue_link") else None,
                 notes_risks=get_mapped_value("notes_risks") if get_mapped_value("notes_risks") else None,
                 telegram_message_id=get_mapped_value("telegram_message_id") if get_mapped_value("telegram_message_id") else None,
                 last_updated=parse_date(get_mapped_value("last_updated")),
@@ -4257,18 +4280,51 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             Story issue key if found, None otherwise
         """
         try:
-            # Search for stories with the release name in the summary
             project_key = self.developer_board_project_key
-            jql = f'project = "{project_key}" AND issuetype = Story AND summary ~ "{release_name}"'
-            issues = self.jira_repository.search_issues(jql, max_results=1)
-            
-            if issues:
-                LOGGER.info(f"Found existing story for release {release_name}: {issues[0].key}")
-                return issues[0].key
-            return None
-            
+            escaped_name = release_name.replace('"', '\\"')
+            jql = (
+                f'project = "{project_key}" AND issuetype = Story '
+                f'AND summary ~ "{escaped_name}"'
+            )
+            issues = self.jira_repository.search_issues(jql, max_results=20)
+
+            if not issues:
+                return None
+
+            exact_matches = [
+                i for i in issues
+                if i.fields.summary.strip() == release_name.strip()
+            ]
+
+            if not exact_matches:
+                return None
+
+            if len(exact_matches) > 1:
+                best = max(
+                    exact_matches,
+                    key=lambda i: len(
+                        getattr(i.fields, "subtasks", None) or []
+                    ),
+                )
+                LOGGER.warning(
+                    f"Found {len(exact_matches)} duplicate stories for "
+                    f"release '{release_name}': "
+                    f"{[i.key for i in exact_matches]}. "
+                    f"Using {best.key} (most subtasks)."
+                )
+                return best.key
+
+            LOGGER.info(
+                f"Found existing story for release {release_name}: "
+                f"{exact_matches[0].key}"
+            )
+            return exact_matches[0].key
+
         except Exception as e:
-            LOGGER.error(f"Error searching for story by release name '{release_name}': {e}")
+            LOGGER.error(
+                f"Error searching for story by release name "
+                f"'{release_name}': {e}"
+            )
             return None
 
     async def create_release_story(
@@ -4402,10 +4458,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 f"Created release story {self.jira_repository.get_issue_url_by_key(story_issue.key)} "
                 f"for release: {release_name}"
             )
-            
-            # Link story dependencies if release_note is provided
-            if release_note:
-                await self._link_story_dependencies(story_issue.key, release_note)
             
             return story_issue.key
             
