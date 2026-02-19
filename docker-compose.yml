@@ -20,19 +20,19 @@ services:
       python3 jira_telegram_bot
     restart: always
   
-  synth-pm-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: synth_pm_api
-    image: jira_telegram_bot:v3
-    volumes:
-      - .:/app
-    command: >
-      python3 jira_telegram_bot/frameworks/api/main.py
-    restart: always
-    ports:
-      - "2318:2318"
+  # synth-pm-api:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: synth_pm_api
+  #   image: jira_telegram_bot:v3
+  #   volumes:
+  #     - .:/app
+  #   command: >
+  #     python3 jira_telegram_bot/frameworks/api/main.py
+  #   restart: always
+  #   ports:
+  #     - "2318:2318"
 
   ticketing-bot:
     build:
@@ -100,17 +100,17 @@ services:
   #   networks:
   #     - jira-bot-network
 
-  scheduled-reports-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: scheduled_reports
-    image: jira_telegram_bot:v3
-    volumes:
-      - .:/app
-    command: >
-      python3 scripts/reports/run_scheduled_reports.py
-    restart: always
-    networks:
-      - jira-bot-network
+  # scheduled-reports-service:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: scheduled_reports
+  #   image: jira_telegram_bot:v3
+  #   volumes:
+  #     - .:/app
+  #   command: >
+  #     python3 scripts/reports/run_scheduled_reports.py
+  #   restart: always
+  #   networks:
+  #     - jira-bot-network
 
