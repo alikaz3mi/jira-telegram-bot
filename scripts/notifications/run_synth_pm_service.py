@@ -40,11 +40,12 @@ async def main():
         )
         
         # Setup signal handlers for graceful shutdown
+        shutdown_event = asyncio.Event()
         loop = asyncio.get_event_loop()
         
         def signal_handler(sig):
             LOGGER.info(f"Received signal {sig}, initiating graceful shutdown...")
-            asyncio.create_task(sync_service.stop())
+            shutdown_event.set()
         
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))
@@ -70,8 +71,12 @@ async def main():
         LOGGER.info("Starting APScheduler-based continuous sync...")
         LOGGER.info("=" * 80)
         
-        # Start the service (this will block until stopped)
+        # Start the service (schedules jobs and starts APScheduler)
         await sync_service.start()
+        
+        # Block until a shutdown signal is received
+        LOGGER.info("Service running. Waiting for shutdown signal...")
+        await shutdown_event.wait()
         
     except KeyboardInterrupt:
         LOGGER.info("Keyboard interrupt received")
