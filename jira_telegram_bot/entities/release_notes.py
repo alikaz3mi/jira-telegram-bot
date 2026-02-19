@@ -49,6 +49,7 @@ class ReleaseNoteEntity(BaseModel):
     pipeline_green_rate: Optional[str] = Field(default=None, description="Pipeline Green Rate (0-1)")
     checklist_completion: Optional[str] = Field(default=None, description="Checklist Completion (0-1)")
     readiness_score: Optional[str] = Field(default=None, description="Readiness Score (0-100)")
+    issue_link: Optional[str] = Field(default=None, description="Jira Story issue key")
     notes_risks: Optional[str] = Field(default=None, description="Notes / Risks")
     telegram_message_id: Optional[str] = Field(default=None, description="Telegram message ID for tracking edits")
     last_updated: Optional[datetime] = Field(default=None, description="Last update timestamp")
