@@ -19,10 +19,12 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import defaultdict
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Optional
 
 import aiohttp
 import jdatetime
@@ -184,6 +186,9 @@ JIRA_PROJECT_KEY = _SYNC_SETTINGS.sync_project_keys[0] if _SYNC_SETTINGS.sync_pr
 MEDIA_GROUP_STORE: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 MEDIA_GROUP_METADATA: Dict[str, float] = {}
 GROUP_TIMEOUT_SECONDS = 5.0
+ISSUE_POLL_INTERVAL_SECONDS = 30
+_LAST_POLL_TIMESTAMP: Optional[str] = None
+_POLLED_CHANGELOG_IDS: set = set()
 
 
 async def process_media_group(messages: List[Dict[str, Any]], task_data: TaskData):
@@ -566,22 +571,179 @@ async def handle_comment_event(
         LOGGER.warning(f"Could not send notification DMs for {issue_key}: {e}")
 
 
+def _build_issue_details_card(issue_key: str, issue: Any = None) -> str:
+    """Build a rich HTML card with all issue details for Telegram.
+
+    Args:
+        issue_key: Jira issue key.
+        issue: Optional pre-fetched Jira issue object. Fetched if None.
+
+    Returns:
+        HTML-formatted string with issue details.
+    """
+    epic_link_id = jira_repository.jira_epic_link_id
+    sprint_id = jira_repository.jira_sprint_id
+    story_point_id = jira_repository.jira_story_point_id
+    target_end_id = jira_repository.jira_target_end_id
+    delay_reason_id = jira_repository.jira_delay_reason_id
+    root_cause_id = jira_repository.jira_root_cause_id
+
+    custom_fields = (
+        f"{epic_link_id},{sprint_id},{story_point_id},"
+        f"{target_end_id},{delay_reason_id},{root_cause_id}"
+    )
+
+    try:
+        if issue is None:
+            issue = jira_repository.jira.issue(
+                issue_key,
+                fields=f"summary,status,priority,components,labels,assignee,"
+                       f"reporter,duedate,issuetype,versions,{custom_fields}",
+            )
+
+        f = issue.fields
+        lines: List[str] = []
+
+        summary = getattr(f, "summary", None)
+        if summary:
+            lines.append(f"<b>📝 {summary}</b>")
+
+        issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+        lines.append(f"🔗 <a href='{issue_link}'>{issue_key}</a>")
+        lines.append("")
+
+        issue_type = getattr(f, "issuetype", None)
+        if issue_type:
+            lines.append(f"<b>Type:</b> {issue_type.name}")
+
+        status = getattr(f, "status", None)
+        if status:
+            lines.append(f"<b>Status:</b> {status.name}")
+
+        priority = getattr(f, "priority", None)
+        if priority:
+            lines.append(f"<b>Priority:</b> {priority.name}")
+
+        story_points = getattr(f, story_point_id, None)
+        if story_points is not None:
+            lines.append(f"<b>Story Points:</b> {story_points}")
+
+        components = getattr(f, "components", None)
+        if components:
+            comp_names = ", ".join(c.name for c in components)
+            lines.append(f"<b>Component/s:</b> {comp_names}")
+
+        labels = getattr(f, "labels", None)
+        if labels:
+            lines.append(f"<b>Labels:</b> {', '.join(labels)}")
+
+        versions = getattr(f, "versions", None)
+        if versions:
+            ver_names = ", ".join(v.name for v in versions)
+            lines.append(f"<b>Affects Version/s:</b> {ver_names}")
+
+        epic_key = getattr(f, epic_link_id, None)
+        if epic_key:
+            try:
+                epic = jira_repository.jira.issue(epic_key, fields="summary")
+                lines.append(f"<b>Epic:</b> {epic_key} — {epic.fields.summary}")
+            except Exception:
+                lines.append(f"<b>Epic:</b> {epic_key}")
+
+        sprint_field = getattr(f, sprint_id, None)
+        if sprint_field:
+            sprint_name = None
+            if isinstance(sprint_field, list) and sprint_field:
+                last_sprint = sprint_field[-1]
+                if isinstance(last_sprint, str):
+                    import re as _re
+                    m = _re.search(r"name=([^,\]]+)", last_sprint)
+                    if m:
+                        sprint_name = m.group(1)
+                elif hasattr(last_sprint, "name"):
+                    sprint_name = last_sprint.name
+            if sprint_name:
+                lines.append(f"<b>Sprint:</b> {sprint_name}")
+
+        lines.append("")
+        lines.append("<b>👥 People</b>")
+
+        reporter = getattr(f, "reporter", None)
+        if reporter:
+            reporter_name = getattr(reporter, "displayName", getattr(reporter, "name", "?"))
+            lines.append(f"<b>Reporter:</b> {reporter_name}")
+
+        assignee = getattr(f, "assignee", None)
+        if assignee:
+            assignee_name = getattr(assignee, "displayName", getattr(assignee, "name", "?"))
+            assignee_cfg = lookup_user_config_by_jira_username(getattr(assignee, "name", ""))
+            tg_mention = f" (@{assignee_cfg.telegram_username})" if assignee_cfg and getattr(assignee_cfg, "telegram_username", None) else ""
+            lines.append(f"<b>Assignee:</b> {assignee_name}{tg_mention}")
+        else:
+            lines.append("<b>Assignee:</b> Unassigned")
+
+        lines.append("")
+        lines.append("<b>📅 Dates</b>")
+
+        due = getattr(f, "duedate", None)
+        if due:
+            lines.append(f"<b>Due:</b> {format_jalali_date(due)}")
+        else:
+            lines.append("<b>Due:</b> None")
+
+        target_end = getattr(f, target_end_id, None)
+        if target_end:
+            lines.append(f"<b>Target End:</b> {format_jalali_date(str(target_end))}")
+
+        delay_reason = getattr(f, delay_reason_id, None)
+        if delay_reason:
+            val = delay_reason.get("value", str(delay_reason)) if isinstance(delay_reason, dict) else str(delay_reason)
+            lines.append(f"<b>Delay Reason:</b> {val}")
+
+        root_cause = getattr(f, root_cause_id, None)
+        if root_cause:
+            val = root_cause.get("value", str(root_cause)) if isinstance(root_cause, dict) else str(root_cause)
+            lines.append(f"<b>Root Cause:</b> {val}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        LOGGER.warning(f"Could not build issue details card for {issue_key}: {e}")
+        return ""
+
+
 async def handle_status_change(
     item: Dict[str, Any],
     issue_key: str,
     group_chat_id: str,
     reply_message_id: int,
     user_data: Dict[str, Any],
+    issue: Any = None,
 ) -> None:
-    """Handle a status change event from Jira webhook."""
+    """Handle a status change event from Jira webhook.
+
+    Args:
+        item: Changelog item dict with field/fromString/toString.
+        issue_key: Jira issue key.
+        group_chat_id: Telegram group chat ID.
+        reply_message_id: Telegram reply message ID.
+        user_data: Group chat info dict.
+        issue: Optional pre-fetched Jira issue object.
+    """
     old_status = item.get("fromString")
     new_status = item.get("toString")
-    message = f"*📊 Status Update *\n\nTask {issue_key} moved from *'{old_status}'* to *'{new_status}'*"
+
+    details_card = _build_issue_details_card(issue_key, issue=issue)
+    header = f"<b>📊 Status Update</b>\n\nTask <b>{issue_key}</b> moved from <b>{old_status}</b> ➜ <b>{new_status}</b>"
+
+    message = f"{header}\n\n{details_card}" if details_card else header
+
     send_telegram_message(
         group_chat_id,
         message,
         reply_message_id=reply_message_id,
-        token=TELEGRAM_SETTINGS.HOOK_TOKEN
+        parse_mode="html",
+        token=TELEGRAM_SETTINGS.HOOK_TOKEN,
     )
     LOGGER.info(f"Sent status transition notification for {issue_key}")
 
@@ -757,13 +919,77 @@ async def process_command(
     return None
 
 
+def _extract_issue_key_from_comment(comment: dict) -> Optional[str]:
+    """Extract issue key from Jira comment webhook payload.
+
+    Jira Server comment_created events don't include the issue object.
+    The issue key can be extracted from the comment's self URL.
+
+    Args:
+        comment: Comment dict from Jira webhook payload.
+
+    Returns:
+        Issue key if extractable, None otherwise.
+    """
+    self_url = comment.get("self", "")
+    LOGGER.debug(f"Extracting issue key from comment self URL: {self_url}")
+
+    match = re.search(r"/issue/([A-Z][A-Z0-9_]+-\d+)/comment/", self_url)
+    if match:
+        LOGGER.debug(f"Matched issue key pattern: {match.group(1)}")
+        return match.group(1)
+
+    issue_id_match = re.search(r"/issue/(\d+)/comment/", self_url)
+    if issue_id_match:
+        issue_id = issue_id_match.group(1)
+        LOGGER.debug(f"Found numeric issue ID {issue_id}, resolving via Jira API")
+        try:
+            issue = jira_repository.jira.issue(issue_id)
+            if issue:
+                LOGGER.debug(
+                    f"Resolved numeric issue ID {issue_id} to key {issue.key}"
+                )
+                return issue.key
+        except Exception as e:
+            LOGGER.warning(
+                f"Could not resolve numeric issue ID {issue_id}: {e}"
+            )
+
+    LOGGER.debug(f"Could not extract issue key from comment: {list(comment.keys())}")
+    return None
+
+
+@app.post("/api/v1/jira")
+async def jira_webhook_v1_endpoint(request: Request):
+    """Redirect endpoint for Jira webhooks configured with the legacy /api/v1/jira path."""
+    return await jira_webhook_endpoint(request)
+
+
 @app.post("/jira-webhook")
 async def jira_webhook_endpoint(request: Request):
     """FastAPI endpoint receiving Jira webhook events."""
     try:
         body = await request.json()
-        issue_key = body.get("issue", {}).get("key")
+        webhook_event = body.get("webhookEvent", "unknown")
+        issue_event = body.get("issue_event_type_name", "unknown")
+        issue_data = body.get("issue")
+        issue_key = issue_data.get("key") if isinstance(issue_data, dict) else None
+
+        if not issue_key and "comment" in body:
+            issue_key = _extract_issue_key_from_comment(body.get("comment", {}))
+
+        LOGGER.info(
+            f"Received Jira webhook: webhookEvent={webhook_event}, "
+            f"issue_event_type={issue_event}, issue={issue_key}, "
+            f"payload_keys={list(body.keys())}"
+        )
         if not issue_key:
+            LOGGER.warning(
+                f"No issue key in Jira webhook payload, "
+                f"webhookEvent={webhook_event}, issue_event_type={issue_event}, "
+                f"issue_field_type={type(issue_data).__name__}, "
+                f"payload_keys={list(body.keys())}"
+            )
             return {"status": "error", "message": "No issue key found in webhook data"}
 
         # Find associated group chat
@@ -789,9 +1015,14 @@ async def jira_webhook_endpoint(request: Request):
         reply_message_id = group_chat_info.get("reply_message_id")
 
         # Handle comment events
-        if body.get("issue_event_type_name") == "issue_commented":
+        if body.get("issue_event_type_name") == "issue_commented" or webhook_event == "comment_created":
             await handle_comment_event(body, group_chat_id, reply_message_id, issue_key)
             return {"status": "success", "message": "Comment processed"}
+
+        # Mark changelog IDs as processed so the poller skips them
+        changelog_id = body.get("changelog", {}).get("id")
+        if changelog_id:
+            _POLLED_CHANGELOG_IDS.add(str(changelog_id))
 
         # Handle changelog events
         changelog = body.get("changelog", {}).get("items", [])
@@ -805,6 +1036,7 @@ async def jira_webhook_endpoint(request: Request):
                     group_chat_id,
                     reply_message_id,
                     group_chat_info,
+                    issue=None,
                 )
             elif field_lower in ["duedate", "due date"]:
                 await handle_due_date_change(
@@ -897,6 +1129,9 @@ async def jira_webhook_endpoint(request: Request):
                         token=TELEGRAM_SETTINGS.TOKEN,
                     )
                     LOGGER.info(f"Sent direct notification to {getattr(user_cfg, 'telegram_username', matched_identifier)} for {issue_key}")
+
+        if not changelog and body.get("issue_event_type_name") != "issue_commented":
+            LOGGER.debug(f"Jira webhook for {issue_key} had no changelog and was not a comment event (event={body.get('issue_event_type_name')})")
 
         return {"status": "success", "message": "Webhook processed"}
 
@@ -1024,6 +1259,41 @@ async def handle_group_message(message: Dict[str, Any]) -> Dict[str, Any]:
         return await handle_group_comment(message)
 
 
+def _find_recent_entry_by_channel(
+    channel_id: int,
+    max_age_seconds: int = 300,
+) -> tuple:
+    """Find the most recent data-store entry for a given channel.
+
+    Args:
+        channel_id: Telegram channel chat ID.
+        max_age_seconds: Maximum age of the entry in seconds.
+
+    Returns:
+        Tuple of (message_id_str, issue_key) or (None, None).
+    """
+    data_store = telegram_post_data_store.load_data_store()
+    now = time.time()
+    best_msg_id = None
+    best_key = None
+    best_created = 0
+
+    for msg_id, entry in data_store.items():
+        if entry.get("type") != "jira_issue_mapping":
+            continue
+        if entry.get("channel_chat_id") != channel_id:
+            continue
+        created_at = entry.get("metadata", {}).get("created_at", 0)
+        if now - created_at > max_age_seconds:
+            continue
+        if created_at > best_created:
+            best_created = created_at
+            best_msg_id = msg_id
+            best_key = entry.get("issue_key")
+
+    return best_msg_id, best_key
+
+
 async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]:
     """Handle automatically forwarded messages from channel to group.
     
@@ -1034,23 +1304,44 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
     message_id = message["message_id"]
     
     # Support both old and new Telegram API formats
+    original_message_id = None
     if "forward_origin" in message:
-        # New Bot API 6.9+ format
         forward_origin = message["forward_origin"]
         original_message_id = forward_origin.get("message_id")
-    else:
-        # Old deprecated format (but still widely used)
+    if not original_message_id:
         original_message_id = message.get("forward_from_message_id")
     
-    if not original_message_id:
-        LOGGER.warning("Could not extract original message ID from forwarded message")
-        return {"status": "error", "message": "Invalid forward message structure"}
-    
-    issue_key = telegram_post_data_store.get_issue_key_from_channel_post(
-        original_message_id,
-    )
-    LOGGER.debug(f"Looked up issue_key for message_id={original_message_id}: {issue_key if issue_key else 'NOT FOUND'}")
     group_chat_id = message["chat"]["id"]
+    issue_key = None
+
+    if original_message_id:
+        issue_key = telegram_post_data_store.get_issue_key_from_channel_post(
+            original_message_id,
+        )
+        LOGGER.debug(f"Looked up issue_key for message_id={original_message_id}: {issue_key if issue_key else 'NOT FOUND'}")
+
+    if not original_message_id or not issue_key:
+        channel_id = message.get("sender_chat", {}).get("id")
+        if channel_id:
+            matched_msg_id, matched_key = _find_recent_entry_by_channel(
+                channel_id, max_age_seconds=300,
+            )
+            if matched_msg_id:
+                if not original_message_id:
+                    original_message_id = int(matched_msg_id)
+                if matched_key:
+                    issue_key = matched_key
+                LOGGER.info(
+                    f"Channel-based fallback matched message {matched_msg_id} "
+                    f"(issue={matched_key}) for channel {channel_id}"
+                )
+
+    if not original_message_id:
+        LOGGER.warning(
+            f"Could not extract original message ID from forwarded message "
+            f"(message_id={message_id}, keys={list(message.keys())})"
+        )
+        return {"status": "error", "message": "Invalid forward message structure"}
 
     # Fallback: Check if message is in MEDIA_GROUP_STORE (pending finalization)
     if not issue_key:
@@ -1277,6 +1568,21 @@ async def handle_group_comment(message: Dict[str, Any]) -> Dict[str, Any]:
                     if issue_key and issue_key != "pending":
                         LOGGER.info(f"Found issue {issue_key} from message_thread_id={thread_id}")
                         break
+
+    # Method 5: Channel-based fallback — use sender_chat from the auto-forwarded
+    # reply_to_message to find the most recent entry from that channel
+    if not issue_key and reply_to_message.get("sender_chat"):
+        channel_id = reply_to_message["sender_chat"].get("id")
+        if channel_id:
+            matched_msg_id, matched_key = _find_recent_entry_by_channel(
+                channel_id, max_age_seconds=600,
+            )
+            if matched_key and matched_key != "pending":
+                issue_key = matched_key
+                LOGGER.info(
+                    f"Found issue {issue_key} via channel-based fallback "
+                    f"(channel={channel_id}, message={matched_msg_id})"
+                )
 
     if not issue_key:
         LOGGER.warning(f"No Jira issue mapping found for original_message_id={original_message_id}")
@@ -1540,6 +1846,174 @@ async def telegram_webhook(request: Request):
         return {"status": "error", "message": str(e)}
 
 
+async def poll_jira_issue_changes():
+    """Poll Jira for recently updated issues and dispatch notifications.
+
+    Workaround for Jira Server 9.x not dispatching jira:issue_updated
+    webhook events. Queries the REST API for issues updated since the
+    last poll, inspects changelogs, and sends the same Telegram
+    notifications that the webhook handler would.
+    """
+    global _LAST_POLL_TIMESTAMP
+
+    LOGGER.info("[poll] Jira issue poller starting, waiting 15s for init...")
+    await asyncio.sleep(15)
+    LOGGER.info(f"[poll] Poller active — project={JIRA_PROJECT_KEY}, interval={ISSUE_POLL_INTERVAL_SECONDS}s")
+
+    while True:
+        try:
+            now = datetime.utcnow()
+            if _LAST_POLL_TIMESTAMP is None:
+                _LAST_POLL_TIMESTAMP = (now - timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M")
+
+            jql = (
+                f"project = {JIRA_PROJECT_KEY} "
+                f'AND updated >= "{_LAST_POLL_TIMESTAMP}"'
+            )
+            next_timestamp = now.strftime("%Y-%m-%d %H:%M")
+
+            LOGGER.debug(f"[poll] Querying: {jql}")
+            try:
+                custom_fields = (
+                    f"{jira_repository.jira_epic_link_id},{jira_repository.jira_sprint_id},"
+                    f"{jira_repository.jira_story_point_id},{jira_repository.jira_target_end_id},"
+                    f"{jira_repository.jira_delay_reason_id},{jira_repository.jira_root_cause_id}"
+                )
+                issues = jira_repository.jira.search_issues(
+                    jql,
+                    maxResults=50,
+                    expand="changelog",
+                    fields=f"key,summary,status,priority,components,labels,"
+                           f"assignee,reporter,duedate,issuetype,versions,{custom_fields}",
+                )
+            except Exception as e:
+                LOGGER.warning(f"[poll] Jira poll query failed: {e}")
+                await asyncio.sleep(ISSUE_POLL_INTERVAL_SECONDS)
+                continue
+
+            LOGGER.info(f"[poll] Found {len(issues)} updated issues since {_LAST_POLL_TIMESTAMP}")
+
+            for issue in issues:
+                issue_key = issue.key
+                changelog = getattr(issue, "changelog", None)
+                if not changelog:
+                    continue
+
+                data_store = telegram_post_data_store.load_data_store()
+                group_chat_info = telegram_post_data_store.find_group_chat_by_issue(
+                    data_store, issue_key,
+                )
+                if not isinstance(group_chat_info, dict):
+                    group_chat_info = telegram_post_data_store.find_channel_post_by_issue(
+                        data_store, issue_key,
+                    )
+                if not group_chat_info:
+                    continue
+
+                group_chat_id = group_chat_info["group_chat_id"]
+                reply_message_id = group_chat_info.get("reply_message_id")
+
+                for history in changelog.histories:
+                    history_id = history.id
+                    if history_id in _POLLED_CHANGELOG_IDS:
+                        continue
+
+                    _POLLED_CHANGELOG_IDS.add(history_id)
+
+                    for item_raw in history.items:
+                        item = {
+                            "field": getattr(item_raw, "field", None),
+                            "fromString": getattr(item_raw, "fromString", None),
+                            "toString": getattr(item_raw, "toString", None),
+                        }
+                        field = item.get("field")
+                        field_lower = field.lower() if field else ""
+
+                        if field == "status":
+                            await handle_status_change(
+                                item, issue_key, group_chat_id,
+                                reply_message_id, group_chat_info,
+                                issue=issue,
+                            )
+                        elif field_lower in ["duedate", "due date"]:
+                            await handle_due_date_change(
+                                item, issue_key, group_chat_id,
+                                reply_message_id,
+                            )
+                        elif field == "assignee":
+                            await _handle_polled_assignee_change(
+                                item, issue_key, issue,
+                                group_chat_id, reply_message_id,
+                            )
+
+            _LAST_POLL_TIMESTAMP = next_timestamp
+
+            if len(_POLLED_CHANGELOG_IDS) > 5000:
+                recent = sorted(_POLLED_CHANGELOG_IDS)[-2000:]
+                _POLLED_CHANGELOG_IDS.clear()
+                _POLLED_CHANGELOG_IDS.update(recent)
+
+        except Exception as e:
+            LOGGER.error(f"[poll] Error in poll_jira_issue_changes: {e}", exc_info=True)
+
+        await asyncio.sleep(ISSUE_POLL_INTERVAL_SECONDS)
+
+
+async def _handle_polled_assignee_change(
+    item: Dict[str, Any],
+    issue_key: str,
+    issue: Any,
+    group_chat_id: str,
+    reply_message_id: Optional[int],
+) -> None:
+    """Handle an assignee change discovered by polling.
+
+    Args:
+        item: Changelog item dict with field/fromString/toString.
+        issue_key: Jira issue key.
+        issue: Jira issue object from the API.
+        group_chat_id: Telegram group chat ID.
+        reply_message_id: Telegram reply message ID.
+    """
+    assignee_display = item.get("toString") or "<unassigned>"
+
+    assignee_obj = getattr(issue.fields, "assignee", None)
+    user_cfg = None
+    if assignee_obj and hasattr(assignee_obj, "name"):
+        user_cfg = lookup_user_config_by_jira_username(assignee_obj.name)
+
+    telegram_mention = ""
+    if user_cfg and getattr(user_cfg, "telegram_username", None):
+        telegram_mention = f" @{user_cfg.telegram_username}"
+
+    group_message = f"<b>👤 Task Assigned</b>\n\nTask has been assigned to {assignee_display}{telegram_mention}"
+    send_telegram_message(
+        group_chat_id,
+        group_message,
+        reply_message_id=reply_message_id,
+        parse_mode="html",
+        token=TELEGRAM_SETTINGS.HOOK_TOKEN,
+    )
+    LOGGER.info(f"[poll] Sent reassignment notification for {issue_key}: {assignee_display}")
+
+    if user_cfg and getattr(user_cfg, "telegram_user_chat_id", None):
+        issue_link = f"{JIRA_SETTINGS.domain}browse/{issue_key}"
+        summary = getattr(issue.fields, "summary", None)
+        dm_message = (
+            f"<b>📋 New Task Assigned to You from Support Team</b>\n\n"
+            f"<b>Task:</b> {issue_key}\n"
+            + (f"<b>Summary:</b> {summary}\n" if summary else "")
+            + f"<b>Link:</b> {issue_link}"
+        )
+        send_telegram_message(
+            user_cfg.telegram_user_chat_id,
+            dm_message,
+            parse_mode="html",
+            token=TELEGRAM_SETTINGS.TOKEN,
+        )
+        LOGGER.info(f"[poll] Sent direct notification to {getattr(user_cfg, 'telegram_username', '')} for {issue_key}")
+
+
 async def retry_pending_jira_links():
     """Background task to retry sending Jira links for issues that were created but never sent to group.
     
@@ -1598,6 +2072,7 @@ async def on_startup():
     set_telegram_webhook()
     asyncio.create_task(finalize_media_groups())
     asyncio.create_task(retry_pending_jira_links())
+    asyncio.create_task(poll_jira_issue_changes())
 
 
 @app.on_event("shutdown")
