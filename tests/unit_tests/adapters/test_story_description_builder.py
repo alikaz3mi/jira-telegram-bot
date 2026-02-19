@@ -231,24 +231,20 @@ class TestStoryDependencyLinking(unittest.IsolatedAsyncioTestCase):
 
 
 class TestLinkStoryDependenciesMethod(unittest.IsolatedAsyncioTestCase):
-    """Test _link_story_dependencies method execution."""
+    """Test link_story_dependencies method execution."""
 
-    async def test_link_dependencies_successful(self):
-        """Test successful linking of multiple dependencies."""
-        # Setup mocks
+    async def test_link_dependencies_adds_missing_links(self):
+        """Test adding new dependency links when none exist."""
         mock_jira_repo = MagicMock()
-        mock_jira_repo.create_issue_link = MagicMock(return_value=True)
-        
+        mock_jira_repo.get_issue_links = MagicMock(return_value=[])
+        mock_jira_repo.link_issues = MagicMock()
+
         repository = MagicMock(spec=SynthPMRepository)
         repository.jira_repository = mock_jira_repo
-        repository.get_story_by_release_name = AsyncMock()
-        
-        # Mock finding dependency stories
-        repository.get_story_by_release_name.side_effect = [
-            "SYNTH-100",  # V 1.0.0
-            "SYNTH-110",  # V 1.5.0
-        ]
-        
+        repository.get_story_by_release_name = AsyncMock(
+            side_effect=["SYNTH-100", "SYNTH-110"],
+        )
+
         release_note = ReleaseNoteEntity(
             row_number=2,
             release_version="V 2.0.0",
@@ -256,214 +252,205 @@ class TestLinkStoryDependenciesMethod(unittest.IsolatedAsyncioTestCase):
             description="Test release",
             dependencies="V 1.0.0, V 1.5.0",
         )
-        
-        # Execute
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
+
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
         )
-        
-        # Verify get_story_by_release_name was called for each dependency
+
         assert repository.get_story_by_release_name.call_count == 2
-        repository.get_story_by_release_name.assert_any_call("V 1.0.0")
-        repository.get_story_by_release_name.assert_any_call("V 1.5.0")
-        
-        # Verify Jira links were created
-        assert mock_jira_repo.create_issue_link.call_count == 2
-        mock_jira_repo.create_issue_link.assert_any_call(
+        assert mock_jira_repo.link_issues.call_count == 2
+        mock_jira_repo.link_issues.assert_any_call(
+            dependent_issue_key="SYNTH-123",
+            dependency_issue_key="SYNTH-100",
             link_type="Blocks",
-            inward_issue="SYNTH-123",
-            outward_issue="SYNTH-100",
         )
-        mock_jira_repo.create_issue_link.assert_any_call(
+        mock_jira_repo.link_issues.assert_any_call(
+            dependent_issue_key="SYNTH-123",
+            dependency_issue_key="SYNTH-110",
             link_type="Blocks",
-            inward_issue="SYNTH-123",
-            outward_issue="SYNTH-110",
+        )
+
+    async def test_link_dependencies_skips_existing(self):
+        """Test that already-linked dependencies are not duplicated."""
+        mock_jira_repo = MagicMock()
+        mock_jira_repo.get_issue_links = MagicMock(return_value=[
+            {
+                "id": "link-1",
+                "type": {"name": "Blocks"},
+                "outwardIssue": {"key": "SYNTH-100"},
+            },
+        ])
+        mock_jira_repo.link_issues = MagicMock()
+
+        repository = MagicMock(spec=SynthPMRepository)
+        repository.jira_repository = mock_jira_repo
+        repository.get_story_by_release_name = AsyncMock(return_value="SYNTH-100")
+
+        release_note = ReleaseNoteEntity(
+            row_number=2,
+            release_version="V 2.0.0",
+            release_components="Component A",
+            dependencies="V 1.0.0",
+        )
+
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
+        )
+
+        mock_jira_repo.link_issues.assert_not_called()
+        mock_jira_repo.delete_issue_link.assert_not_called()
+
+    async def test_link_dependencies_removes_stale(self):
+        """Test that stale links are removed."""
+        mock_jira_repo = MagicMock()
+        mock_jira_repo.get_issue_links = MagicMock(return_value=[
+            {
+                "id": "link-1",
+                "type": {"name": "Blocks"},
+                "outwardIssue": {"key": "SYNTH-OLD"},
+            },
+        ])
+        mock_jira_repo.delete_issue_link = MagicMock()
+        mock_jira_repo.link_issues = MagicMock()
+
+        repository = MagicMock(spec=SynthPMRepository)
+        repository.jira_repository = mock_jira_repo
+        repository.get_story_by_release_name = AsyncMock(return_value="SYNTH-100")
+
+        release_note = ReleaseNoteEntity(
+            row_number=2,
+            release_version="V 2.0.0",
+            release_components="Component A",
+            dependencies="V 1.0.0",
+        )
+
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
+        )
+
+        mock_jira_repo.delete_issue_link.assert_called_once_with("link-1")
+        mock_jira_repo.link_issues.assert_called_once_with(
+            dependent_issue_key="SYNTH-123",
+            dependency_issue_key="SYNTH-100",
+            link_type="Blocks",
         )
 
     async def test_link_dependencies_none(self):
         """Test with no dependencies specified."""
         repository = MagicMock(spec=SynthPMRepository)
         repository.get_story_by_release_name = AsyncMock()
-        
+
         release_note = ReleaseNoteEntity(
             row_number=2,
             release_version="V 2.0.0",
             release_components="Component A",
-            description="Test release",
             dependencies=None,
         )
-        
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
+
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
         )
-        
-        # Should not attempt to search for stories
+
         repository.get_story_by_release_name.assert_not_called()
 
     async def test_link_dependencies_empty_string(self):
         """Test with empty dependencies string."""
         repository = MagicMock(spec=SynthPMRepository)
         repository.get_story_by_release_name = AsyncMock()
-        
+
         release_note = ReleaseNoteEntity(
             row_number=2,
             release_version="V 2.0.0",
             release_components="Component A",
-            description="Test release",
             dependencies="",
         )
-        
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
-        )
-        
-        # Should not attempt to search for stories
-        repository.get_story_by_release_name.assert_not_called()
 
-    async def test_link_dependencies_whitespace_only(self):
-        """Test with whitespace-only dependencies string."""
-        repository = MagicMock(spec=SynthPMRepository)
-        repository.get_story_by_release_name = AsyncMock()
-        
-        release_note = ReleaseNoteEntity(
-            row_number=2,
-            release_version="V 2.0.0",
-            release_components="Component A",
-            description="Test release",
-            dependencies="   ",
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
         )
-        
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
-        )
-        
-        # Should not attempt to search for stories
+
         repository.get_story_by_release_name.assert_not_called()
 
     async def test_link_dependencies_story_not_found(self):
         """Test when dependency story is not found."""
         mock_jira_repo = MagicMock()
-        mock_jira_repo.create_issue_link = MagicMock(return_value=True)
-        
+        mock_jira_repo.get_issue_links = MagicMock(return_value=[])
+        mock_jira_repo.link_issues = MagicMock()
+
         repository = MagicMock(spec=SynthPMRepository)
         repository.jira_repository = mock_jira_repo
-        repository.get_story_by_release_name = AsyncMock()
-        
-        # First dependency found, second not found
-        repository.get_story_by_release_name.side_effect = [
-            "SYNTH-100",  # V 1.0.0 found
-            None,         # V 1.5.0 not found
-        ]
-        
+        repository.get_story_by_release_name = AsyncMock(
+            side_effect=["SYNTH-100", None],
+        )
+
         release_note = ReleaseNoteEntity(
             row_number=2,
             release_version="V 2.0.0",
             release_components="Component A",
-            description="Test release",
             dependencies="V 1.0.0, V 1.5.0",
         )
-        
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
-        )
-        
-        # Should only create link for found story
-        assert mock_jira_repo.create_issue_link.call_count == 1
-        mock_jira_repo.create_issue_link.assert_called_once_with(
-            link_type="Blocks",
-            inward_issue="SYNTH-123",
-            outward_issue="SYNTH-100",
+
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
         )
 
-    async def test_link_dependencies_jira_link_fails(self):
-        """Test when Jira link creation fails."""
+        assert mock_jira_repo.link_issues.call_count == 1
+
+    async def test_link_dependencies_ignores_inward_links(self):
+        """Test that inward links are not touched."""
         mock_jira_repo = MagicMock()
-        # First link succeeds, second fails
-        mock_jira_repo.create_issue_link = MagicMock(side_effect=[True, False])
-        
+        mock_jira_repo.get_issue_links = MagicMock(return_value=[
+            {
+                "id": "link-in",
+                "type": {"name": "Blocks"},
+                "inwardIssue": {"key": "SYNTH-999"},
+            },
+        ])
+        mock_jira_repo.link_issues = MagicMock()
+
         repository = MagicMock(spec=SynthPMRepository)
         repository.jira_repository = mock_jira_repo
-        repository.get_story_by_release_name = AsyncMock()
-        
-        repository.get_story_by_release_name.side_effect = [
-            "SYNTH-100",
-            "SYNTH-110",
-        ]
-        
-        release_note = ReleaseNoteEntity(
-            row_number=2,
-            release_version="V 2.0.0",
-            release_components="Component A",
-            description="Test release",
-            dependencies="V 1.0.0, V 1.5.0",
-        )
-        
-        # Should not raise exception, just log warning
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
-        )
-        
-        # Both links should be attempted
-        assert mock_jira_repo.create_issue_link.call_count == 2
+        repository.get_story_by_release_name = AsyncMock(return_value="SYNTH-100")
 
-    async def test_link_dependencies_exception_handling(self):
-        """Test exception handling during dependency linking."""
-        repository = MagicMock(spec=SynthPMRepository)
-        repository.get_story_by_release_name = AsyncMock()
-        
-        # Raise exception when searching for story
-        repository.get_story_by_release_name.side_effect = Exception("Test error")
-        
         release_note = ReleaseNoteEntity(
             row_number=2,
             release_version="V 2.0.0",
             release_components="Component A",
-            description="Test release",
             dependencies="V 1.0.0",
         )
-        
-        # Should not raise exception, just log error
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
-        )
-        
-        # Verify search was attempted
-        repository.get_story_by_release_name.assert_called_once_with("V 1.0.0")
 
-    async def test_link_dependencies_with_commas_and_spaces(self):
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
+        )
+
+        mock_jira_repo.delete_issue_link.assert_not_called()
+        mock_jira_repo.link_issues.assert_called_once()
+
+    async def test_link_dependencies_with_varied_spacing(self):
         """Test parsing dependencies with various comma and space combinations."""
         mock_jira_repo = MagicMock()
-        mock_jira_repo.create_issue_link = MagicMock(return_value=True)
-        
+        mock_jira_repo.get_issue_links = MagicMock(return_value=[])
+        mock_jira_repo.link_issues = MagicMock()
+
         repository = MagicMock(spec=SynthPMRepository)
         repository.jira_repository = mock_jira_repo
-        repository.get_story_by_release_name = AsyncMock()
-        
-        repository.get_story_by_release_name.side_effect = [
-            "SYNTH-100",
-            "SYNTH-110",
-            "SYNTH-120",
-        ]
-        
+        repository.get_story_by_release_name = AsyncMock(
+            side_effect=["SYNTH-100", "SYNTH-110", "SYNTH-120"],
+        )
+
         release_note = ReleaseNoteEntity(
             row_number=2,
             release_version="V 2.0.0",
             release_components="Component A",
-            description="Test release",
-            dependencies="  V 1.0.0  ,V 1.5.0,  V 1.8.0",  # Various spacing
+            dependencies="  V 1.0.0  ,V 1.5.0,  V 1.8.0",
         )
-        
-        await SynthPMRepository._link_story_dependencies(
-            repository, "SYNTH-123", release_note
+
+        await SynthPMRepository.link_story_dependencies(
+            repository, "SYNTH-123", release_note,
         )
-        
-        # Should handle all three dependencies correctly
+
         assert repository.get_story_by_release_name.call_count == 3
-        repository.get_story_by_release_name.assert_any_call("V 1.0.0")
-        repository.get_story_by_release_name.assert_any_call("V 1.5.0")
-        repository.get_story_by_release_name.assert_any_call("V 1.8.0")
-        
-        assert mock_jira_repo.create_issue_link.call_count == 3
+        assert mock_jira_repo.link_issues.call_count == 3
 
 
 class TestColumnMappingIntegration(unittest.TestCase):

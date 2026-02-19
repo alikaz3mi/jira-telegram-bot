@@ -398,7 +398,7 @@ class TestLinkDependenciesBySummary(unittest.TestCase):
         existing_link = {
             "id": "link-99",
             "type": {"name": "Blocks"},
-            "inwardIssue": {"key": "PM-OLD"},
+            "outwardIssue": {"key": "PM-OLD"},
         }
         self.jira_repository.get_issue_links = MagicMock(
             return_value=[existing_link],
@@ -422,7 +422,7 @@ class TestLinkDependenciesBySummary(unittest.TestCase):
         existing_link = {
             "id": "link-10",
             "type": {"name": "Blocks"},
-            "inwardIssue": {"key": "PM-5"},
+            "outwardIssue": {"key": "PM-5"},
         }
         self.jira_repository.get_issue_links = MagicMock(
             return_value=[existing_link],
@@ -441,17 +441,17 @@ class TestLinkDependenciesBySummary(unittest.TestCase):
             self.jira_repository.link_issues.assert_not_called()
             self.jira_repository.delete_issue_link.assert_not_called()
 
-    def test_removes_stale_outward_links(self):
-        """Verify stale outward 'Blocks' links (from old wrong direction) are cleaned up."""
+    def test_ignores_inward_links(self):
+        """Verify inward 'Blocks' links (issues this issue blocks) are left untouched."""
         feature = _make_feature(dependencies="Login Page")
 
-        existing_outward_link = {
+        existing_inward_link = {
             "id": "link-88",
             "type": {"name": "Blocks"},
-            "outwardIssue": {"key": "PM-OLD-OUT"},
+            "inwardIssue": {"key": "PM-OLD-IN"},
         }
         self.jira_repository.get_issue_links = MagicMock(
-            return_value=[existing_outward_link],
+            return_value=[existing_inward_link],
         )
 
         with patch.object(
@@ -461,19 +461,20 @@ class TestLinkDependenciesBySummary(unittest.TestCase):
         ):
             self.repository._link_dependencies_by_summary("PM-1", feature, "PM")
 
-            self.jira_repository.delete_issue_link.assert_called_once_with("link-88")
+            self.jira_repository.delete_issue_link.assert_not_called()
+            self.jira_repository.link_issues.assert_called_once()
 
-    def test_does_not_duplicate_existing_outward_link(self):
-        """Verify outward 'Blocks' links are detected and not duplicated."""
+    def test_inward_link_does_not_prevent_outward_creation(self):
+        """Verify inward links are ignored — blocker link is created independently."""
         feature = _make_feature(dependencies="Login Page")
 
-        existing_outward_link = {
+        existing_inward_link = {
             "id": "link-77",
             "type": {"name": "Blocks"},
-            "outwardIssue": {"key": "PM-5"},
+            "inwardIssue": {"key": "PM-5"},
         }
         self.jira_repository.get_issue_links = MagicMock(
-            return_value=[existing_outward_link],
+            return_value=[existing_inward_link],
         )
 
         with patch.object(
@@ -486,23 +487,23 @@ class TestLinkDependenciesBySummary(unittest.TestCase):
             )
 
             self.assertEqual(result, 1)
-            self.jira_repository.link_issues.assert_not_called()
+            self.jira_repository.link_issues.assert_called_once()
             self.jira_repository.delete_issue_link.assert_not_called()
 
     def test_handles_mixed_inward_and_outward_links(self):
-        """Verify both inward and outward links are tracked and cleaned correctly."""
+        """Verify only stale outward (blocker) links are removed; inward links are untouched."""
         feature = _make_feature(dependencies="Login Page")
 
         existing_links = [
             {
                 "id": "link-10",
                 "type": {"name": "Blocks"},
-                "inwardIssue": {"key": "PM-STALE-IN"},
+                "inwardIssue": {"key": "PM-BLOCKED-BY-ME"},
             },
             {
                 "id": "link-20",
                 "type": {"name": "Blocks"},
-                "outwardIssue": {"key": "PM-STALE-OUT"},
+                "outwardIssue": {"key": "PM-STALE-BLOCKER"},
             },
         ]
         self.jira_repository.get_issue_links = MagicMock(return_value=existing_links)
@@ -514,13 +515,7 @@ class TestLinkDependenciesBySummary(unittest.TestCase):
         ):
             self.repository._link_dependencies_by_summary("PM-1", feature, "PM")
 
-            self.assertEqual(self.jira_repository.delete_issue_link.call_count, 2)
-            delete_calls = [
-                call.args[0]
-                for call in self.jira_repository.delete_issue_link.call_args_list
-            ]
-            self.assertIn("link-10", delete_calls)
-            self.assertIn("link-20", delete_calls)
+            self.jira_repository.delete_issue_link.assert_called_once_with("link-20")
 
     def test_dependency_not_found_returns_zero(self):
         """Verify zero is returned when no matching issue is found."""
