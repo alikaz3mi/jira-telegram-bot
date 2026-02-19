@@ -50,6 +50,7 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         self.jira_target_end_id = "customfield_10110"
         self.jira_target_start_id = "customfield_10109"
         self.jira_delay_reason_id = "customfield_10600"
+        self.jira_root_cause_id = "customfield_10601"
         self.jira_actual_start_id = "customfield_10702"
         self.jira_actual_end_id = "customfield_10703"
 
