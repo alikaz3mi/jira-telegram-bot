@@ -1,0 +1,879 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRESQL",
+      "label": "PostgreSQL",
+      "description": "PostgreSQL datasource for jira_telegram_bot database",
+      "type": "datasource",
+      "pluginId": "grafana-postgresql-datasource",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "grafana-postgresql-datasource", "name": "PostgreSQL", "version": "1.0.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "piechart", "name": "Pie chart", "version": "" },
+    { "type": "panel", "id": "barchart", "name": "Bar chart", "version": "" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "" },
+    { "type": "panel", "id": "gauge", "name": "Gauge", "version": "" }
+  ],
+  "annotations": { "list": [] },
+  "description": "Jira Project Management Dashboard — comprehensive view of tasks, sprints, workload, quality, and delivery metrics.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "📊 Key Performance Indicators",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Total Tasks",
+      "type": "stat",
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Total Tasks\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom()\n  AND created_at <= $__timeTo();",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Open Tasks",
+      "type": "stat",
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Open Tasks\"\nFROM jira_tasks_enhanced\nWHERE status NOT IN ('Done', 'Closed', 'Resolved')\n  AND project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom()\n  AND created_at <= $__timeTo();",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Completed Tasks",
+      "type": "stat",
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Completed\"\nFROM jira_tasks_enhanced\nWHERE status IN ('Done', 'Closed', 'Resolved')\n  AND project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom()\n  AND created_at <= $__timeTo();",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "d",
+          "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 10 }] },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Avg Cycle Time (Days)",
+      "type": "stat",
+      "targets": [
+        {
+          "rawSql": "WITH started AS (\n  SELECT issue_key, MIN(changed_at) AS started_at\n  FROM jira_status_history\n  WHERE to_status = 'In Progress'\n  GROUP BY issue_key\n),\ncompleted AS (\n  SELECT issue_key, MIN(changed_at) AS done_at\n  FROM jira_status_history\n  WHERE to_status IN ('Done','Closed','Resolved')\n  GROUP BY issue_key\n)\nSELECT ROUND(AVG(EXTRACT(EPOCH FROM (c.done_at - s.started_at)) / 86400)::numeric, 1) AS \"Avg Cycle Time\"\nFROM jira_tasks_enhanced t\nJOIN started s ON t.key = s.issue_key\nJOIN completed c ON t.key = c.issue_key\nWHERE c.done_at > s.started_at\n  AND t.project IN ($project)\n  AND ($sprint = 'All' OR t.last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR t.assignee IN ($assignee))\n  AND ($task_type = 'All' OR t.task_type IN ($task_type))\n  AND ($component = 'All' OR t.components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR t.fix_versions && ARRAY[$release]::varchar[])\n  AND c.done_at >= $__timeFrom()\n  AND c.done_at <= $__timeTo();",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 5,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Overdue Tasks",
+      "type": "stat",
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS \"Overdue\"\nFROM jira_tasks_enhanced\nWHERE due_date < CURRENT_TIMESTAMP\n  AND status NOT IN ('Done','Closed','Resolved')\n  AND project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom()\n  AND created_at <= $__timeTo();",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "none",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 6,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "title": "Total Story Points",
+      "type": "stat",
+      "targets": [
+        {
+          "rawSql": "SELECT COALESCE(SUM(story_points), 0) AS \"Story Points\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom()\n  AND created_at <= $__timeTo();",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "📈 Status & Type Distribution",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true }, "tooltip": { "mode": "single" } },
+      "title": "Status Distribution",
+      "type": "piechart",
+      "targets": [
+        {
+          "rawSql": "SELECT status, COUNT(*) AS count\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY status\nORDER BY count DESC;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true }, "tooltip": { "mode": "single" } },
+      "title": "Task Type Distribution",
+      "type": "piechart",
+      "targets": [
+        {
+          "rawSql": "SELECT task_type, COUNT(*) AS count\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY task_type\nORDER BY count DESC;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
+      "id": 9,
+      "options": {
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": { "mode": "single" },
+        "xTickLabelRotation": 0
+      },
+      "title": "Priority Distribution",
+      "type": "barchart",
+      "targets": [
+        {
+          "rawSql": "SELECT priority,\n  COUNT(*) FILTER (WHERE status NOT IN ('Done','Closed','Resolved')) AS \"Open\",\n  COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved')) AS \"Completed\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND priority IS NOT NULL\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY priority\nORDER BY\n  CASE priority\n    WHEN 'Highest' THEN 1\n    WHEN 'High' THEN 2\n    WHEN 'Medium' THEN 3\n    WHEN 'Low' THEN 4\n    WHEN 'Lowest' THEN 5\n    ELSE 6\n  END;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "🏃 Sprint & Velocity",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Committed SP" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Completed SP" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 15 },
+      "id": 10,
+      "options": {
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "vertical",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": { "mode": "multi" },
+        "xTickLabelRotation": -45
+      },
+      "title": "Sprint Velocity (Story Points)",
+      "type": "barchart",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  s AS \"Sprint\",\n  COALESCE(SUM(story_points), 0) AS \"Committed SP\",\n  COALESCE(SUM(story_points) FILTER (WHERE status IN ('Done','Closed','Resolved')), 0) AS \"Completed SP\"\nFROM jira_tasks_enhanced, UNNEST(all_sprints) AS s\nWHERE project IN ($project)\n  AND array_length(all_sprints, 1) > 0\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY s\nORDER BY s;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Committed" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Completed" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 15 },
+      "id": 11,
+      "options": {
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "vertical",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": { "mode": "multi" },
+        "xTickLabelRotation": -45
+      },
+      "title": "Sprint Velocity (Task Count)",
+      "type": "barchart",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  s AS \"Sprint\",\n  COUNT(*) AS \"Committed\",\n  COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved')) AS \"Completed\"\nFROM jira_tasks_enhanced, UNNEST(all_sprints) AS s\nWHERE project IN ($project)\n  AND array_length(all_sprints, 1) > 0\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY s\nORDER BY s;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "id": 103,
+      "title": "👥 Assignee & Workload",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "In Progress" }, "properties": [{ "id": "custom.displayMode", "value": "color-background" }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 6 }] } }] },
+          { "matcher": { "id": "byName", "options": "Story Points" }, "properties": [{ "id": "custom.displayMode", "value": "color-background" }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 40 }] } }] },
+          { "matcher": { "id": "byName", "options": "Total Open" }, "properties": [{ "id": "custom.displayMode", "value": "color-background" }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 10 }] } }] }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 14, "x": 0, "y": 26 },
+      "id": 12,
+      "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Total Open" }], "footer": { "enablePagination": true, "fields": "" } },
+      "title": "Assignee Workload",
+      "type": "table",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  assignee AS \"Assignee\",\n  COUNT(*) FILTER (WHERE status NOT IN ('Done','Closed','Resolved')) AS \"Total Open\",\n  COUNT(*) FILTER (WHERE status = 'In Progress') AS \"In Progress\",\n  COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved')) AS \"Done\",\n  COALESCE(SUM(story_points) FILTER (WHERE status NOT IN ('Done','Closed','Resolved')), 0) AS \"Story Points\",\n  COUNT(*) FILTER (WHERE due_date < CURRENT_TIMESTAMP AND status NOT IN ('Done','Closed','Resolved')) AS \"Overdue\",\n  COUNT(*) AS \"Total\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND assignee IS NOT NULL\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY assignee\nORDER BY \"Total Open\" DESC;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 10, "x": 14, "y": 26 },
+      "id": 13,
+      "options": {
+        "barWidth": 0.7,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "normal",
+        "tooltip": { "mode": "multi" },
+        "xTickLabelRotation": 0
+      },
+      "title": "Workload by Status per Assignee",
+      "type": "barchart",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  assignee AS \"Assignee\",\n  COUNT(*) FILTER (WHERE status = 'To Do') AS \"To Do\",\n  COUNT(*) FILTER (WHERE status = 'In Progress') AS \"In Progress\",\n  COUNT(*) FILTER (WHERE status = 'In Review') AS \"In Review\",\n  COUNT(*) FILTER (WHERE status = 'In QA') AS \"In QA\",\n  COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved')) AS \"Done\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND assignee IS NOT NULL\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY assignee\nORDER BY assignee;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+      "id": 104,
+      "title": "⏱️ Time & Trend Analysis",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "pointSize": 5, "showPoints": "auto" },
+          "unit": "d",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 37 },
+      "id": 14,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "title": "Cycle Time Trend (Weekly)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "rawSql": "WITH started AS (\n  SELECT issue_key, MIN(changed_at) AS started_at\n  FROM jira_status_history\n  WHERE to_status = 'In Progress'\n  GROUP BY issue_key\n),\ncompleted AS (\n  SELECT issue_key, MIN(changed_at) AS done_at\n  FROM jira_status_history\n  WHERE to_status IN ('Done','Closed','Resolved')\n  GROUP BY issue_key\n)\nSELECT\n  DATE_TRUNC('week', c.done_at) AS time,\n  ROUND(AVG(EXTRACT(EPOCH FROM (c.done_at - s.started_at)) / 86400)::numeric, 1) AS \"Avg Cycle Time\",\n  ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (c.done_at - s.started_at)) / 86400))::numeric, 1) AS \"Median Cycle Time\"\nFROM jira_tasks_enhanced t\nJOIN started s ON t.key = s.issue_key\nJOIN completed c ON t.key = c.issue_key\nWHERE c.done_at > s.started_at\n  AND t.project IN ($project)\n  AND ($sprint = 'All' OR t.last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR t.assignee IN ($assignee))\n  AND ($task_type = 'All' OR t.task_type IN ($task_type))\n  AND ($component = 'All' OR t.components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR t.fix_versions && ARRAY[$release]::varchar[])\n  AND c.done_at >= $__timeFrom()\n  AND c.done_at <= $__timeTo()\nGROUP BY time\nORDER BY time;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "pointSize": 5, "showPoints": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Created" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Resolved" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 37 },
+      "id": 15,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "title": "Tasks Created vs Resolved (Weekly)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  DATE_TRUNC('week', created_at) AS time,\n  COUNT(*) AS \"Created\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom()\n  AND created_at <= $__timeTo()\nGROUP BY time\nORDER BY time;",
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "rawSql": "SELECT\n  DATE_TRUNC('week', h.changed_at) AS time,\n  COUNT(DISTINCT h.issue_key) AS \"Resolved\"\nFROM jira_status_history h\nJOIN jira_tasks_enhanced t ON h.issue_key = t.key\nWHERE h.to_status IN ('Done','Closed','Resolved')\n  AND t.project IN ($project)\n  AND ($assignee = 'All' OR t.assignee IN ($assignee))\n  AND ($task_type = 'All' OR t.task_type IN ($task_type))\n  AND ($component = 'All' OR t.components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR t.fix_versions && ARRAY[$release]::varchar[])\n  AND h.changed_at >= $__timeFrom()\n  AND h.changed_at <= $__timeTo()\nGROUP BY time\nORDER BY time;",
+          "refId": "B",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "showPoints": "auto" }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 46 },
+      "id": 16,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "title": "Cumulative Flow (Weekly)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "rawSql": "WITH weekly_counts AS (\n  SELECT\n    DATE_TRUNC('week', created_at) AS time,\n    COUNT(*) FILTER (WHERE status IN ('To Do','Backlog','Open')) AS \"To Do\",\n    COUNT(*) FILTER (WHERE status = 'In Progress') AS \"In Progress\",\n    COUNT(*) FILTER (WHERE status IN ('In Review','In QA','Code Review')) AS \"In Review/QA\",\n    COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved')) AS \"Done\"\n  FROM jira_tasks_enhanced\n  WHERE project IN ($project)\n    AND ($sprint = 'All' OR last_sprint IN ($sprint))\n    AND ($assignee = 'All' OR assignee IN ($assignee))\n    AND ($task_type = 'All' OR task_type IN ($task_type))\n    AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n    AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n    AND created_at >= $__timeFrom()\n    AND created_at <= $__timeTo()\n  GROUP BY time\n)\nSELECT\n  time,\n  SUM(\"To Do\") OVER (ORDER BY time) AS \"To Do\",\n  SUM(\"In Progress\") OVER (ORDER BY time) AS \"In Progress\",\n  SUM(\"In Review/QA\") OVER (ORDER BY time) AS \"In Review/QA\",\n  SUM(\"Done\") OVER (ORDER BY time) AS \"Done\"\nFROM weekly_counts\nORDER BY time;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "d", "decimals": 1 },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 46 },
+      "id": 17,
+      "options": {
+        "barWidth": 0.7,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": { "mode": "single" },
+        "xTickLabelRotation": 0
+      },
+      "title": "Lead Time by Task Type (Avg Days)",
+      "type": "barchart",
+      "targets": [
+        {
+          "rawSql": "WITH completed AS (\n  SELECT issue_key, MIN(changed_at) AS done_at\n  FROM jira_status_history\n  WHERE to_status IN ('Done','Closed','Resolved')\n  GROUP BY issue_key\n)\nSELECT\n  t.task_type AS \"Task Type\",\n  ROUND(AVG(EXTRACT(EPOCH FROM (c.done_at - t.created_at)) / 86400)::numeric, 1) AS \"Avg Lead Time\",\n  COUNT(*) AS \"Count\"\nFROM jira_tasks_enhanced t\nJOIN completed c ON t.key = c.issue_key\nWHERE t.project IN ($project)\n  AND ($sprint = 'All' OR t.last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR t.assignee IN ($assignee))\n  AND ($task_type = 'All' OR t.task_type IN ($task_type))\n  AND ($component = 'All' OR t.components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR t.fix_versions && ARRAY[$release]::varchar[])\n  AND c.done_at >= $__timeFrom() AND c.done_at <= $__timeTo()\nGROUP BY t.task_type\nORDER BY \"Avg Lead Time\" DESC;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+      "id": 105,
+      "title": "📦 Components & Releases",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 56 },
+      "id": 18,
+      "options": {
+        "barWidth": 0.7,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": { "mode": "multi" },
+        "xTickLabelRotation": 0
+      },
+      "title": "Tasks by Component",
+      "type": "barchart",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  c AS \"Component\",\n  COUNT(*) AS \"Total\",\n  COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved')) AS \"Completed\",\n  COUNT(*) FILTER (WHERE status NOT IN ('Done','Closed','Resolved')) AS \"Open\"\nFROM jira_tasks_enhanced, UNNEST(components) AS c\nWHERE project IN ($project)\n  AND array_length(components, 1) > 0\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY c\nORDER BY \"Total\" DESC\nLIMIT 20;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.9 }] },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 56 },
+      "id": 19,
+      "options": { "displayMode": "gradient", "minVizWidth": 0, "minVizHeight": 15, "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true }, "showUnfilled": true, "valueMode": "color" },
+      "title": "Release Progress",
+      "type": "bargauge",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  v AS \"Release\",\n  CASE WHEN COUNT(*) > 0\n    THEN COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved'))::float / COUNT(*)\n    ELSE 0\n  END AS \"Progress\"\nFROM jira_tasks_enhanced, UNNEST(fix_versions) AS v\nWHERE project IN ($project)\n  AND array_length(fix_versions, 1) > 0\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY v\nORDER BY \"Progress\" ASC;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 65 },
+      "id": 106,
+      "title": "🐛 Bug & Quality Analysis",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 66 },
+      "id": 20,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true }, "tooltip": { "mode": "single" } },
+      "title": "Bug Root Cause Distribution",
+      "type": "piechart",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  COALESCE(root_cause, 'Not Specified') AS \"Root Cause\",\n  COUNT(*) AS count\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND task_type = 'Bug'\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY root_cause\nORDER BY count DESC;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Bugs Created" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Bugs Resolved" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 66 },
+      "id": 21,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "title": "Bug Arrival vs Resolution Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "rawSql": "SELECT DATE_TRUNC('week', created_at) AS time, COUNT(*) AS \"Bugs Created\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project) AND task_type = 'Bug'\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY time ORDER BY time;",
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "rawSql": "SELECT DATE_TRUNC('week', h.changed_at) AS time, COUNT(DISTINCT h.issue_key) AS \"Bugs Resolved\"\nFROM jira_status_history h\nJOIN jira_tasks_enhanced t ON h.issue_key = t.key\nWHERE h.to_status IN ('Done','Closed','Resolved') AND t.task_type = 'Bug'\n  AND t.project IN ($project)\n  AND ($assignee = 'All' OR t.assignee IN ($assignee))\n  AND ($component = 'All' OR t.components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR t.fix_versions && ARRAY[$release]::varchar[])\n  AND h.changed_at >= $__timeFrom() AND h.changed_at <= $__timeTo()\nGROUP BY time ORDER BY time;",
+          "refId": "B",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" } },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 66 },
+      "id": 22,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "title": "Reopened Issues Trend",
+      "type": "timeseries",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  DATE_TRUNC('week', changed_at) AS time,\n  COUNT(DISTINCT issue_key) AS \"Reopened\"\nFROM jira_status_history\nWHERE to_status IN ('Reopened','To Do','In Progress')\n  AND from_status IN ('Done','Closed','Resolved')\n  AND project IN ($project)\n  AND changed_at >= $__timeFrom()\n  AND changed_at <= $__timeTo()\nGROUP BY time\nORDER BY time;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 74 },
+      "id": 107,
+      "title": "⏰ Overdue & Aging Analysis",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Overdue" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 75 },
+      "id": 23,
+      "options": {
+        "barWidth": 0.7,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": { "mode": "single" },
+        "xTickLabelRotation": 0
+      },
+      "title": "Overdue Tasks by Assignee",
+      "type": "barchart",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  assignee AS \"Assignee\",\n  COUNT(*) AS \"Overdue\"\nFROM jira_tasks_enhanced\nWHERE due_date < CURRENT_TIMESTAMP\n  AND status NOT IN ('Done','Closed','Resolved')\n  AND assignee IS NOT NULL\n  AND project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY assignee\nORDER BY \"Overdue\" DESC;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 75 },
+      "id": 24,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true }, "tooltip": { "mode": "single" } },
+      "title": "Task Age Distribution (Open Tasks)",
+      "type": "piechart",
+      "targets": [
+        {
+          "rawSql": "SELECT age_bucket, COUNT(*) AS count\nFROM (\n  SELECT\n    CASE\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 7 THEN '< 1 week'\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 14 THEN '1-2 weeks'\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 30 THEN '2-4 weeks'\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 90 THEN '1-3 months'\n      ELSE '> 3 months'\n    END AS age_bucket,\n    CASE\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 7 THEN 1\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 14 THEN 2\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 30 THEN 3\n      WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400 < 90 THEN 4\n      ELSE 5\n    END AS sort_order\n  FROM jira_tasks_enhanced\n  WHERE status NOT IN ('Done','Closed','Resolved')\n    AND project IN ($project)\n    AND ($sprint = 'All' OR last_sprint IN ($sprint))\n    AND ($assignee = 'All' OR assignee IN ($assignee))\n    AND ($task_type = 'All' OR task_type IN ($task_type))\n    AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n    AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n    AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\n) sub\nGROUP BY age_bucket, sort_order\nORDER BY sort_order;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 83 },
+      "id": 108,
+      "title": "📋 Task Details",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "displayMode": "auto", "filterable": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Status" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "type": "value", "options": { "Done": { "color": "green", "text": "✅ Done" }, "In Progress": { "color": "orange", "text": "🔄 In Progress" }, "To Do": { "color": "blue", "text": "📋 To Do" } } }] }] },
+          { "matcher": { "id": "byName", "options": "Priority" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "type": "value", "options": { "Highest": { "color": "dark-red", "text": "🔴 Highest" }, "High": { "color": "red", "text": "🟠 High" }, "Medium": { "color": "yellow", "text": "🟡 Medium" }, "Low": { "color": "green", "text": "🟢 Low" } } }] }] },
+          { "matcher": { "id": "byName", "options": "Key" }, "properties": [{ "id": "links", "value": [{ "title": "Open in Jira", "url": "https://your-jira-instance.atlassian.net/browse/${__value.text}" }] }] },
+          { "matcher": { "id": "byName", "options": "Story Points" }, "properties": [{ "id": "custom.width", "value": 95 }] },
+          { "matcher": { "id": "byName", "options": "Days Open" }, "properties": [{ "id": "custom.width", "value": 90 }, { "id": "custom.displayMode", "value": "color-background" }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 14 }, { "color": "red", "value": 30 }] } }] }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 84 },
+      "id": 25,
+      "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Updated" }], "footer": { "enablePagination": true, "countRows": true, "fields": "" } },
+      "title": "All Tasks (Filtered)",
+      "type": "table",
+      "targets": [
+        {
+          "rawSql": "SELECT\n  key AS \"Key\",\n  summary AS \"Summary\",\n  task_type AS \"Type\",\n  status AS \"Status\",\n  priority AS \"Priority\",\n  assignee AS \"Assignee\",\n  last_sprint AS \"Sprint\",\n  COALESCE(story_points, 0) AS \"Story Points\",\n  ROUND(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) / 86400) AS \"Days Open\",\n  TO_CHAR(due_date, 'YYYY-MM-DD') AS \"Due Date\",\n  TO_CHAR(updated_at, 'YYYY-MM-DD') AS \"Updated\",\n  ARRAY_TO_STRING(components, ', ') AS \"Components\",\n  ARRAY_TO_STRING(fix_versions, ', ') AS \"Releases\",\n  epic_name AS \"Epic\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nORDER BY updated_at DESC\nLIMIT 500;",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 96 },
+      "id": 109,
+      "title": "📊 Sprint Completion Rate (Gauge)",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.8 }] },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 97 },
+          "id": 30,
+          "options": { "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*Rate.*/", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true },
+          "title": "Sprint Completion Rate",
+          "type": "gauge",
+          "targets": [
+            {
+              "rawSql": "SELECT\n  last_sprint AS \"Sprint\",\n  CASE WHEN COUNT(*) > 0\n    THEN COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved'))::float / COUNT(*)\n    ELSE 0\n  END AS \"Completion Rate\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND last_sprint IS NOT NULL AND last_sprint != ''\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY last_sprint\nORDER BY last_sprint DESC\nLIMIT 1;",
+              "refId": "A",
+              "format": "table"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "auto", "displayMode": "auto", "filterable": true } },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Completion %" }, "properties": [{ "id": "custom.displayMode", "value": "color-background-solid" }, { "id": "unit", "value": "percent" }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 50 }, { "color": "green", "value": 80 }] } }] }
+            ]
+          },
+          "gridPos": { "h": 8, "w": 16, "x": 8, "y": 97 },
+          "id": 31,
+          "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Sprint" }], "footer": { "enablePagination": true } },
+          "title": "Sprint Summary Table",
+          "type": "table",
+          "targets": [
+            {
+              "rawSql": "SELECT\n  last_sprint AS \"Sprint\",\n  COUNT(*) AS \"Total\",\n  COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved')) AS \"Completed\",\n  COUNT(*) FILTER (WHERE status NOT IN ('Done','Closed','Resolved')) AS \"Open\",\n  COALESCE(SUM(story_points), 0) AS \"Total SP\",\n  COALESCE(SUM(story_points) FILTER (WHERE status IN ('Done','Closed','Resolved')), 0) AS \"Done SP\",\n  ROUND(CASE WHEN COUNT(*) > 0\n    THEN COUNT(*) FILTER (WHERE status IN ('Done','Closed','Resolved'))::numeric / COUNT(*) * 100\n    ELSE 0 END, 1) AS \"Completion %\"\nFROM jira_tasks_enhanced\nWHERE project IN ($project)\n  AND last_sprint IS NOT NULL AND last_sprint != ''\n  AND ($sprint = 'All' OR last_sprint IN ($sprint))\n  AND ($assignee = 'All' OR assignee IN ($assignee))\n  AND ($task_type = 'All' OR task_type IN ($task_type))\n  AND ($component = 'All' OR components && ARRAY[$component]::varchar[])\n  AND ($release = 'All' OR fix_versions && ARRAY[$release]::varchar[])\n  AND created_at >= $__timeFrom() AND created_at <= $__timeTo()\nGROUP BY last_sprint\nORDER BY last_sprint DESC;",
+              "refId": "A",
+              "format": "table"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+
+  "refresh": "5m",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["jira", "project-management", "tasks"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+        "definition": "SELECT DISTINCT project FROM jira_tasks_enhanced ORDER BY project;",
+        "includeAll": true,
+        "multi": true,
+        "name": "project",
+        "label": "Project",
+        "options": [],
+        "query": "SELECT DISTINCT project FROM jira_tasks_enhanced ORDER BY project;",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "allValue": null
+      },
+      {
+        "current": {},
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+        "definition": "SELECT DISTINCT last_sprint FROM jira_tasks_enhanced WHERE project IN ($project) AND last_sprint IS NOT NULL AND last_sprint != '' ORDER BY last_sprint;",
+        "includeAll": true,
+        "multi": true,
+        "name": "sprint",
+        "label": "Sprint",
+        "options": [],
+        "query": "SELECT DISTINCT last_sprint FROM jira_tasks_enhanced WHERE project IN ($project) AND last_sprint IS NOT NULL AND last_sprint != '' ORDER BY last_sprint;",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "allValue": "'All'"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+        "definition": "SELECT DISTINCT assignee FROM jira_tasks_enhanced WHERE project IN ($project) AND assignee IS NOT NULL ORDER BY assignee;",
+        "includeAll": true,
+        "multi": true,
+        "name": "assignee",
+        "label": "Assignee",
+        "options": [],
+        "query": "SELECT DISTINCT assignee FROM jira_tasks_enhanced WHERE project IN ($project) AND assignee IS NOT NULL ORDER BY assignee;",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "allValue": "'All'"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+        "definition": "SELECT DISTINCT UNNEST(components) AS component FROM jira_tasks_enhanced WHERE project IN ($project) AND array_length(components, 1) > 0 ORDER BY component;",
+        "includeAll": true,
+        "multi": true,
+        "name": "component",
+        "label": "Component",
+        "options": [],
+        "query": "SELECT DISTINCT UNNEST(components) AS component FROM jira_tasks_enhanced WHERE project IN ($project) AND array_length(components, 1) > 0 ORDER BY component;",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "allValue": "'All'"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+        "definition": "SELECT DISTINCT UNNEST(fix_versions) AS release FROM jira_tasks_enhanced WHERE project IN ($project) AND array_length(fix_versions, 1) > 0 ORDER BY release;",
+        "includeAll": true,
+        "multi": true,
+        "name": "release",
+        "label": "Release",
+        "options": [],
+        "query": "SELECT DISTINCT UNNEST(fix_versions) AS release FROM jira_tasks_enhanced WHERE project IN ($project) AND array_length(fix_versions, 1) > 0 ORDER BY release;",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "allValue": "'All'"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "${DS_POSTGRESQL}" },
+        "definition": "SELECT DISTINCT task_type FROM jira_tasks_enhanced WHERE project IN ($project) ORDER BY task_type;",
+        "includeAll": true,
+        "multi": true,
+        "name": "task_type",
+        "label": "Task Type",
+        "options": [],
+        "query": "SELECT DISTINCT task_type FROM jira_tasks_enhanced WHERE project IN ($project) ORDER BY task_type;",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "allValue": "'All'"
+      }
+    ]
+  },
+  "time": { "from": "now-6M", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5m", "15m", "30m", "1h"],
+    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d", "90d", "6M", "1y"]
+  },
+  "timezone": "browser",
+  "title": "Jira Project Management Dashboard",
+  "uid": "jira-mgmt-dashboard",
+  "version": 2
+}

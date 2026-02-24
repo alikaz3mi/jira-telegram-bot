@@ -68,6 +68,7 @@ class JiraIssueDetail(BaseModel):
     components: List[str] = Field(default_factory=list, description="Component names")
     labels: List[str] = Field(default_factory=list, description="Labels")
     last_sprint: str = Field(default="Backlog", description="Last sprint name")
+    all_sprints: List[str] = Field(default_factory=list, description="All sprints the issue has been in")
     sprint_repeats: int = Field(default=0, description="Number of sprints")
     release: List[str] = Field(default_factory=list, description="Fix versions")
     original_estimate: Optional[str] = Field(default=None, description="Original time estimate")

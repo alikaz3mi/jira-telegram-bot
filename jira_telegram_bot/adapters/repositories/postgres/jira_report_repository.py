@@ -58,6 +58,7 @@ class JiraTaskModel(Base):
     components = Column(ARRAY(String), nullable=True)
     labels = Column(ARRAY(String), nullable=True)
     last_sprint = Column(String, nullable=True)
+    all_sprints = Column(ARRAY(String), nullable=True)
     sprint_repeats = Column(Integer, nullable=True)
     release = Column(ARRAY(String), nullable=True)
     original_estimate = Column(Text, nullable=True)
@@ -285,6 +286,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             components=issue.components,
             labels=issue.labels,
             last_sprint=issue.last_sprint,
+            all_sprints=issue.all_sprints,
             sprint_repeats=issue.sprint_repeats,
             release=issue.release,
             original_estimate=issue.original_estimate,
@@ -345,6 +347,7 @@ class JiraReportRepository(JiraReportRepositoryInterface):
             components=model.components or [],
             labels=model.labels or [],
             last_sprint=model.last_sprint or "Backlog",
+            all_sprints=model.all_sprints or [],
             sprint_repeats=model.sprint_repeats or 0,
             release=model.release or [],
             original_estimate=model.original_estimate,

@@ -272,6 +272,7 @@ class JiraDataService(JiraDataServiceInterface):
             ),
             labels=issue.fields.labels if issue.fields.labels else [],
             last_sprint=sprint_info["name"],
+            all_sprints=sprint_info["all_sprints"],
             sprint_repeats=sprint_info["count"],
             release=release_list,
             original_estimate=original_estimate,
@@ -308,25 +309,34 @@ class JiraDataService(JiraDataServiceInterface):
 
     def _extract_sprint_info(self, issue) -> dict:
         """Extract sprint information from issue.
-        
+
         Args:
             issue: Jira issue object.
-            
+
         Returns:
-            Dictionary with sprint name and count.
+            Dictionary with sprint name, all sprint names, and count.
         """
         sprint_field = getattr(issue.fields, "customfield_10104", None)
         if sprint_field and len(sprint_field) > 0:
-            sprint_str = str(sprint_field[-1])
-            name_start = sprint_str.find("name=") + 5
-            name_end = sprint_str.find(",startDate")
-            last_sprint_name = sprint_str[name_start:name_end]
+            all_sprint_names = []
+            for sprint in sprint_field:
+                sprint_str = str(sprint)
+                name_start = sprint_str.find("name=") + 5
+                name_end = sprint_str.find(",startDate")
+                if name_start > 4 and name_end > name_start:
+                    all_sprint_names.append(sprint_str[name_start:name_end])
+            last_sprint_name = all_sprint_names[-1] if all_sprint_names else "Backlog"
         else:
             last_sprint_name = "Backlog"
-        
+            all_sprint_names = []
+
         sprint_count = len(sprint_field) if sprint_field else 0
-        
-        return {"name": last_sprint_name, "count": sprint_count}
+
+        return {
+            "name": last_sprint_name,
+            "all_sprints": all_sprint_names,
+            "count": sprint_count,
+        }
 
     def _extract_worklog_entries(self, issue) -> List[WorklogEntry]:
         """Extract worklog entries from issue.
