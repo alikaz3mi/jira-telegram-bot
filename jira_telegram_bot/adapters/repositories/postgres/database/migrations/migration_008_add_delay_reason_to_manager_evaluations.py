@@ -47,6 +47,21 @@ class Migration008AddDelayReasonToManagerEvaluations(MigrationInterface):
         LOGGER.info("Adding delay_reason column to manager_evaluations table")
 
         with engine.connect() as connection:
+            table_exists = connection.execute(
+                text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'manager_evaluations'
+                    )
+                """)
+            ).scalar()
+
+            if not table_exists:
+                LOGGER.warning(
+                    "Table manager_evaluations does not exist, skipping migration 008"
+                )
+                return
+
             connection.execute(
                 text("""
                     ALTER TABLE manager_evaluations 
@@ -66,6 +81,21 @@ class Migration008AddDelayReasonToManagerEvaluations(MigrationInterface):
         LOGGER.info("Removing delay_reason column from manager_evaluations table")
 
         with engine.connect() as connection:
+            table_exists = connection.execute(
+                text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'manager_evaluations'
+                    )
+                """)
+            ).scalar()
+
+            if not table_exists:
+                LOGGER.warning(
+                    "Table manager_evaluations does not exist, skipping rollback of migration 008"
+                )
+                return
+
             connection.execute(
                 text("ALTER TABLE manager_evaluations DROP COLUMN IF EXISTS delay_reason")
             )
