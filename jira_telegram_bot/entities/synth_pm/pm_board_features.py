@@ -89,6 +89,10 @@ class SynthPMFeatureEntity(BaseModel):
         description="Associated developer's board Jira issue key",
     )
     version: Optional[str] = Field(default=None, description="Release version number")
+    remaining_hours: Optional[float] = Field(
+        default=None,
+        description="Remaining hours from Jira worklog",
+    )
     times: Dict[str, float] = Field(
         default_factory=dict,
         description="Time estimates for each department",

@@ -81,9 +81,9 @@ class TestSynthPMRepositoryMethodSignatures(unittest.IsolatedAsyncioTestCase):
         """Test that get_story_by_release_name returns story key when found."""
         release_name = "Version 2.5.0"
         
-        # Mock story issue
         mock_issue = MagicMock()
         mock_issue.key = "DEV-123"
+        mock_issue.fields.summary = "Version 2.5.0"
         
         self.jira_repository.search_issues = MagicMock(return_value=[mock_issue])
         

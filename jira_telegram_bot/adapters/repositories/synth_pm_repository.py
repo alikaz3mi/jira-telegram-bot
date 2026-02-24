@@ -107,6 +107,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 self.project_config.boards.pm_board.jira_board_key,
             )
 
+        self._sprint_cache: Dict[str, Dict[str, Any]] = {}
+
     @property
     def developer_board_project_key(self) -> str:
         """Get developer board project key.
@@ -450,62 +452,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             # Smart sprint assignment for PM Board
             if feature.sprint_list and len(feature.sprint_list) > 0:
-                # Get current Jalali year for sprint creation if needed
-                current_jalali_year = jdatetime.datetime.now().year
-                
-                # Sort sprints by sprint ID (earliest first)
-                sorted_sprints = sorted(
+                selected_sprint = self._find_best_sprint_from_list(
                     feature.sprint_list,
-                    key=lambda s: int(s.split(':')[0]) if ':' in s else 0
+                    self.pm_board_id,
+                    self.pm_board_key,
                 )
                 
-                # Find the closest active or future sprint
-                selected_sprint = None
-                selected_sprint_info = None
-                
-                for s in sorted_sprints:
-                    temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.pm_board_key} Sprint {temp_sprint_info.sprint_id}"
-                    temp_sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.pm_board_id,
-                    )
-                    
-                    if temp_sprint is not None:
-                        if temp_sprint.get('state') == 'active':
-                            # Found an active sprint - use it
-                            selected_sprint = temp_sprint
-                            selected_sprint_info = temp_sprint_info
-                            LOGGER.info(f"PM Board: Assigning feature {feature.task_title} to active sprint {temp_sprint_info.sprint_id}")
-                            break
-                        elif temp_sprint.get('state') == 'future' and not selected_sprint:
-                            # Found a future sprint - remember it but keep looking for active
-                            selected_sprint = temp_sprint
-                            selected_sprint_info = temp_sprint_info
-                            LOGGER.info(f"PM Board: Found future sprint {temp_sprint_info.sprint_id} for feature {feature.task_title}")
-                
-                # If no active/future sprint found, create the earliest one
-                if not selected_sprint:
-                    selected_sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                    sprint_name = f"{self.pm_board_key} Sprint {selected_sprint_info.sprint_id}"
-                    # Double-check if sprint exists before creating
-                    selected_sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.pm_board_id,
-                    )
-                    if not selected_sprint:
-                        LOGGER.info(f"PM Board: No active/future sprint found, will create sprint {selected_sprint_info.sprint_id} for feature {feature.task_title}")
-                        selected_sprint = self._create_sprint(
-                            selected_sprint_info, 
-                            current_jalali_year,
-                            self.pm_board_id,
-                            self.pm_board_key
-                        )
-                    else:
-                        LOGGER.info(f"PM Board: Sprint {sprint_name} already exists (state: {selected_sprint.get('state')}), using it for feature {feature.task_title}")
-                
-                # Assign the sprint ID to the task
-                if selected_sprint:
+                if selected_sprint and selected_sprint.get("id"):
                     pm_board_task_data.sprint_id = selected_sprint.get('id')
                     LOGGER.debug(f"PM Board: Assigned sprint ID {selected_sprint.get('id')} to task {feature.task_title}")
             elif feature.sprint:
@@ -1046,81 +999,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             components = self._map_components(feature)
 
-            if len(feature.sprint_list) > 1:
-                # Sort sprints by sprint ID (earliest first)
-                sorted_sprints = sorted(
-                    feature.sprint_list,
-                    key=lambda s: int(s.split(':')[0]) if ':' in s else 0
-                )
-                
-                sprint = None
-                sprint_info = None
-                
-                # Iterate through sprints to find first non-closed sprint
-                for s in sorted_sprints:
-                    temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                    sprint_name = f"{self.developer_board_key} Sprint {temp_sprint_info.sprint_id}"
-                    temp_sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.developer_board_id,
-                    )
-                    
-                    if temp_sprint is not None:
-                        if temp_sprint.get('state') == 'closed':
-                            # Skip closed sprints
-                            LOGGER.debug(f"Skipping closed sprint {temp_sprint_info.sprint_id}")
-                            continue
-                        elif temp_sprint.get('state') == 'active':
-                            # Found an active sprint - use it immediately
-                            sprint = temp_sprint
-                            sprint_info = temp_sprint_info
-                            LOGGER.info(f"Assigning feature {feature.task_title} to active sprint {sprint_info.sprint_id}")
-                            break
-                        elif temp_sprint.get('state') == 'future':
-                            # Found a future sprint - use it but keep looking for active
-                            if not sprint:
-                                sprint = temp_sprint
-                                sprint_info = temp_sprint_info
-                                LOGGER.info(f"Found future sprint {sprint_info.sprint_id} for feature {feature.task_title}")
-                    else:
-                        # Sprint doesn't exist - create it
-                        LOGGER.info(f"Sprint {sprint_name} doesn't exist, will create it for feature {feature.task_title}")
-                        sprint = None
-                        sprint_info = temp_sprint_info
-                        break
-                
-                # If all sprints are closed, cannot create task
-                if sprint is None and sprint_info is None:
-                    LOGGER.warning(f"All sprints for feature {feature.task_title} are closed - cannot create task")
-                    return None
-                    
-            elif len(feature.sprint_list) == 1:
-                sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
-                sprint = self.jira_repository.get_sprint_by_name(
-                    sprint_name,
-                    self.developer_board_id,
-                )
-                if sprint is not None and sprint.get('state') == "closed":
-                    LOGGER.warning(f"Cannot create task for feature {feature.task_title} - sprint is closed")
-                    return None
-                
-            else:
-                LOGGER.warning(f"No sprints defined for feature {feature.task_title}")
-                return None
+            sprint = self._find_best_sprint_from_list(
+                feature.sprint_list,
+                self.developer_board_id,
+                self.developer_board_key,
+            )
 
-            # Create sprint if it doesn't exist
-            if sprint is None and sprint_info is not None:
-                LOGGER.info(f"Creating new sprint: {sprint_info.sprint_id} for feature {feature.task_title}")
-                sprint = self._create_sprint(
-                    sprint_info, 
-                    current_jalali_year,
-                    self.developer_board_id,
-                    self.developer_board_key
-                )
-                LOGGER.debug(f"Created sprint: {sprint}")
-            
-            # Final validation
             if sprint is None or sprint.get('state') == 'closed':
                 LOGGER.warning(f"Cannot create task for feature {feature.task_title} - no valid sprint available")
                 return None
@@ -1300,6 +1184,177 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         
         return sprint
 
+    def _get_or_create_sprint_cached(
+        self,
+        sprint_info: SprintInfo,
+        board_id: int,
+        board_key: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Look up a sprint by name, using a local cache to prevent duplicates.
+
+        Args:
+            sprint_info: Parsed sprint information.
+            board_id: Jira board ID.
+            board_key: Board key used for sprint naming.
+
+        Returns:
+            Sprint dict with id/name/state, or None on failure.
+        """
+        sprint_name = f"{board_key} Sprint {sprint_info.sprint_id}"
+        cache_key = f"{board_id}:{sprint_name}"
+
+        cached = self._sprint_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        existing = self.jira_repository.get_sprint_by_name(sprint_name, board_id)
+        if existing is not None and existing.get("id") is not None:
+            self._sprint_cache[cache_key] = existing
+            return existing
+
+        current_jalali_year = jdatetime.datetime.now().year
+        created = self._create_sprint(sprint_info, current_jalali_year, board_id, board_key)
+        if created is not None and created.get("id") is not None:
+            self._sprint_cache[cache_key] = created
+        return created
+
+    def _find_best_sprint_from_list(
+        self,
+        sprint_list: List[str],
+        board_id: int,
+        board_key: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Select the best sprint from a feature's sprint list.
+
+        Prefers active sprints, then future, then creates the earliest.
+
+        Args:
+            sprint_list: Raw sprint strings from the sheet.
+            board_id: Jira board ID.
+            board_key: Board key for naming.
+
+        Returns:
+            Sprint dict or None.
+        """
+        sorted_sprints = sorted(
+            sprint_list,
+            key=lambda s: int(s.split(':')[0]) if ':' in s else 0,
+        )
+
+        best_sprint = None
+        best_sprint_info = None
+
+        for s in sorted_sprints:
+            info = SprintInfo.parse_sprint_string(s)
+            if not info:
+                continue
+            sprint = self._get_or_create_sprint_cached(info, board_id, board_key)
+            if sprint is None:
+                continue
+            state = sprint.get("state", "")
+            if state == "closed":
+                continue
+            if state == "active":
+                return sprint
+            if state == "future" and best_sprint is None:
+                best_sprint = sprint
+                best_sprint_info = info
+
+        if best_sprint is not None:
+            return best_sprint
+
+        first_info = SprintInfo.parse_sprint_string(sorted_sprints[0]) if sorted_sprints else None
+        if first_info:
+            return self._get_or_create_sprint_cached(first_info, board_id, board_key)
+        return None
+
+    def clear_sprint_cache(self) -> None:
+        """Clear the in-memory sprint cache."""
+        self._sprint_cache.clear()
+
+    def _calculate_remaining_seconds(self, issue) -> int:
+        """Calculate remaining estimate seconds for an issue.
+
+        For Story issues sums subtask remaining estimates.
+        For other types reads directly from timetracking.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Remaining estimate in seconds.
+        """
+        if issue.fields.issuetype.name == "Story" and issue.fields.subtasks:
+            total_remaining = 0
+            for subtask in issue.fields.subtasks:
+                subtask_issue = self.jira_repository.get_issue(subtask.key)
+                if subtask_issue and subtask_issue.fields.timetracking:
+                    total_remaining += getattr(
+                        subtask_issue.fields.timetracking,
+                        "remainingEstimateSeconds",
+                        0,
+                    ) or 0
+            return total_remaining
+
+        if issue.fields.timetracking:
+            return getattr(
+                issue.fields.timetracking,
+                "remainingEstimateSeconds",
+                0,
+            ) or 0
+        return 0
+
+    async def sync_remaining_hours_to_sheet(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> bool:
+        """Fetch remaining estimate from Jira worklog and update Google Sheet.
+
+        Only writes when the task has logged work. For Story issues the
+        remaining hours are the sum of all subtask remaining estimates.
+
+        Args:
+            feature: Feature entity with developer_board_issue_key.
+
+        Returns:
+            True if the sheet was updated, False otherwise.
+        """
+        if not feature.developer_board_issue_key:
+            return False
+
+        try:
+            issue = self.jira_repository.get_issue(
+                feature.developer_board_issue_key,
+            )
+            if not issue:
+                return False
+
+            logged_seconds = self.jira_repository.get_issue_spent_time_in_seconds(
+                feature.developer_board_issue_key,
+            )
+            if logged_seconds == 0:
+                return False
+
+            remaining_seconds = self._calculate_remaining_seconds(issue)
+            remaining_hours = round(remaining_seconds / 3600, 1)
+
+            await self.update_developer_board_feature(
+                feature.sheet_row_number,
+                {"remaining_hours": remaining_hours},
+            )
+            LOGGER.info(
+                f"Updated Remaining (h) for {feature.developer_board_issue_key} "
+                f"to {remaining_hours}h (logged: {round(logged_seconds / 3600, 1)}h)",
+            )
+            return True
+
+        except Exception as e:
+            LOGGER.error(
+                f"Error syncing remaining hours for "
+                f"{feature.developer_board_issue_key}: {e}",
+            )
+            return False
+
     async def update_developer_board_task_from_feature(
         self,
         feature: SynthPMFeatureEntity,
@@ -1443,78 +1498,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Handle sprint assignment based on feature.sprint_list (multiple sprints possible)
             if feature.sprint_list and len(feature.sprint_list) > 0:
-                if len(feature.sprint_list) > 1:
-                    # Sort sprints by the first number when splitting by ':'
-                    sorted_sprints = sorted(
-                        feature.sprint_list,
-                        key=lambda s: int(s.split(':')[0]) if ':' in s else 0
-                    )
-                    
-                    # Find first active or future sprint (don't create in loop)
-                    for s in sorted_sprints:
-                        sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
-                        LOGGER.debug(f"Looking for sprint: '{sprint_name}' on board {self.developer_board_id}")
-                        sprint = self.jira_repository.get_sprint_by_name(
-                            sprint_name,
-                            self.developer_board_id,
-                        )
-                        LOGGER.debug(f"Sprint lookup result: {sprint}")
-                        if sprint is not None:
-                            if sprint.get('state') == "closed":
-                                LOGGER.debug(f"Sprint {sprint_name} is closed, continuing search")
-                                continue
-                            elif sprint.get('state') == "active":
-                                LOGGER.debug(f"Found active sprint {sprint_name}")
-                                target_sprint = sprint
-                                break
-                            elif sprint.get('state') == 'future' and not target_sprint:
-                                # Found a future sprint - remember it but keep looking for active
-                                LOGGER.debug(f"Found future sprint {sprint_name}")
-                                target_sprint = sprint
-                    
-                    # If no active sprint found, use first non-closed sprint or create first sprint
-                    if target_sprint is None:
-                        sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
-                        sprint = self.jira_repository.get_sprint_by_name(
-                            sprint_name,
-                            self.developer_board_id,
-                        )
-                        if sprint is None:
-                            target_sprint = self._create_sprint(
-                                sprint_info, 
-                                current_jalali_year,
-                                self.developer_board_id,
-                                self.developer_board_key
-                            )
-                        elif sprint.get('state') != "closed":
-                            target_sprint = sprint
-                        
-                elif len(feature.sprint_list) == 1:
-                    sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                    sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
-                    LOGGER.debug(f"Looking for single sprint: '{sprint_name}' on board {self.developer_board_id}")
-                    sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.developer_board_id,
-                    )
-                    LOGGER.debug(f"Single sprint lookup result: {sprint}")
-                    
-                    if sprint is not None and sprint.get('state') != "closed":
-                        LOGGER.debug(f"Found existing non-closed sprint {sprint_name}")
-                        target_sprint = sprint
-                    elif sprint is None:
-                        # Create sprint if it doesn't exist
-                        LOGGER.info(f"Creating new single sprint: {sprint_name}")
-                        target_sprint = self._create_sprint(
-                            sprint_info, 
-                            current_jalali_year,
-                            self.developer_board_id,
-                            self.developer_board_key
-                        )
-                        LOGGER.debug(f"Created single sprint: {target_sprint}")
-                    # If sprint is closed, target_sprint remains None (will remove sprint assignment)
+                target_sprint = self._find_best_sprint_from_list(
+                    feature.sprint_list,
+                    self.developer_board_id,
+                    self.developer_board_key,
+                )
+                if target_sprint and target_sprint.get('state') == 'closed':
+                    target_sprint = None
             # If feature.sprint_list is empty or None, target_sprint remains None (will remove sprint assignment)
             
             # Update sprint assignment based on target_sprint
@@ -1931,7 +1921,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             "jira_issue_key": ["jira_issue_key", "Jira Issue Key", "jira_issue_key", "pm_board_key", "PM Board Key"],
             "developer_board_issue_key": ["developer_board_issue_key", "developer_board_key", "Developer Board Key"],
             "version": ["version", "ریلیز اصلی", "Fix Version", "Fix Version/s", "FixVersion"],
-            
+            "remaining_hours": ["Remaining (h)", "Remaining", "باقیمانده"],
         }
         people_mapping = {}
 
@@ -2170,6 +2160,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 version=get_mapped_value("version")
                 if get_mapped_value("version")
                 else None,
+                remaining_hours=parse_float(get_mapped_value("remaining_hours")),
                 times=times
             )
 
@@ -4368,52 +4359,12 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Get sprint information from first feature
             sprint = None
-            sprint_info = None
             if first_feature.sprint_list and len(first_feature.sprint_list) > 0:
-                # Use the same sprint logic as in create_developer_board_task_from_feature
-                if len(first_feature.sprint_list) > 1:
-                    sorted_sprints = sorted(
-                        first_feature.sprint_list,
-                        key=lambda s: int(s.split(':')[0]) if ':' in s else 0
-                    )
-                    for s in sorted_sprints:
-                        temp_sprint_info = SprintInfo.parse_sprint_string(s)
-                        sprint_name = f"{self.developer_board_key} Sprint {temp_sprint_info.sprint_id}"
-                        temp_sprint = self.jira_repository.get_sprint_by_name(
-                            sprint_name,
-                            self.developer_board_id,
-                        )
-                        if temp_sprint and temp_sprint.get('state') == 'active':
-                            sprint = temp_sprint
-                            sprint_info = temp_sprint_info
-                            break
-                        elif temp_sprint and temp_sprint.get('state') == 'future' and not sprint:
-                            sprint = temp_sprint
-                            sprint_info = temp_sprint_info
-                    
-                    if not sprint:
-                        sprint_info = SprintInfo.parse_sprint_string(sorted_sprints[0])
-                        sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
-                        sprint = self.jira_repository.get_sprint_by_name(
-                            sprint_name,
-                            self.developer_board_id,
-                        )
-                else:
-                    sprint_info = SprintInfo.parse_sprint_string(first_feature.sprint_list[0])
-                    sprint_name = f"{self.developer_board_key} Sprint {sprint_info.sprint_id}"
-                    sprint = self.jira_repository.get_sprint_by_name(
-                        sprint_name,
-                        self.developer_board_id,
-                    )
-                
-                # Create sprint if it doesn't exist
-                if sprint is None and sprint_info:
-                    sprint = self._create_sprint(
-                        sprint_info,
-                        current_jalali_year,
-                        self.developer_board_id,
-                        self.developer_board_key
-                    )
+                sprint = self._find_best_sprint_from_list(
+                    first_feature.sprint_list,
+                    self.developer_board_id,
+                    self.developer_board_key,
+                )
             
             # Get epic link
             epic_link = None

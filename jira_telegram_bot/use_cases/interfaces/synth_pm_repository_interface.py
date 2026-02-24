@@ -21,6 +21,10 @@ from jira_telegram_bot.entities.synth_pm.sync_filter_criteria import (
 class SynthPMRepositoryInterface(ABC):
     """Interface for Synth repository operations."""
 
+    def clear_sprint_cache(self) -> None:
+        """Clear the in-memory sprint cache."""
+        pass
+
     @abstractmethod
     async def get_developer_board_features(
         self,
@@ -336,6 +340,21 @@ class SynthPMRepositoryInterface(ABC):
 
         Returns:
             Story issue key if found, None otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def sync_remaining_hours_to_sheet(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> bool:
+        """Fetch remaining estimate from Jira worklog and update Google Sheet.
+
+        Args:
+            feature: Feature entity with developer_board_issue_key.
+
+        Returns:
+            True if the sheet was updated, False otherwise.
         """
         pass
 

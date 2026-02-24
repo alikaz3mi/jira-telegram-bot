@@ -75,6 +75,8 @@ class SynthPMUseCase:
         try:
             LOGGER.info("Starting intelligent SynthPM synchronization")
 
+            self.repository.clear_sprint_cache()
+
             # Get current features from sheet
             features = await self.repository.get_developer_board_features()
             if not features:
@@ -148,6 +150,9 @@ class SynthPMUseCase:
                     error_msg = f"Error processing release '{release_name}': {e}"
                     LOGGER.error(error_msg, exc_info=True)
                     sync_results["errors"].append(error_msg)
+
+            # Sync remaining hours from Jira worklogs to Google Sheet
+            await self._sync_remaining_hours(features, sync_results)
 
             # Update change tracker
             await self.repository.update_change_tracker(
@@ -238,6 +243,41 @@ class SynthPMUseCase:
         except Exception as e:
             LOGGER.error(f"Error during task cleanup: {e}")
             sync_results["errors"].append(f"Task cleanup error: {e}")
+
+    async def _sync_remaining_hours(
+        self,
+        features: List[SynthPMFeatureEntity],
+        sync_results: Dict[str, Any],
+    ) -> None:
+        """Sync remaining hours from Jira worklogs to Google Sheet.
+
+        For every feature that has a developer board issue key, checks
+        whether any work has been logged. If so, writes the remaining
+        estimate back to the Remaining (h) column in the sheet.
+
+        Args:
+            features: All features from the current sync cycle.
+            sync_results: Dictionary to track sync results.
+        """
+        updated_count = 0
+        for feature in features:
+            if not feature.developer_board_issue_key:
+                continue
+            try:
+                updated = await self.repository.sync_remaining_hours_to_sheet(
+                    feature,
+                )
+                if updated:
+                    updated_count += 1
+            except Exception as e:
+                LOGGER.warning(
+                    f"Failed to sync remaining hours for "
+                    f"{feature.developer_board_issue_key}: {e}",
+                )
+        if updated_count:
+            LOGGER.info(
+                f"Synced remaining hours for {updated_count} features",
+            )
 
     def _group_features_by_release(
         self,

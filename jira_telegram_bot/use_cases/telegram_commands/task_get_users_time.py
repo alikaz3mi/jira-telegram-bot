@@ -92,8 +92,8 @@ class TaskGetUsersTime:
         last_day = first_day + timedelta(days=days)
         
         jql = (
-            f'updated >= "{first_day.strftime("%Y-%m-%d")}" AND updated <= "{last_day.strftime("%Y-%m-%d")}" '
-            f'AND worklogDate >= "{first_day.strftime("%Y-%m-%d")}" AND worklogDate <= "{last_day.strftime("%Y-%m-%d")}" '
+            f'worklogDate >= "{first_day.strftime("%Y-%m-%d")}" '
+            f'AND worklogDate <= "{last_day.strftime("%Y-%m-%d")}" '
             "ORDER BY updated DESC"
         )
 
@@ -113,6 +113,8 @@ class TaskGetUsersTime:
             },
         )
 
+        last_day_end = last_day + timedelta(days=1)
+
         for issue in issues:
             try:
                 worklogs = self.jira.jira.worklogs(issue.key)
@@ -120,43 +122,40 @@ class TaskGetUsersTime:
                 LOGGER.error(f"Failed to fetch worklogs for issue {issue.key}: {e}")
                 continue
 
+            issue_summary = (getattr(issue.fields, "summary", None) or "").lower()
+            remote_title_keywords = ["دورکاری", "دور کاری", "ریموت", "remote"]
+            is_remote_issue = any(kw in issue_summary for kw in remote_title_keywords)
+
             for wl in worklogs:
-                started_str = wl.started  # e.g. "2023-04-05T10:45:00.000+0300"
+                started_str = wl.started
                 try:
-                    # Parse the start date of the worklog
                     started_date = datetime.strptime(
                         started_str.split(".")[0],
                         "%Y-%m-%dT%H:%M:%S",
                     )
-                    # Check if worklog is within the date range
-                    if not (first_day <= started_date <= last_day):
+                    if not (first_day <= started_date < last_day_end):
                         continue
                 except ValueError:
-                    # Skip worklogs with unparseable dates
                     continue
-                
+
                 author_name = wl.author.displayName
                 time_spent_seconds = wl.timeSpentSeconds or 0
                 comment = (getattr(wl, 'comment', None) or "").lower()
 
-                # Update total time
                 user_data_map[author_name]["total_time"] += time_spent_seconds
 
-                # Check for remote work keywords
-                remote_keywords = ["remote", "دورکاری", "دور کاری", "دور کار"]
-                if any(keyword in comment for keyword in remote_keywords):
-                    user_data_map[author_name]["remote_time"] += time_spent_seconds
-
-                # Check for overtime keywords
+                is_weekend = self._is_weekend_or_persian_holiday(started_date)
                 overtime_keywords = ["اضافه کاری", "overtime", "overtime work"]
-                if any(keyword in comment for keyword in overtime_keywords):
-                    user_data_map[author_name]["overtime"] += time_spent_seconds
+                is_overtime = any(keyword in comment for keyword in overtime_keywords)
+                remote_keywords = ["remote", "دورکاری", "دور کاری", "دور کار", "ریموت"]
+                is_remote = is_remote_issue or any(keyword in comment for keyword in remote_keywords)
 
-                # Check if it was a weekend or holiday
-                if self._is_weekend_or_persian_holiday(started_date):
-                    user_data_map[author_name][
-                        "weekend_holiday_time"
-                    ] += time_spent_seconds
+                if is_weekend:
+                    user_data_map[author_name]["weekend_holiday_time"] += time_spent_seconds
+                elif is_overtime:
+                    user_data_map[author_name]["overtime"] += time_spent_seconds
+                elif is_remote:
+                    user_data_map[author_name]["remote_time"] += time_spent_seconds
 
         # Generate and send Excel file
         await self._generate_and_send_excel(update, user_data_map)
