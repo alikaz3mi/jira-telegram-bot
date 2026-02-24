@@ -39,7 +39,7 @@ class JiraDataService(JiraDataServiceInterface):
         LOGGER.info(f"Fetching issues for project: {project_key}")
         
         start_at = 0
-        max_results = 100
+        max_results = 25
         issues = []
 
         while True:
@@ -47,11 +47,16 @@ class JiraDataService(JiraDataServiceInterface):
                 f"project = {project_key}",
                 start_at=start_at,
                 max_results=max_results,
-                expand="changelog,worklog,issuelinks"
+                expand="changelog,worklog,issuelinks",
+                fields=self._sync_fields(),
             )
             if not batch:
                 break
             issues.extend(batch)
+            LOGGER.info(
+                f"Fetched {len(issues)} issues so far for {project_key} "
+                f"(batch {start_at // max_results + 1})"
+            )
             if len(batch) < max_results:
                 break
             start_at += max_results
@@ -118,7 +123,7 @@ class JiraDataService(JiraDataServiceInterface):
         jql = f"project = {project_key} AND updated >= '{since_str}' ORDER BY updated DESC"
         
         start_at = 0
-        max_results = 100
+        max_results = 25
         issues = []
 
         while True:
@@ -126,7 +131,8 @@ class JiraDataService(JiraDataServiceInterface):
                 jql,
                 start_at=start_at,
                 max_results=max_results,
-                expand="changelog,worklog,issuelinks"
+                expand="changelog,worklog,issuelinks",
+                fields=self._sync_fields(),
             )
             if not batch:
                 break
@@ -288,6 +294,23 @@ class JiraDataService(JiraDataServiceInterface):
             worklog_entries=worklog_entries,
             linked_issues=linked_issues,
             status_changes=status_changes,
+        )
+
+    def _sync_fields(self) -> str:
+        """Return the comma-separated Jira field list needed for sync.
+
+        Returns:
+            Comma-separated field names used by _convert_to_detailed_issue.
+        """
+        return (
+            "summary,description,issuetype,assignee,reporter,priority,status,"
+            "created,updated,resolutiondate,duedate,project,comment,"
+            "components,labels,fixVersions,versions,timetracking,issuelinks,worklog,"
+            "customfield_10100,customfield_10104,customfield_10106,"
+            "customfield_10109,customfield_10110,"
+            "customfield_10600,customfield_10601,"
+            f"{self._jira_repository.jira_actual_start_id},"
+            f"{self._jira_repository.jira_actual_end_id}"
         )
 
     def _extract_comments(self, issue) -> List[str]:

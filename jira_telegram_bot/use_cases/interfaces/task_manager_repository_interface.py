@@ -194,18 +194,20 @@ class TaskManagerRepositoryInterface(ABC):
         start_at: int = 0,
         max_results: int = 100,
         expand: Optional[str] = None,
+        fields: Optional[str] = None,
     ) -> List[Issue]:
         """
         Search for issues using JQL.
 
         Args:
-            jql: JQL query string
-            start_at: Starting index for pagination
-            max_results: Maximum number of results to return
-            expand: Comma-separated list of fields to expand
+            jql: JQL query string.
+            start_at: Starting index for pagination.
+            max_results: Maximum number of results to return.
+            expand: Comma-separated list of fields to expand.
+            fields: Comma-separated list of fields to return (None = all).
 
         Returns:
-            List of matching Jira issues
+            List of matching Jira issues.
         """
         pass
 

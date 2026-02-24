@@ -614,29 +614,51 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         start_at: int = 0,
         max_results: int = 100,
         expand: Optional[str] = None,
+        fields: Optional[str] = None,
     ) -> List[Issue]:
-        """
-        Search for issues using JQL.
+        """Search for issues using JQL with retry on transient errors.
 
         Args:
-            jql: JQL query string
-            start_at: Starting index for pagination
-            max_results: Maximum number of results to return
-            expand: Comma-separated list of fields to expand
+            jql: JQL query string.
+            start_at: Starting index for pagination.
+            max_results: Maximum number of results to return.
+            expand: Comma-separated list of fields to expand.
+            fields: Comma-separated list of fields to return (None = all).
 
         Returns:
-            List of matching Jira issues
+            List of matching Jira issues.
         """
-        try:
-            return self.jira.search_issues(
-                jql,
-                startAt=start_at,
-                maxResults=max_results,
-                expand=expand,
-            )
-        except Exception as e:
-            LOGGER.error(f"Error searching issues with JQL '{jql}': {e}")
-            return []
+        import time as _time
+
+        max_retries = 3
+        base_delay = 5
+
+        for attempt in range(max_retries):
+            try:
+                kwargs: dict = {
+                    "startAt": start_at,
+                    "maxResults": max_results,
+                }
+                if expand:
+                    kwargs["expand"] = expand
+                if fields:
+                    kwargs["fields"] = fields
+                return self.jira.search_issues(jql, **kwargs)
+            except Exception as e:
+                error_str = str(e)
+                is_transient = any(
+                    code in error_str for code in ("504", "503", "502", "429")
+                )
+                if is_transient and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    LOGGER.warning(
+                        f"Transient error on attempt {attempt + 1}/{max_retries} "
+                        f"for JQL '{jql[:80]}': {e}. Retrying in {delay}s…"
+                    )
+                    _time.sleep(delay)
+                    continue
+                LOGGER.error(f"Error searching issues with JQL '{jql}': {e}")
+                return []
 
     def get_issue_with_expand(self, issue_key: str, expand: str) -> Optional[Issue]:
         """
