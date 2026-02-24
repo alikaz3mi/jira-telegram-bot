@@ -1,7 +1,7 @@
 """Daily task status tracking use case."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from telegram import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -38,23 +38,29 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         POST_TRANSITION_ACTION,
         SUBTASK_REQUEST,
         SUBTASK_CONFIRM,
-    ) = range(9)
+        WORK_DESCRIPTION,
+    ) = range(10)
+
+    ISSUE_TYPE_ICONS = {
+        "bug": "🐛",
+        "sub-task": "🔹",
+        "story": "📖",
+        "task": "📋",
+        "epic": "🏔",
+        "improvement": "💡",
+        "new feature": "✨",
+    }
 
     TEXTS = {
         "greeting": "سلام! 👋\nوقت بررسی وضعیت تسک‌های امروز است.",
         "no_tasks": "🎉 تبریک! هیچ تسک فعالی برای امروز ندارید.",
         "task_header": "📋 تسک {index} از {total}",
         "task_details": (
+            "{type_icon} *نوع:* {issue_type}\n"
             "🎫 *تیکت:* [{key}]({jira_url})\n"
             "📝 *عنوان:* {summary}\n"
-            "📊 *وضعیت:* {status}\n"
-            "⭐ *استوری پوینت:* {points}\n"
-            "🗓 *ددلاین:* {deadline}"
-        ),
-        "task_details_with_parent": (
-            "🎫 *تیکت:* [{key}]({jira_url})\n"
-            "📝 *عنوان:* {summary}\n"
-            "🔗 *استوری پدر:* {parent_summary}\n"
+            "{epic_line}"
+            "{parent_line}"
             "📊 *وضعیت:* {status}\n"
             "⭐ *استوری پوینت:* {points}\n"
             "🗓 *ددلاین:* {deadline}"
@@ -65,11 +71,16 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         "report_delay": "⚠️ گزارش تأخیر",
         "request_subtask": "➕ درخواست ساب‌تسک",
         "skip": "⏭ بعدی",
+        "previous": "⏮ قبلی",
         "select_date": "لطفاً روزی که روی تسک کار کرده‌اید را انتخاب کنید:",
         "today": "امروز",
         "yesterday": "دیروز",
         "days_ago": "{days} روز پیش",
         "hours_prompt": "چند ساعت روی این تسک کار کرده‌اید؟",
+        "work_description_prompt": (
+            "چه کاری روی این تسک انجام داده‌اید؟\n"
+            "توضیح مختصر بنویسید یا /skip بزنید:"
+        ),
         "hours_logged": "✅ {hours} ساعت برای تسک {key} ثبت شد.",
         "select_delay_reason": "لطفاً دلیل تأخیر را انتخاب کنید:",
         "delay_reasons": {
@@ -96,6 +107,8 @@ class DailyTaskStatus(DailyTaskStatusInterface):
             "آیا این ساب‌تسک ایجاد شود؟"
         ),
         "all_tasks_done": "🎉 همه تسک‌ها بررسی شدند!\n\nخلاصه:\n{summary}",
+        "upcoming_header": "\n\n📅 *تسک‌های پیش رو (تا {days} روز آینده):*\n",
+        "upcoming_empty": "هیچ تسک جدیدی در روزهای آینده ندارید. ✨",
         "cancel": "❌ عملیات لغو شد.",
         "back": "🔙 بازگشت",
         "hour_suffix": "ساعت",
@@ -191,8 +204,11 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         
         return self._build_keyboard(options, data, row_width=2, include_back=True)
 
-    def _build_task_action_keyboard(self) -> InlineKeyboardMarkup:
+    def _build_task_action_keyboard(self, show_previous: bool = False) -> InlineKeyboardMarkup:
         """Build keyboard for task actions.
+        
+        Args:
+            show_previous: Whether to show the previous button.
         
         Returns:
             InlineKeyboardMarkup with action options.
@@ -208,6 +224,11 @@ class DailyTaskStatus(DailyTaskStatusInterface):
                 InlineKeyboardButton(self.TEXTS["skip"], callback_data="action|skip"),
             ],
         ]
+        if show_previous:
+            keyboard[1].insert(
+                0,
+                InlineKeyboardButton(self.TEXTS["previous"], callback_data="action|prev"),
+            )
         return InlineKeyboardMarkup(keyboard)
 
     def _build_delay_reason_keyboard(self) -> InlineKeyboardMarkup:
@@ -257,63 +278,107 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         
         return f"{weekday_name} {date_str}"
 
+    @staticmethod
+    def _escape_markdown(text: str) -> str:
+        """Escape special characters for Telegram Markdown v1.
+
+        Args:
+            text: Raw text to escape.
+
+        Returns:
+            Escaped text safe for Markdown v1.
+        """
+        special_chars = r"_*[]()~`>"
+        escaped = text
+        for ch in special_chars:
+            escaped = escaped.replace(ch, f"\\{ch}")
+        return escaped
+
+    def _get_epic_name_for_issue(self, issue: Any) -> Optional[str]:
+        """Get the epic name for an issue via its epic link field.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Epic summary string, or None if no epic is linked.
+        """
+        epic_key = getattr(issue.fields, "customfield_10100", None)
+        if not epic_key:
+            return None
+        try:
+            epic_issue = self.jira_repository.get_issue(epic_key)
+            if epic_issue:
+                return epic_issue.fields.summary
+        except Exception as exc:
+            LOGGER.warning(f"Could not fetch epic {epic_key} for {issue.key}: {exc}")
+        return None
+
+    def _get_parent_summary(self, issue: Any) -> Optional[str]:
+        """Get the parent issue summary for a subtask.
+
+        Args:
+            issue: Jira issue object.
+
+        Returns:
+            Parent summary string, or None if not a subtask or parent unavailable.
+        """
+        if not hasattr(issue.fields, "parent"):
+            return None
+        try:
+            parent_issue = self.jira_repository.get_issue(issue.fields.parent.key)
+            if parent_issue:
+                return parent_issue.fields.summary
+        except Exception as exc:
+            LOGGER.warning(f"Could not fetch parent for {issue.key}: {exc}")
+        return None
+
     def _format_task_message(
         self,
         issue: Any,
         index: int,
         total: int,
     ) -> str:
-        """Format a task for display.
-        
+        """Format a task for display with type, epic and parent info.
+
         Args:
             issue: Jira issue object.
             index: Current task index (1-based).
             total: Total number of tasks.
-            
+
         Returns:
             Formatted task message in Persian.
         """
         header = self.TEXTS["task_header"].format(index=index, total=total)
-        
+
         points = getattr(issue.fields, "customfield_10106", None) or "-"
         deadline = getattr(issue.fields, "duedate", None) or "-"
-        
+
         jira_base_url = self.jira_repository.settings.domain
         jira_url = f"{jira_base_url.scheme}://{jira_base_url.host}/browse/{issue.key}"
-        
-        # Check if it's a subtask and get parent story summary
-        is_subtask = issue.fields.issuetype.name.lower() == "sub-task"
-        parent_summary = None
-        
-        if is_subtask and hasattr(issue.fields, "parent"):
-            try:
-                parent_issue = self.jira_repository.get_issue(issue.fields.parent.key)
-                if parent_issue:
-                    parent_summary = parent_issue.fields.summary
-            except Exception as e:
-                LOGGER.warning(f"Could not fetch parent for subtask {issue.key}: {e}")
-        
-        # Use appropriate template based on whether it's a subtask
-        if is_subtask and parent_summary:
-            details = self.TEXTS["task_details_with_parent"].format(
-                key=issue.key,
-                jira_url=jira_url,
-                summary=issue.fields.summary,
-                parent_summary=parent_summary,
-                status=issue.fields.status.name,
-                points=points,
-                deadline=deadline,
-            )
-        else:
-            details = self.TEXTS["task_details"].format(
-                key=issue.key,
-                jira_url=jira_url,
-                summary=issue.fields.summary,
-                status=issue.fields.status.name,
-                points=points,
-                deadline=deadline,
-            )
-        
+
+        issue_type_name = issue.fields.issuetype.name
+        type_icon = self.ISSUE_TYPE_ICONS.get(issue_type_name.lower(), "📋")
+
+        epic_name = self._get_epic_name_for_issue(issue)
+        epic_line = f"🏔 *اپیک:* {self._escape_markdown(epic_name)}\n" if epic_name else ""
+
+        parent_summary = self._get_parent_summary(issue)
+        parent_line = f"📖 *استوری والد:* {self._escape_markdown(parent_summary)}\n" if parent_summary else ""
+
+        details = self.TEXTS["task_details"].format(
+            type_icon=type_icon,
+            issue_type=self._escape_markdown(issue_type_name),
+            key=issue.key,
+            jira_url=jira_url,
+            summary=self._escape_markdown(issue.fields.summary),
+            epic_line=epic_line,
+            parent_line=parent_line,
+            status=self._escape_markdown(issue.fields.status.name),
+            points=points,
+            deadline=deadline,
+        )
+
         return f"{header}\n\n{details}\n\n{self.TEXTS['select_action']}"
 
     async def start_daily_status(
@@ -390,7 +455,9 @@ class DailyTaskStatus(DailyTaskStatusInterface):
             len(session.tasks),
         )
         
-        keyboard = self._build_task_action_keyboard()
+        keyboard = self._build_task_action_keyboard(
+            show_previous=session.current_task_index > 0,
+        )
         
         if update.callback_query:
             await update.callback_query.edit_message_text(
@@ -466,6 +533,12 @@ class DailyTaskStatus(DailyTaskStatusInterface):
             session = context.user_data["daily_status_session"]
             session.current_task_index += 1
             return await self._show_current_task(update, context)
+
+        elif action == "prev":
+            session = context.user_data["daily_status_session"]
+            if session.current_task_index > 0:
+                session.current_task_index -= 1
+            return await self._show_current_task(update, context)
             
         return self.TASK_DISPLAY
 
@@ -474,51 +547,74 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         update: Update,
         context: CallbackContext,
     ) -> int:
-        """Handle time spent selection.
-        
+        """Handle time spent selection and ask for work description.
+
         Args:
             update: Telegram update object.
             context: Telegram callback context.
-            
+
         Returns:
             Next conversation state.
         """
         query = update.callback_query
         await query.answer()
-        
+
         if query.data == "back":
             return await self._show_current_task(update, context)
-            
+
         hours = float(query.data.split("|")[1])
-        session = context.user_data["daily_status_session"]
+        context.user_data["pending_hours"] = hours
+
+        await query.edit_message_text(self.TEXTS["work_description_prompt"])
+        return self.WORK_DESCRIPTION
+
+    async def handle_work_description(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> int:
+        """Handle work description input and log the work.
+
+        Args:
+            update: Telegram update object.
+            context: Telegram callback context.
+
+        Returns:
+            Next conversation state.
+        """
+        session: DailyStatusSession = context.user_data["daily_status_session"]
         current_key = session.tasks[session.current_task_index]
-        selected_date = context.user_data.get("selected_work_date")
-        
+        hours = context.user_data.pop("pending_hours", 0)
+        selected_date = context.user_data.pop("selected_work_date", None)
+
+        description = None
+        if update.message and update.message.text != "/skip":
+            description = update.message.text.strip()
+
         try:
             time_spent_seconds = int(hours * 3600)
             self.jira_repository.log_work(
-                current_key, 
+                current_key,
                 time_spent_seconds,
                 started_date=selected_date,
+                comment=description,
             )
-            
+
             session.updates.append(TaskStatusUpdate(
                 issue_key=current_key,
                 action="log_time",
                 time_spent_hours=hours,
+                work_description=description,
             ))
-            
-            await query.edit_message_text(
+
+            await update.effective_chat.send_message(
                 self.TEXTS["hours_logged"].format(hours=hours, key=current_key)
             )
-            
-        except Exception as e:
-            LOGGER.error(f"Failed to log work: {e}")
-            await query.edit_message_text(self.TEXTS["error"])
-        
-        # Clear selected date
-        context.user_data.pop("selected_work_date", None)
-            
+
+        except Exception as exc:
+            LOGGER.error(f"Failed to log work: {exc}")
+            await update.effective_chat.send_message(self.TEXTS["error"])
+
         session.current_task_index += 1
         return await self._show_current_task(update, context)
 
@@ -795,38 +891,96 @@ class DailyTaskStatus(DailyTaskStatusInterface):
         update: Update,
         context: CallbackContext,
     ) -> int:
-        """Finish the daily status session and show summary.
-        
+        """Finish the daily status session and show summary with upcoming tasks.
+
         Args:
             update: Telegram update object.
             context: Telegram callback context.
-            
+
         Returns:
             ConversationHandler.END
         """
         session: DailyStatusSession = context.user_data["daily_status_session"]
-        
-        summary_lines = []
-        for upd in session.updates:
-            if upd.action == "log_time":
-                summary_lines.append(f"⏱ {upd.issue_key}: {upd.time_spent_hours} ساعت")
-            elif upd.action == "report_delay":
-                summary_lines.append(f"⚠️ {upd.issue_key}: تأخیر گزارش شد")
-                
+
+        summary_lines = self._build_summary_lines(session)
         summary = "\n".join(summary_lines) if summary_lines else "هیچ تغییری ثبت نشد."
-        
+
         message = self.TEXTS["all_tasks_done"].format(summary=summary)
-        
+        message += self._build_upcoming_section(session.jira_username)
+
         if update.callback_query:
-            await update.callback_query.edit_message_text(message)
+            await update.callback_query.edit_message_text(message, parse_mode="Markdown")
         else:
-            await update.effective_chat.send_message(message)
-            
+            await update.effective_chat.send_message(message, parse_mode="Markdown")
+
         context.user_data.pop("daily_status_session", None)
         context.user_data.pop("daily_status_issues", None)
         context.user_data.pop("selected_delay_reason", None)
-        
+        context.user_data.pop("pending_hours", None)
+        context.user_data.pop("selected_work_date", None)
+
         return ConversationHandler.END
+
+    def _build_summary_lines(self, session: DailyStatusSession) -> List[str]:
+        """Build summary lines from session updates.
+
+        Args:
+            session: The daily status session.
+
+        Returns:
+            List of formatted summary lines.
+        """
+        lines: List[str] = []
+        for upd in session.updates:
+            if upd.action == "log_time":
+                line = f"⏱ {upd.issue_key}: {upd.time_spent_hours} ساعت"
+                if upd.work_description:
+                    line += f" — {self._escape_markdown(upd.work_description)}"
+                lines.append(line)
+            elif upd.action == "report_delay":
+                lines.append(f"⚠️ {upd.issue_key}: تأخیر گزارش شد")
+        return lines
+
+    def _build_upcoming_section(self, jira_username: str) -> str:
+        """Build the upcoming tasks section for the final summary.
+
+        Args:
+            jira_username: The Jira username to look up upcoming tasks for.
+
+        Returns:
+            Formatted upcoming tasks string, or empty-notice.
+        """
+        lookahead_days = 4
+        try:
+            upcoming = self.jira_repository.get_user_upcoming_tasks(
+                jira_username, lookahead_days
+            )
+        except Exception as exc:
+            LOGGER.warning(f"Could not fetch upcoming tasks: {exc}")
+            upcoming = []
+
+        if not upcoming:
+            return self.TEXTS["upcoming_header"].format(days=lookahead_days) + self.TEXTS["upcoming_empty"]
+
+        grouped: Dict[str, List[Any]] = {}
+        for issue in upcoming:
+            epic_name = self._get_epic_name_for_issue(issue) or "بدون اپیک"
+            grouped.setdefault(epic_name, []).append(issue)
+
+        section = self.TEXTS["upcoming_header"].format(days=lookahead_days)
+        for epic, issues in grouped.items():
+            section += f"\n🏔 *{self._escape_markdown(epic)}*\n"
+            for iss in issues:
+                type_icon = self.ISSUE_TYPE_ICONS.get(
+                    iss.fields.issuetype.name.lower(), "📋"
+                )
+                target_start = getattr(iss.fields, "customfield_10109", None) or "-"
+                section += (
+                    f"  {type_icon} [{iss.key}] "
+                    f"{self._escape_markdown(iss.fields.summary)} "
+                    f"(شروع: {target_start})\n"
+                )
+        return section
 
     async def cancel(
         self,

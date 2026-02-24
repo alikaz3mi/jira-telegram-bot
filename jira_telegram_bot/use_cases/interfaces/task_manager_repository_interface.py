@@ -828,3 +828,23 @@ class TaskManagerRepositoryInterface(ABC):
             List of available transitions with id and name.
         """
         pass
+
+    @abstractmethod
+    def get_user_upcoming_tasks(
+        self,
+        jira_username: str,
+        lookahead_days: int = 4,
+    ) -> List[Issue]:
+        """Get tasks the user is expected to work on in the upcoming days.
+
+        Fetches unresolved tasks assigned to the user whose Target start
+        falls within the next ``lookahead_days`` (exclusive of today).
+
+        Args:
+            jira_username: Jira username to filter tasks for.
+            lookahead_days: Number of days to look ahead.
+
+        Returns:
+            List of Jira issues starting in the upcoming period.
+        """
+        pass

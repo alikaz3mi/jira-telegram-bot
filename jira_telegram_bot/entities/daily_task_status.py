@@ -22,6 +22,7 @@ class TaskStatusUpdate(BaseModel):
     issue_key: str
     action: str
     time_spent_hours: Optional[float] = None
+    work_description: Optional[str] = None
     delay_reason: Optional[DelayReason] = None
     delay_comment: Optional[str] = None
 

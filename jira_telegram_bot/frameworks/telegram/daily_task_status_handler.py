@@ -88,6 +88,13 @@ class DailyTaskStatusHandler(TaskHandlerInterface):
                         self.use_case.handle_subtask_request,
                     ),
                 ],
+                self.use_case.WORK_DESCRIPTION: [
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        self.use_case.handle_work_description,
+                    ),
+                    CommandHandler("skip", self.use_case.handle_work_description),
+                ],
             },
             fallbacks=[
                 CommandHandler("cancel", self.use_case.cancel),

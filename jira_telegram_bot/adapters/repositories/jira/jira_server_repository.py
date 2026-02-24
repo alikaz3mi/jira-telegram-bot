@@ -1732,3 +1732,37 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         except Exception as e:
             LOGGER.error(f"Failed to get transitions for {issue_key}: {e}")
             return []
+
+    def get_user_upcoming_tasks(
+        self,
+        jira_username: str,
+        lookahead_days: int = 4,
+    ) -> List[Issue]:
+        """Get tasks the user is expected to work on in the upcoming days.
+
+        Args:
+            jira_username: Jira username to filter tasks for.
+            lookahead_days: Number of days ahead to look.
+
+        Returns:
+            List of Jira issues starting in the upcoming period.
+        """
+        jql = (
+            f'assignee = "{jira_username}" AND resolution = Unresolved '
+            f'AND "Target start" > now() '
+            f'AND "Target start" <= {lookahead_days}d '
+            f'ORDER BY cf[10109] ASC'
+        )
+
+        try:
+            issues = self.jira.search_issues(jql, maxResults=50)
+            LOGGER.info(
+                f"Found {len(issues)} upcoming tasks for {jira_username} "
+                f"in the next {lookahead_days} days",
+            )
+            return list(issues)
+        except Exception as e:
+            LOGGER.error(
+                f"Failed to fetch upcoming tasks for {jira_username}: {e}",
+            )
+            return []
