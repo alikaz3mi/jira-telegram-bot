@@ -1,9 +1,11 @@
 /******************************************************
- * Auto Schedule – IMPROVED VERSION (v8)
+ * Auto Schedule – IMPROVED VERSION (v9)
  * 1. Only schedules VISIBLE (filtered) rows
  * 2. Better روز کاری/تعطیل handling
  * 3. Improved Jalali calendar integration
  * 4. Strict workday enforcement in scheduling
+ * 5. NEW: "remaining hours(h)" support for mid-sprint
+ *    rescheduling — uses remaining hours from TODAY
  *****************************************************/
 
 /** ===== SETTINGS ===== */
@@ -25,6 +27,7 @@ const COL_NECESSITY = 'ضرورت';
 const COL_STATUS = 'وضعیت';
 const COL_ETA = 'ETA(h)';
 const COL_TOTAL = 'Total (h)';
+const COL_REMAINING = 'remaining hours(h)';  // NEW: remaining hours column
 const COL_ASSIGNEES = 'افراد درگیر';
 const COL_DEADLINE = 'ددلاین';
 const COL_SPRINT = 'اسپرینت';
@@ -86,6 +89,7 @@ function autoSchedule() {
     st:  colIndex(COL_STATUS),
     eta: colIndex(COL_ETA),
     tot: colIndex(COL_TOTAL),
+    rem: colIndex(COL_REMAINING),   // NEW: remaining hours index
     asg: colIndex(COL_ASSIGNEES),
     ddl: colIndex(COL_DEADLINE),
     spr: colIndex(COL_SPRINT),
@@ -96,6 +100,10 @@ function autoSchedule() {
   ['id','spr','ddl','dep'].forEach(k => { 
     if (idx[k] === -1) throw new Error(`ستون الزامی یافت نشد: ${k}`); 
   });
+
+  // NEW: Determine "today" for mid-sprint scheduling
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   // ---- Department detection ----
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/g,'');
@@ -126,6 +134,7 @@ function autoSchedule() {
   // ---- Read tasks (ONLY VISIBLE ROWS) ----
   const tasks = [];
   let skippedHidden = 0;
+  let midSprintCount = 0;  // NEW: track how many tasks use remaining hours
   
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
@@ -162,6 +171,31 @@ function autoSchedule() {
     const etaH  = toNumber_(row[idx.eta]);
     if (totalH <= 0 && etaH > 0) totalH = etaH;
 
+    // NEW: Read remaining hours
+    const remainingH = (idx.rem !== -1) ? toNumber_(row[idx.rem]) : 0;
+    // Flag: are we in mid-sprint mode for this task?
+    const useMidSprint = (remainingH > 0);
+
+    // NEW: If remaining hours is set, compute scaling ratio to adjust dept/person hours
+    let scalingRatio = 1;
+    if (useMidSprint) {
+      const originalTotal = (deptHoursSum > 0) ? deptHoursSum : totalH;
+      if (originalTotal > 0) {
+        scalingRatio = remainingH / originalTotal;
+        // Clamp: remaining can't exceed original (safety guard)
+        if (scalingRatio > 1) scalingRatio = 1;
+      }
+      midSprintCount++;
+    }
+
+    // NEW: Scale dept hours by remaining ratio if mid-sprint
+    if (useMidSprint && deptHoursSum > 0) {
+      Object.keys(deptHours).forEach(nDept => {
+        deptHours[nDept] = deptHours[nDept] * scalingRatio;
+      });
+      deptHoursSum = Object.values(deptHours).reduce((a, b) => a + b, 0);
+    }
+
     let perPersonHours = null;
     if (deptHoursSum <= 0 && Object.keys(personColumns).length) {
       const overrides = {};
@@ -172,7 +206,26 @@ function autoSchedule() {
       if (Object.keys(overrides).length) {
         perPersonHours = overrides;
         totalH = Object.values(overrides).reduce((a,b)=>a+b,0);
+
+        // NEW: Scale per-person hours if mid-sprint
+        if (useMidSprint) {
+          const originalPersonTotal = Object.values(overrides).reduce((a, b) => a + b, 0);
+          if (originalPersonTotal > 0) {
+            const personRatio = remainingH / originalPersonTotal;
+            const clampedRatio = Math.min(personRatio, 1);
+            Object.keys(perPersonHours).forEach(name => {
+              perPersonHours[name] = perPersonHours[name] * clampedRatio;
+            });
+            totalH = Object.values(perPersonHours).reduce((a, b) => a + b, 0);
+          }
+        }
       }
+    }
+
+    // NEW: Override totalH with remainingH when in mid-sprint mode
+    //      (only if no dept/person-level hours were scaled above)
+    if (useMidSprint && deptHoursSum <= 0 && !perPersonHours) {
+      totalH = remainingH;
     }
 
     if (deptHoursSum <= 0 && totalH <= 0) continue;
@@ -198,7 +251,8 @@ function autoSchedule() {
       assignees,
       deptHours,
       totalH,
-      perPersonHours
+      perPersonHours,
+      useMidSprint    // NEW: flag for mid-sprint mode
     });
   }
 
@@ -274,7 +328,19 @@ function autoSchedule() {
   const reds = [];
 
   order.list.forEach(task => {
+    // NEW: For mid-sprint tasks, override earliest start to TODAY
     let est = tasksEarliestStart_(task, byId, task.sprintWindows, cal);
+
+    if (task.useMidSprint) {
+      // In mid-sprint mode: earliest start is today (next workday on or after today)
+      const todayWorkday = cal.nextWorkdayOnOrAfter(today);
+      if (todayWorkday) {
+        // Use the later of: dependency-based EST vs today
+        if (!est || todayWorkday > est) {
+          est = todayWorkday;
+        }
+      }
+    }
 
     let slices = [];
     if (Object.keys(task.deptHours).length > 0) {
@@ -324,7 +390,11 @@ function autoSchedule() {
     const ddlOut = OUTPUT_DEADLINE_AS_TEXT_ISO ? gDateToISO_(deadline) : deadline;
     ddlUpdates.push({ r: task.rIndex+1, c: idx.ddl+1, v: ddlOut });
 
-    if (!task.startDate && startDay instanceof Date) {
+    // NEW: For mid-sprint tasks, update the start date to today's scheduling start
+    if (task.useMidSprint && startDay instanceof Date) {
+      const startOut = OUTPUT_START_AS_TEXT_ISO ? gDateToISO_(startDay) : startDay;
+      startUpdates.push({ r: task.rIndex+1, c: idx.start+1, v: startOut });
+    } else if (!task.startDate && startDay instanceof Date) {
       const startOut = OUTPUT_START_AS_TEXT_ISO ? gDateToISO_(startDay) : startDay;
       startUpdates.push({ r: task.rIndex+1, c: idx.start+1, v: startOut });
     }
@@ -393,7 +463,8 @@ function autoSchedule() {
     });
   }
 
-  SpreadsheetApp.getUi().alert(`زمان‌بندی انجام شد.\n${tasks.length} وظیفه برنامه‌ریزی شد${skippedHidden > 0 ? ` (${skippedHidden} ردیف مخفی نادیده گرفته شد)` : ''}.`);
+  const midSprintMsg = midSprintCount > 0 ? `\n${midSprintCount} وظیفه با ساعات باقیمانده از امروز زمان‌بندی شد.` : '';
+  SpreadsheetApp.getUi().alert(`زمان‌بندی انجام شد.\n${tasks.length} وظیفه برنامه‌ریزی شد${skippedHidden > 0 ? ` (${skippedHidden} ردیف مخفی نادیده گرفته شد)` : ''}.${midSprintMsg}`);
 }
 
 /************* HIDDEN ROWS DETECTION *************/

@@ -23,6 +23,7 @@ from jira_telegram_bot.entities.synth_pm.change_tracker import FeatureSnapshot
 from jira_telegram_bot.entities.synth_pm.constants import (
     STATUS_DESCRIPTIONS,
     SynthPMStatus,
+    TERMINAL_JIRA_STATUSES,
 )
 from jira_telegram_bot.entities.synth_pm.project_config import (
     ProjectConfig,
@@ -1303,6 +1304,74 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 0,
             ) or 0
         return 0
+
+    async def sync_jira_status_to_sheet(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> bool:
+        """Fetch current Jira status and write the mapped value to Google Sheet.
+
+        Uses the per-project ``jira_to_google_sheet`` status mapping.
+        The sheet is only updated when the mapped status differs from the
+        status already recorded on the feature row.  When the Jira status
+        is terminal (``DONE`` / ``CLOSED``), remaining hours are also
+        zeroed out on the sheet.
+
+        Args:
+            feature: Feature entity with a developer_board_issue_key.
+
+        Returns:
+            True if the sheet was updated, False otherwise.
+        """
+        if not feature.developer_board_issue_key:
+            return False
+
+        try:
+            issue = self.jira_repository.get_issue(
+                feature.developer_board_issue_key,
+            )
+            if not issue:
+                return False
+
+            jira_status_name = getattr(
+                issue.fields.status, "name", None,
+            )
+            if not jira_status_name:
+                return False
+
+            jira_status_upper = jira_status_name.upper()
+            reverse_mapping = self.get_reverse_status_mapping()
+            sheet_status = reverse_mapping.get(jira_status_upper)
+
+            updates: Dict[str, Any] = {}
+
+            if sheet_status and sheet_status != feature.status:
+                updates["status"] = sheet_status
+
+            if jira_status_upper in TERMINAL_JIRA_STATUSES and feature.remaining_hours:
+                updates["remaining_hours"] = 0
+
+            if not updates:
+                return False
+
+            await self.update_developer_board_feature(
+                feature.sheet_row_number,
+                updates,
+            )
+            LOGGER.info(
+                f"Synced Jira status to sheet for "
+                f"{feature.developer_board_issue_key}: "
+                f"'{feature.status}' -> '{sheet_status}' "
+                f"(fields updated: {list(updates.keys())})",
+            )
+            return True
+
+        except Exception as e:
+            LOGGER.error(
+                f"Error syncing Jira status to sheet for "
+                f"{feature.developer_board_issue_key}: {e}",
+            )
+            return False
 
     async def sync_remaining_hours_to_sheet(
         self,

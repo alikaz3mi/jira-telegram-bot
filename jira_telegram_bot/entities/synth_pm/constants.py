@@ -190,3 +190,8 @@ TELEGRAM_TRIGGER_STATUSES = [
     "۸",  # آماده تحویل (RESOLVED)
     "۹",  # مستندسازی فنی (DONE)
 ]
+
+TERMINAL_JIRA_STATUSES = frozenset({
+    "DONE",
+    "CLOSED",
+})

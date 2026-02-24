@@ -344,6 +344,26 @@ class SynthPMRepositoryInterface(ABC):
         pass
 
     @abstractmethod
+    async def sync_jira_status_to_sheet(
+        self,
+        feature: SynthPMFeatureEntity,
+    ) -> bool:
+        """Fetch current status from Jira and write it back to Google Sheet.
+
+        Uses the per-project ``jira_to_google_sheet`` status mapping to
+        translate the Jira status into the corresponding sheet value.
+        The sheet is only updated when the mapped status differs from the
+        status already stored on the feature row.
+
+        Args:
+            feature: Feature entity with a developer_board_issue_key.
+
+        Returns:
+            True if the sheet was updated, False otherwise.
+        """
+        pass
+
+    @abstractmethod
     async def sync_remaining_hours_to_sheet(
         self,
         feature: SynthPMFeatureEntity,

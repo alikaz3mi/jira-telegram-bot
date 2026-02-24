@@ -100,6 +100,7 @@ class SynthPMUseCase:
                 "created_developer_board_tasks": 0,
                 "updated_developer_board_tasks": 0,
                 "deleted_tasks": 0,
+                "synced_statuses": 0,
                 "generated_documentation": 0,
                 "skipped": [],
                 "errors": [],
@@ -154,6 +155,9 @@ class SynthPMUseCase:
             # Sync remaining hours from Jira worklogs to Google Sheet
             await self._sync_remaining_hours(features, sync_results)
 
+            # Sync Jira statuses back to Google Sheet
+            await self._sync_jira_statuses_to_sheet(features, sync_results)
+
             # Update change tracker
             await self.repository.update_change_tracker(
                 processed_features=processed_features,
@@ -179,6 +183,7 @@ class SynthPMUseCase:
                 f"{sync_results['created_developer_board_tasks']} dev tasks | "
                 f"Updated: {sync_results['updated_jira_tasks']} PM tasks, "
                 f"{sync_results['updated_developer_board_tasks']} dev tasks | "
+                f"Synced statuses: {sync_results['synced_statuses']} | "
                 f"Deleted: {sync_results['deleted_tasks']} | "
                 f"Skipped: {len(sync_results['skipped'])} | "
                 f"Errors: {len(sync_results['errors'])}"
@@ -278,6 +283,42 @@ class SynthPMUseCase:
             LOGGER.info(
                 f"Synced remaining hours for {updated_count} features",
             )
+
+    async def _sync_jira_statuses_to_sheet(
+        self,
+        features: List[SynthPMFeatureEntity],
+        sync_results: Dict[str, Any],
+    ) -> None:
+        """Sync Jira task statuses back to Google Sheet.
+
+        For every feature that has a developer board issue key, reads
+        the current Jira status, maps it via the per-project mapping,
+        and writes the result to the sheet when it differs.
+
+        Args:
+            features: All features from the current sync cycle.
+            sync_results: Dictionary to track sync results.
+        """
+        updated_count = 0
+        for feature in features:
+            if not feature.developer_board_issue_key:
+                continue
+            try:
+                updated = await self.repository.sync_jira_status_to_sheet(
+                    feature,
+                )
+                if updated:
+                    updated_count += 1
+            except Exception as e:
+                LOGGER.warning(
+                    f"Failed to sync Jira status to sheet for "
+                    f"{feature.developer_board_issue_key}: {e}",
+                )
+        if updated_count:
+            LOGGER.info(
+                f"Synced Jira statuses to sheet for {updated_count} features",
+            )
+        sync_results["synced_statuses"] = updated_count
 
     def _group_features_by_release(
         self,
