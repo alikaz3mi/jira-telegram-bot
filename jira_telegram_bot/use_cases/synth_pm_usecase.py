@@ -326,15 +326,19 @@ class SynthPMUseCase:
     ) -> Dict[str, List[SynthPMFeatureEntity]]:
         """Group features by their release column value.
 
+        Features whose ``release`` is ``None`` (filtered out at parse
+        time when the value does not match the ``xx.xx.xx`` pattern)
+        are collected under ``"No Release"``.
+
         Args:
             features: List of feature entities
 
         Returns:
             Dictionary mapping release names to lists of features
         """
-        release_groups = {}
+        release_groups: Dict[str, List[SynthPMFeatureEntity]] = {}
         for feature in features:
-            release_name = feature.release if feature.release and feature.release.strip() else "No Release"
+            release_name = feature.release.strip() if feature.release else "No Release"
             if release_name not in release_groups:
                 release_groups[release_name] = []
             release_groups[release_name].append(feature)

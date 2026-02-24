@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
 from enum import Enum
+
+RELEASE_VERSION_PATTERN = re.compile(r"^\d{2}\.\d{2}\.\d{2}$")
 
 
 class SynthPMStatus(Enum):

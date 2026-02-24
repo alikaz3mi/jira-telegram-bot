@@ -7,6 +7,7 @@ from typing import Optional
 from typing import Tuple
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.synth_pm.constants import RELEASE_VERSION_PATTERN
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.use_cases.interfaces.metrics.spreadsheet_gateway_interface import (
     SpreadsheetGatewayInterface,
@@ -323,7 +324,12 @@ class TaskStoryRepository(TaskStoryRepositoryInterface):
                 ),
                 release=(
                     get_mapped_value("release")
-                    if get_mapped_value("release") not in ["Select", ""]
+                    if (
+                        get_mapped_value("release") not in ["Select", ""]
+                        and RELEASE_VERSION_PATTERN.match(
+                            get_mapped_value("release").strip()
+                        )
+                    )
                     else None
                 ),
                 necessity=(

@@ -63,22 +63,22 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
             create_test_feature(
                 row_number=1,
                 task_title="Feature A",
-                release="Version 2.5.0",
+                release="04.12.01",
             ),
             create_test_feature(
                 row_number=2,
                 task_title="Feature B",
-                release="Version 2.5.0",
+                release="04.12.01",
             ),
             create_test_feature(
                 row_number=3,
                 task_title="Feature C",
-                release="Version 2.6.0",
+                release="04.12.02",
             ),
             create_test_feature(
                 row_number=4,
                 task_title="Feature D",
-                release="",
+                release=None,
             ),
         ]
         
@@ -86,33 +86,33 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         
         # Check groups
         self.assertEqual(len(release_groups), 3)
-        self.assertIn("Version 2.5.0", release_groups)
-        self.assertIn("Version 2.6.0", release_groups)
+        self.assertIn("04.12.01", release_groups)
+        self.assertIn("04.12.02", release_groups)
         self.assertIn("No Release", release_groups)
         
         # Check group contents
-        self.assertEqual(len(release_groups["Version 2.5.0"]), 2)
-        self.assertEqual(len(release_groups["Version 2.6.0"]), 1)
+        self.assertEqual(len(release_groups["04.12.01"]), 2)
+        self.assertEqual(len(release_groups["04.12.02"]), 1)
         self.assertEqual(len(release_groups["No Release"]), 1)
         
         # Check feature titles
-        self.assertEqual(release_groups["Version 2.5.0"][0].task_title, "Feature A")
-        self.assertEqual(release_groups["Version 2.5.0"][1].task_title, "Feature B")
-        self.assertEqual(release_groups["Version 2.6.0"][0].task_title, "Feature C")
+        self.assertEqual(release_groups["04.12.01"][0].task_title, "Feature A")
+        self.assertEqual(release_groups["04.12.01"][1].task_title, "Feature B")
+        self.assertEqual(release_groups["04.12.02"][0].task_title, "Feature C")
         self.assertEqual(release_groups["No Release"][0].task_title, "Feature D")
 
     def test_group_features_by_release_all_same(self):
         """Test grouping when all features have same release."""
         features = [
-            create_test_feature(row_number=i, release="Version 2.5.0")
+            create_test_feature(row_number=i, release="04.12.01")
             for i in range(5)
         ]
         
         release_groups = self.use_case._group_features_by_release(features)
         
         self.assertEqual(len(release_groups), 1)
-        self.assertIn("Version 2.5.0", release_groups)
-        self.assertEqual(len(release_groups["Version 2.5.0"]), 5)
+        self.assertIn("04.12.01", release_groups)
+        self.assertEqual(len(release_groups["04.12.01"]), 5)
 
     def test_group_features_by_release_empty_list(self):
         """Test grouping with empty feature list."""

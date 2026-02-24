@@ -6,6 +6,7 @@ from typing import List
 from typing import Optional
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.synth_pm.constants import RELEASE_VERSION_PATTERN
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
 from jira_telegram_bot.entities.synth_pm.services import SynthPMColumnMappingService
 from jira_telegram_bot.entities.synth_pm.services import SynthPMDateService
@@ -84,7 +85,16 @@ class DataParsingMixin:
                 sheet_row_number=row_number,
                 task_title=task_title,
                 epic=get_mapped_value("epic") or None,
-                release=get_mapped_value("release") or None,
+                release=(
+                    get_mapped_value("release")
+                    if (
+                        get_mapped_value("release")
+                        and RELEASE_VERSION_PATTERN.match(
+                            get_mapped_value("release").strip()
+                        )
+                    )
+                    else None
+                ),
                 version=get_mapped_value("version") or None,
                 necessity=get_mapped_value("necessity") or None,
                 priority=get_mapped_value("priority") or None,
