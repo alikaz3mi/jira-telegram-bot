@@ -112,7 +112,7 @@ GOOGLE_SHEET_TO_JIRA_STATUS = {
 
 JIRA_TO_GOOGLE_SHEET_STATUS = {
     # Jira -> Sheet mapping (based on actual Jira workflow)
-    "BACKLOG": "۱. ثبت و اولویت بندی",
+    "BACKLOG": "۵. آماده پیاده سازی فنی",
     "SELECTED FOR DEVELOPMENT": "۲. تحلیل مسئله و RFP",
     "TO DO": "۳. آماده سازی یوزر استوری",
     "IN REVIEW": "۴. در مرحله طراحی",

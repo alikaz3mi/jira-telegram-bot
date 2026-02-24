@@ -57,7 +57,7 @@ services:
     volumes:
       - .:/app
     command: >
-      python3 scripts/sync/run_scheduled_sync.py
+      sh -c "python3 scripts/migration/run_migrations.py && python3 scripts/sync/run_scheduled_sync.py"
     restart: always
     environment:
       - SYNC_INTERVAL_MINUTES=10
