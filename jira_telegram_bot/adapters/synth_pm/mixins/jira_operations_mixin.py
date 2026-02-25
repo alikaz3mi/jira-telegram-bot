@@ -14,6 +14,7 @@ from jira_telegram_bot.settings.synth_pm_settings import SynthPMSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
+from jira_telegram_bot.utils.text_normalization import build_jql_summary_search
 
 
 class JiraOperationsMixin:
@@ -39,7 +40,7 @@ class JiraOperationsMixin:
         try:
             # Check if epic already exists
             existing_epic = self.jira_repository.search_issues(
-                f'project = "{project_key}" AND issuetype = Epic AND summary ~ "{epic_name}"',
+                build_jql_summary_search(project_key, epic_name, issue_type="Epic", exact=True),
             )
 
             if existing_epic:

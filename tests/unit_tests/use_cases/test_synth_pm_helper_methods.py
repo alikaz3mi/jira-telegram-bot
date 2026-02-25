@@ -21,7 +21,7 @@ def create_test_feature(**overrides) -> SynthPMFeatureEntity:
         "sprint_list": ["45: 1403/09/01 - 1403/09/14"],
         "ai": "✓",
         "implementation_start_date": "2024-01-01",
-        "release": "Version 2.5.0",
+        "story_name": "Version 2.5.0",
     }
     defaults.update(overrides)
     return SynthPMFeatureEntity(**defaults)
@@ -59,9 +59,9 @@ class TestSynthPMHelperMethods(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(groups), 0)
 
     def test_group_features_by_release_all_same(self):
-        """Test grouping when all features have same release."""
+        """Test grouping when all features have same story_name."""
         features = [
-            create_test_feature(row_number=i, release="Version 1.0")
+            create_test_feature(row_number=i, story_name="Version 1.0")
             for i in range(1, 6)
         ]
         groups = self.use_case._group_features_by_release(features)
@@ -69,13 +69,13 @@ class TestSynthPMHelperMethods(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(groups["Version 1.0"]), 5)
 
     def test_group_features_by_release_multiple_releases(self):
-        """Test grouping with multiple releases."""
+        """Test grouping with multiple story names."""
         features = [
-            create_test_feature(row_number=1, release="Version 1.0"),
-            create_test_feature(row_number=2, release="Version 1.0"),
-            create_test_feature(row_number=3, release="Version 2.0"),
-            create_test_feature(row_number=4, release="Version 2.0"),
-            create_test_feature(row_number=5, release="Version 3.0"),
+            create_test_feature(row_number=1, story_name="Version 1.0"),
+            create_test_feature(row_number=2, story_name="Version 1.0"),
+            create_test_feature(row_number=3, story_name="Version 2.0"),
+            create_test_feature(row_number=4, story_name="Version 2.0"),
+            create_test_feature(row_number=5, story_name="Version 3.0"),
         ]
         groups = self.use_case._group_features_by_release(features)
         self.assertEqual(len(groups), 3)
@@ -84,11 +84,11 @@ class TestSynthPMHelperMethods(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(groups["Version 3.0"]), 1)
 
     def test_group_features_by_release_no_release(self):
-        """Test grouping with features without release."""
+        """Test grouping with features without story_name."""
         features = [
-            create_test_feature(row_number=1, release=""),
-            create_test_feature(row_number=2, release=None),
-            create_test_feature(row_number=3, release="  "),
+            create_test_feature(row_number=1, story_name=""),
+            create_test_feature(row_number=2, story_name=None),
+            create_test_feature(row_number=3, story_name="  "),
         ]
         groups = self.use_case._group_features_by_release(features)
         self.assertEqual(len(groups), 1)
@@ -96,12 +96,12 @@ class TestSynthPMHelperMethods(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(groups["No Release"]), 3)
 
     def test_group_features_by_release_mixed(self):
-        """Test grouping with mixed releases and no releases."""
+        """Test grouping with mixed story names and no story names."""
         features = [
-            create_test_feature(row_number=1, release="Version 1.0"),
-            create_test_feature(row_number=2, release=""),
-            create_test_feature(row_number=3, release="Version 1.0"),
-            create_test_feature(row_number=4, release=None),
+            create_test_feature(row_number=1, story_name="Version 1.0"),
+            create_test_feature(row_number=2, story_name=""),
+            create_test_feature(row_number=3, story_name="Version 1.0"),
+            create_test_feature(row_number=4, story_name=None),
         ]
         groups = self.use_case._group_features_by_release(features)
         self.assertEqual(len(groups), 2)
@@ -120,8 +120,8 @@ class TestSynthPMHelperMethods(unittest.IsolatedAsyncioTestCase):
     async def test_create_regular_tasks_for_features_no_release(self):
         """Test creating regular tasks for features without release."""
         features = [
-            create_test_feature(row_number=1, jira_issue_key="PM-101", release=""),
-            create_test_feature(row_number=2, jira_issue_key="PM-102", release=""),
+            create_test_feature(row_number=1, jira_issue_key="PM-101", story_name=""),
+            create_test_feature(row_number=2, jira_issue_key="PM-102", story_name=""),
         ]
         sync_results = {
             "created_developer_board_tasks": 0,
@@ -146,7 +146,7 @@ class TestSynthPMHelperMethods(unittest.IsolatedAsyncioTestCase):
                 row_number=1,
                 jira_issue_key="PM-101",
                 developer_board_issue_key="DEV-101",
-                release="",
+                story_name="",
             ),
         ]
         sync_results = {

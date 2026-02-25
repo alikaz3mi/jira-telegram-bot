@@ -20,7 +20,11 @@ class SynthPMFeatureEntity(BaseModel):
     )
     task_title: str = Field(description="Task title/وظیفه")
     epic: Optional[str] = Field(default=None, description="Epic")
-    release: Optional[str] = Field(default=None, description="Release/ریلیز")
+    story_name: Optional[str] = Field(
+        default=None,
+        description="Story/feature group name from the ریلیز/Feature column",
+    )
+    release: Optional[str] = Field(default=None, description="Release version (xx.xx.xx format)")
     necessity: Optional[str] = Field(default=None, description="Necessity/ضرورت")
     priority: Optional[str] = Field(default=None, description="Priority/اولویت")
     status: Optional[str] = Field(default=None, description="Status/وضعیت")

@@ -322,6 +322,11 @@ class TaskStoryRepository(TaskStoryRepositoryInterface):
                     if get_mapped_value("epic") != "Select"
                     else None
                 ),
+                story_name=(
+                    get_mapped_value("release")
+                    if get_mapped_value("release") not in ["Select", ""]
+                    else None
+                ),
                 release=(
                     get_mapped_value("release")
                     if (

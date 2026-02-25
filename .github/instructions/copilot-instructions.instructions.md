@@ -125,7 +125,11 @@ Then, when creating the chain in the related class in `ai_agents`, import it, an
 * If function length is longer than 30 lines, it means that the function must break down to multiple functions.
 * Avoid using too many chained if statements. Each if statement must be a function.
 * Everything dependencies must be imported in the beginning of the script.
-
+## 10 . Changelog
+* **Every code change** must include a corresponding changelog entry at `docs/changelog/x.x.x.md`.
+* Use semantic versioning — **MAJOR.MINOR.PATCH**.
+* Each entry must document **what** changed and **why**, grouped by category (e.g. Fixes, Features, Infrastructure, Breaking Changes).
+* If a change spans multiple PRs within the same release, append to the existing file rather than creating a new one.
 ---  
 
 **Remember:** Suggestions that violate any rule above should be suppressed or rewritten automatically.

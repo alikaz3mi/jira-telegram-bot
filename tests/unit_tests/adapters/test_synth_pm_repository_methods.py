@@ -312,6 +312,98 @@ class TestSynthPMRepositoryErrorHandling(unittest.IsolatedAsyncioTestCase):
         # Verify result is None
         self.assertIsNone(result)
 
+    async def test_convert_existing_task_to_subtask_success(self):
+        """Test converting a standalone Task to Sub-task preserves data."""
+        mock_issue = MagicMock()
+        mock_issue.fields.issuetype.name = "Task"
+        self.jira_repository.get_issue = MagicMock(return_value=mock_issue)
+        self.jira_repository.convert_to_subtask = MagicMock(return_value="DEV-101")
+
+        result = await self.repository.convert_existing_task_to_subtask(
+            "DEV-101", "DEV-100",
+        )
+
+        self.assertEqual(result, "DEV-101")
+        self.jira_repository.convert_to_subtask.assert_called_once_with(
+            "DEV-101", "DEV-100",
+        )
+
+    async def test_convert_existing_task_already_subtask_of_correct_parent(self):
+        """Test that no conversion happens if already a Sub-task of the right parent."""
+        mock_issue = MagicMock()
+        mock_issue.fields.issuetype.name = "Sub-task"
+        mock_issue.fields.parent.key = "DEV-100"
+        self.jira_repository.get_issue = MagicMock(return_value=mock_issue)
+
+        result = await self.repository.convert_existing_task_to_subtask(
+            "DEV-101", "DEV-100",
+        )
+
+        self.assertEqual(result, "DEV-101")
+        self.jira_repository.convert_to_subtask.assert_not_called()
+
+    async def test_convert_existing_task_subtask_of_different_parent(self):
+        """Test that conversion is skipped if subtask of a different parent."""
+        mock_issue = MagicMock()
+        mock_issue.fields.issuetype.name = "Sub-task"
+        mock_issue.fields.parent.key = "DEV-999"
+        self.jira_repository.get_issue = MagicMock(return_value=mock_issue)
+
+        result = await self.repository.convert_existing_task_to_subtask(
+            "DEV-101", "DEV-100",
+        )
+
+        self.assertIsNone(result)
+        self.jira_repository.convert_to_subtask.assert_not_called()
+
+    async def test_convert_existing_task_issue_not_found(self):
+        """Test that conversion handles missing issue gracefully."""
+        self.jira_repository.get_issue = MagicMock(return_value=None)
+
+        result = await self.repository.convert_existing_task_to_subtask(
+            "DEV-MISSING", "DEV-100",
+        )
+
+        self.assertIsNone(result)
+
+    async def test_convert_existing_task_jira_error(self):
+        """Test that conversion handles Jira API errors gracefully."""
+        mock_issue = MagicMock()
+        mock_issue.fields.issuetype.name = "Task"
+        self.jira_repository.get_issue = MagicMock(return_value=mock_issue)
+        self.jira_repository.convert_to_subtask = MagicMock(
+            side_effect=Exception("Jira error"),
+        )
+
+        result = await self.repository.convert_existing_task_to_subtask(
+            "DEV-101", "DEV-100",
+        )
+
+        self.assertIsNone(result)
+
+    async def test_convert_existing_task_key_changes_on_recreate(self):
+        """Test that sheet is updated when conversion recreates with a new key."""
+        mock_issue = MagicMock()
+        mock_issue.fields.issuetype.name = "Task"
+        self.jira_repository.get_issue = MagicMock(return_value=mock_issue)
+        self.jira_repository.convert_to_subtask = MagicMock(return_value="DEV-201")
+
+        mock_feature = MagicMock()
+        mock_feature.developer_board_issue_key = "DEV-101"
+        mock_feature.sheet_row_number = 5
+
+        self.repository.get_developer_board_features = AsyncMock(return_value=[mock_feature])
+        self.repository.update_developer_board_feature = AsyncMock(return_value=True)
+
+        result = await self.repository.convert_existing_task_to_subtask(
+            "DEV-101", "DEV-100",
+        )
+
+        self.assertEqual(result, "DEV-201")
+        self.repository.update_developer_board_feature.assert_called_once_with(
+            5, {"developer_board_issue_key": "DEV-201"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -398,6 +398,27 @@ class SynthPMRepositoryInterface(ABC):
         pass
 
     @abstractmethod
+    async def convert_existing_task_to_subtask(
+        self,
+        issue_key: str,
+        parent_story_key: str,
+    ) -> Optional[str]:
+        """Convert an existing standalone Task to a Sub-task under a Story.
+
+        Preserves all worklogs, comments, attachments, and history.
+        If the Jira instance requires recreation, the returned key may
+        differ from the input ``issue_key``.
+
+        Args:
+            issue_key: Jira issue key of the existing task.
+            parent_story_key: Key of the parent story.
+
+        Returns:
+            Resulting issue key on success, None on failure.
+        """
+        pass
+
+    @abstractmethod
     async def create_subtask_for_release(
         self,
         parent_story_key: str,

@@ -26,6 +26,11 @@ from jira_telegram_bot.entities.synth_pm.constants import (
     SynthPMStatus,
     TERMINAL_JIRA_STATUSES,
 )
+from jira_telegram_bot.utils.text_normalization import (
+    build_jql_summary_search,
+    normalize_persian_text,
+    summaries_match,
+)
 from jira_telegram_bot.entities.synth_pm.project_config import (
     ProjectConfig,
     ProjectMetadata,
@@ -639,7 +644,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # Get desired fix versions from feature (only non-None values)
             feature_versions = set([v for v in [feature.release, feature.version] if v])
             # Get current fix version names
-            current_versions = set([v.name for v in issue.fields.fixVersions])
+            current_versions = set([v.name for v in (issue.fields.fixVersions or [])])
             
             # Update if versions differ OR if we need to clear versions
             if feature_versions != current_versions:
@@ -1466,23 +1471,33 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             update_fields = {}
             
+            story_has_subtasks = (
+                issue.fields.issuetype.name == "Story"
+                and issue.fields.subtasks
+                and len(issue.fields.subtasks) > 0
+            )
+            
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
             
-            # Update dates for the story/task (handle both setting and clearing)
-            target_start_new = feature_dates_str.get("target_start")
-            target_start_current = issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
-            if target_start_new != target_start_current:
-                update_fields[self.jira_repository.jira_target_start_id] = target_start_new
-            
-            target_end_new = feature_dates_str.get("target_end")
-            target_end_current = issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
-            if target_end_new != target_end_current:
-                update_fields[self.jira_repository.jira_target_end_id] = target_end_new
-            
-            due_date_new = feature_dates_str.get("due_date")
-            due_date_current = issue.fields.duedate
-            if due_date_new != due_date_current:
-                update_fields["duedate"] = due_date_new
+            if not story_has_subtasks:
+                target_start_new = feature_dates_str.get("target_start")
+                target_start_current = issue.fields.__dict__.get(self.jira_repository.jira_target_start_id)
+                if target_start_new != target_start_current:
+                    update_fields[self.jira_repository.jira_target_start_id] = target_start_new
+                
+                target_end_new = feature_dates_str.get("target_end")
+                target_end_current = issue.fields.__dict__.get(self.jira_repository.jira_target_end_id)
+                if target_end_new != target_end_current:
+                    update_fields[self.jira_repository.jira_target_end_id] = target_end_new
+                
+                due_date_new = feature_dates_str.get("due_date")
+                due_date_current = issue.fields.duedate
+                if due_date_new != due_date_current:
+                    update_fields["duedate"] = due_date_new
+            else:
+                LOGGER.debug(
+                    f"Skipping date updates for story {issue.key} — dates derived from subtasks"
+                )
             
             # Handle epic changes
             if feature.epic and feature.epic.strip() and feature.epic != "Select":
@@ -1534,33 +1549,37 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             
             # Update description based on issue type
             if issue.fields.issuetype.name == "Story":
-                # Stories should have empty description
-                new_description = ""
-            elif issue.fields.issuetype.name == "Sub-task":
-                # Subtasks should have feature.description
-                new_description = feature.description if feature.description else ""
+                LOGGER.debug(
+                    f"Skipping description update for story {issue.key} — "
+                    "description is managed via release notes"
+                )
             else:
-                # For other types, use feature.description
-                new_description = feature.description if feature.description else ""
-            
-            current_description = issue.fields.description if issue.fields.description else ""
-            if new_description != current_description:
-                update_fields["description"] = new_description
+                if issue.fields.issuetype.name == "Sub-task":
+                    new_description = feature.description if feature.description else ""
+                else:
+                    new_description = feature.description if feature.description else ""
+                
+                current_description = issue.fields.description if issue.fields.description else ""
+                if new_description != current_description:
+                    update_fields["description"] = new_description
 
-            # Update fixVersions (handle both setting and clearing)
-            feature_versions = set([v for v in [feature.release, feature.version] if v])
-            current_versions = set([v.name for v in issue.fields.fixVersions])
-            if feature_versions != current_versions:
-                if feature_versions:  # Only create releases if we're setting versions
-                    self._create_release_not_exist_during_update(
-                        feature,
-                        self.developer_board_project_key,
-                    )
-                # Always replace ALL fix versions (clearing any that aren't in the feature)
-                update_fields["fixVersions"] = [
-                    {"name": release}
-                    for release in sorted(feature_versions)
-                ] if feature_versions else []
+            if not story_has_subtasks:
+                feature_versions = set([v for v in [feature.release, feature.version] if v])
+                current_versions = set([v.name for v in (issue.fields.fixVersions or [])])
+                if feature_versions != current_versions:
+                    if feature_versions:
+                        self._create_release_not_exist_during_update(
+                            feature,
+                            self.developer_board_project_key,
+                        )
+                    update_fields["fixVersions"] = [
+                        {"name": release}
+                        for release in sorted(feature_versions)
+                    ] if feature_versions else []
+            else:
+                LOGGER.debug(
+                    f"Skipping fixVersions for story {issue.key} — versions derived from subtasks"
+                )
 
             # Handle sprint updates using the same logic as create method
             current_jalali_year = jdatetime.datetime.now().year
@@ -2112,6 +2131,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if get_mapped_value("epic") != "Select"
                     else None
                 ),
+                story_name=(
+                    get_mapped_value("release")
+                    if get_mapped_value("release") not in ["Select", ""]
+                    else None
+                ),
                 release=(
                     get_mapped_value("release")
                     if (
@@ -2375,7 +2399,9 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             Tuple of (epic_exists, epic_key)
         """
         try:
-            jql = f'project = "{board_name}" AND issuetype = Epic AND summary ~ "{epic_name}"'
+            jql = build_jql_summary_search(
+                board_name, epic_name, issue_type="Epic", exact=True,
+            )
             issues = self.jira_repository.search_issues(jql, max_results=1)
             if len(issues) == 0:
                 # TODO: In the future, get epic description from an epic specification sheet
@@ -2520,8 +2546,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if not summary_cleaned:
                 return None
             
-            escaped_summary = summary_cleaned.replace('"', '\\"')
-            jql = f'project = "{project_key}" AND summary ~ "{escaped_summary}"'
+            jql = build_jql_summary_search(project_key, summary_cleaned)
             LOGGER.debug(f"Searching for issue with JQL: {jql}")
             
             issues = self.jira_repository.search_for_issues(jql, max_results=10)
@@ -2531,7 +2556,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 return None
             
             for issue in issues:
-                if issue.fields.summary.strip().lower() == summary_cleaned.lower():
+                if summaries_match(issue.fields.summary, summary_cleaned):
                     LOGGER.info(f"Found exact match: {issue.key} for summary '{summary_cleaned}'")
                     return issue.key
             
@@ -2670,24 +2695,18 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if not summary_cleaned:
                 return None
             
-            # Escape special JQL characters in summary
-            summary_escaped = summary_cleaned.replace('"', '\\"')
-            
-            # Search for exact match first
-            jql = f'project = "{project_key}" AND summary ~ "\"{summary_escaped}\""'
+            jql = build_jql_summary_search(project_key, summary_cleaned)
             
             issues = self.jira_repository.search_for_issues(jql, max_results=10)
             
             if not issues:
                 return None
             
-            # Find exact match
             for issue in issues:
-                if issue.fields.summary.strip() == summary_cleaned:
+                if summaries_match(issue.fields.summary, summary_cleaned):
                     LOGGER.info(f"Found issue {issue.key} for summary: {summary_cleaned}")
                     return issue.key
             
-            # If no exact match, return first result
             LOGGER.info(f"Found issue {issues[0].key} for summary (fuzzy): {summary_cleaned}")
             return issues[0].key
             
@@ -3815,16 +3834,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             if current_target_end != target_end_str:
                 update_fields[self.jira_repository.jira_target_end_id] = target_end_str
             
-            # Update fixVersions (handle both setting and clearing)
             feature_versions = set([v for v in [feature.release, feature.version] if v])
-            current_versions = set([v.name for v in issue.fields.fixVersions])
+            current_versions = set([v.name for v in (issue.fields.fixVersions or [])])
             if feature_versions != current_versions:
-                if feature_versions:  # Only create releases if we're setting versions
+                if feature_versions:
                     self._create_release_not_exist_during_update(
                         feature,
                         self.developer_board_project_key,
                     )
-                # Always replace ALL fix versions (clearing any that aren't in the feature)
                 update_fields["fixVersions"] = [
                     {"name": release}
                     for release in sorted(feature_versions)
@@ -4291,14 +4308,28 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             # and should not be modified when updating from subtasks
             
             # Update components
-            current_components = set([comp.name for comp in story_issue.fields.components])
+            current_components = set(
+                [comp.name for comp in (story_issue.fields.components or [])]
+            )
             if all_components != current_components:
                 update_fields["components"] = [{"name": comp} for comp in sorted(all_components)]
             
-            # Update fix versions
-            current_fix_versions = set([v.name for v in story_issue.fields.fixVersions])
+            current_fix_versions = set(
+                [v.name for v in (story_issue.fields.fixVersions or [])]
+            )
             if all_fix_versions != current_fix_versions:
-                update_fields["fixVersions"] = [{"name": version} for version in sorted(all_fix_versions)]
+                if all_fix_versions:
+                    for version_name in all_fix_versions:
+                        if not self.jira_repository.release_exist(
+                            self.developer_board_project_key, version_name
+                        ):
+                            self.jira_repository.create_release(
+                                project_key=self.developer_board_project_key,
+                                name=version_name,
+                            )
+                update_fields["fixVersions"] = [
+                    {"name": version} for version in sorted(all_fix_versions)
+                ] if all_fix_versions else []
             
             # Update dates
             if earliest_start:
@@ -4347,10 +4378,8 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         """
         try:
             project_key = self.developer_board_project_key
-            escaped_name = release_name.replace('"', '\\"')
-            jql = (
-                f'project = "{project_key}" AND issuetype = Story '
-                f'AND summary ~ "{escaped_name}"'
+            jql = build_jql_summary_search(
+                project_key, release_name, issue_type="Story", exact=True,
             )
             issues = self.jira_repository.search_issues(jql, max_results=20)
 
@@ -4359,7 +4388,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
             exact_matches = [
                 i for i in issues
-                if i.fields.summary.strip() == release_name.strip()
+                if summaries_match(i.fields.summary, release_name)
             ]
 
             if not exact_matches:
@@ -4491,6 +4520,84 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error creating release story for {release_name}: {e}")
             return None
 
+    async def convert_existing_task_to_subtask(
+        self,
+        issue_key: str,
+        parent_story_key: str,
+    ) -> Optional[str]:
+        """Convert an existing standalone Task to a Sub-task under a Story.
+
+        This preserves all worklogs, comments, attachments, and history.
+        If the Jira instance requires recreation, the returned key may
+        differ from the input key; the Google Sheet is updated accordingly.
+
+        Args:
+            issue_key: Jira issue key of the existing task.
+            parent_story_key: Key of the parent story.
+
+        Returns:
+            Resulting issue key on success, None on failure.
+        """
+        try:
+            issue = self.jira_repository.get_issue(issue_key)
+            if not issue:
+                LOGGER.warning(f"Issue {issue_key} not found, cannot convert to subtask")
+                return None
+
+            current_type = issue.fields.issuetype.name
+            if current_type in ("Sub-task", "Sub-Task", "Subtask"):
+                parent = getattr(issue.fields, "parent", None)
+                if parent and parent.key == parent_story_key:
+                    LOGGER.info(f"{issue_key} is already a Sub-task of {parent_story_key}")
+                    return issue_key
+                LOGGER.warning(
+                    f"{issue_key} is already a Sub-task of "
+                    f"{parent.key if parent else 'unknown'}, not {parent_story_key}",
+                )
+                return None
+
+            resulting_key = self.jira_repository.convert_to_subtask(issue_key, parent_story_key)
+            if resulting_key:
+                LOGGER.info(
+                    f"Converted {issue_key} to Sub-task "
+                    f"under {parent_story_key} (result: {resulting_key})",
+                )
+                if resulting_key != issue_key:
+                    await self._update_sheet_after_key_change(issue_key, resulting_key)
+            return resulting_key
+
+        except Exception as e:
+            LOGGER.error(f"Error converting {issue_key} to subtask under {parent_story_key}: {e}")
+            return None
+
+    async def _update_sheet_after_key_change(
+        self,
+        old_key: str,
+        new_key: str,
+    ) -> None:
+        """Update the Google Sheet when a recreated Sub-task gets a new key.
+
+        Args:
+            old_key: Previous issue key.
+            new_key: New issue key after recreation.
+        """
+        try:
+            features = await self.get_developer_board_features()
+            for feature in features:
+                if feature.developer_board_issue_key == old_key:
+                    await self.update_developer_board_feature(
+                        feature.sheet_row_number,
+                        {"developer_board_issue_key": new_key},
+                    )
+                    LOGGER.info(
+                        f"Updated sheet row {feature.sheet_row_number}: "
+                        f"{old_key} -> {new_key}",
+                    )
+                    return
+            LOGGER.warning(f"Could not find sheet row for old key {old_key}")
+        except Exception as e:
+            LOGGER.warning(f"Error updating sheet after key change {old_key}->{new_key}: {e}")
+
     async def create_subtask_for_release(
         self,
         parent_story_key: str,
@@ -4498,6 +4605,11 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         assignees: Optional[List[str]] = None,
     ) -> Optional[str]:
         """Create a subtask for a feature under a release story.
+
+        Each feature row in the Google Sheet becomes a single Sub-task
+        under the parent Story.  When there are multiple assignees the
+        first one is used as the subtask assignee (Jira does not support
+        nested sub-tasks).
 
         Args:
             parent_story_key: Parent story issue key
@@ -4508,25 +4620,22 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             Subtask issue key if successful, None otherwise
         """
         try:
-            # Extract dates
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
             
-            # Get components
             components = self._map_components(feature)
             
-            # Determine story points and assignee based on number of assignees
-            if assignees and len(assignees) == 1:
-                story_points = feature.total_hours / 8 if feature.total_hours else 0
-                assignee = assignees[0]
-            else:
-                # Multiple assignees - will create individual subtasks
-                story_points = None
-                assignee = None
+            story_points = feature.total_hours / 8 if feature.total_hours else 0
+            assignee = assignees[0] if assignees else None
             
-            # Use feature description directly
-            description = feature.description if feature.description else ""
+            description_parts = []
+            if feature.description:
+                description_parts.append(feature.description)
+            if assignees and len(assignees) > 1:
+                description_parts.append(
+                    f"\n\n👥 *All Assignees*: {', '.join(assignees)}"
+                )
+            description = "\n".join(description_parts) if description_parts else ""
             
-            # Get sprint from parent story to assign to subtask
             parent_story = self.jira_repository.get_issue(parent_story_key)
             sprint_id = None
             if parent_story and hasattr(parent_story.fields, self.jira_repository.jira_sprint_id):
@@ -4536,7 +4645,14 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     if "id=" in sprint_str:
                         sprint_id = int(sprint_str.split("id=")[1].split(",")[0])
             
-            # Create subtask
+            pm_board_enabled = (
+                self.project_config.boards.pm_board 
+                and self.project_config.boards.pm_board.enabled
+            )
+            labels = None
+            if pm_board_enabled and feature.jira_issue_key:
+                labels = [f"PM-{feature.jira_issue_key}"]
+            
             subtask_data = TaskData(
                 project_key=self.developer_board_project_key,
                 summary=feature.task_title,
@@ -4545,6 +4661,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 priority=self._map_priority(feature.priority),
                 parent_issue_key=parent_story_key,
                 components=components,
+                labels=labels,
                 assignee=assignee,
                 due_date=feature_dates_str.get("due_date"),
                 story_points=story_points,
@@ -4553,38 +4670,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 sprint_id=sprint_id,
             )
             
+            self._create_release_not_exist(
+                feature,
+                subtask_data,
+                self.developer_board_project_key,
+            )
+            
             subtask_issue = self.jira_repository.create_task(subtask_data)
             LOGGER.info(
                 f"Created subtask {self.jira_repository.get_issue_url_by_key(subtask_issue.key)} "
                 f"for feature: {feature.task_title}"
             )
             
-            # If multiple assignees, create individual subtasks for each
-            if assignees and len(assignees) > 1:
-                try:
-                    # Get sprint info from feature
-                    sprint_info = None
-                    if feature.sprint_list and len(feature.sprint_list) > 0:
-                        sprint_info = SprintInfo.parse_sprint_string(feature.sprint_list[0])
-                    
-                    subtask_keys = await self._create_subtasks_for_assignees(
-                        subtask_issue.key,
-                        assignees,
-                        feature,
-                        sprint_info,
-                        feature_dates_str
-                    )
-                    if subtask_keys:
-                        LOGGER.info(
-                            f"Created {len(subtask_keys)} individual subtasks under {subtask_issue.key}: {subtask_keys}"
-                        )
-                except Exception as e:
-                    LOGGER.warning(
-                        f"Could not create individual subtasks for {subtask_issue.key}: {e}"
-                    )
-            
-            # Link to PM Board task if exists
-            if feature.jira_issue_key:
+            if pm_board_enabled and feature.jira_issue_key:
                 try:
                     self._link_issues(feature.jira_issue_key, subtask_issue.key)
                 except Exception as e:
@@ -4592,7 +4690,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         f"Could not link issues {feature.jira_issue_key} and {subtask_issue.key}: {e}"
                     )
             
-            # Update the sheet with subtask key
             await self.update_developer_board_feature(
                 feature.sheet_row_number,
                 {"developer_board_issue_key": subtask_issue.key},

@@ -85,6 +85,11 @@ class DataParsingMixin:
                 sheet_row_number=row_number,
                 task_title=task_title,
                 epic=get_mapped_value("epic") or None,
+                story_name=(
+                    get_mapped_value("release")
+                    if get_mapped_value("release")
+                    else None
+                ),
                 release=(
                     get_mapped_value("release")
                     if (

@@ -121,6 +121,23 @@ class TaskManagerRepositoryInterface(ABC):
         pass
 
     @abstractmethod
+    def convert_to_subtask(self, issue_key: str, parent_key: str) -> Optional[str]:
+        """Convert a standard issue to a Sub-task under a parent.
+
+        Tries in-place update first; if the Jira instance rejects the
+        type change, recreates the issue as a Sub-task while preserving
+        worklogs, comments, and attachments.
+
+        Args:
+            issue_key: Key of the issue to convert.
+            parent_key: Key of the parent story.
+
+        Returns:
+            Resulting issue key on success (same or new), None on failure.
+        """
+        pass
+
+    @abstractmethod
     def is_user_jira_admin(self, username: str) -> bool:
         """
         Check if a user has Jira administrator privileges.

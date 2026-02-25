@@ -1018,11 +1018,8 @@ class DailyTaskStatus(DailyTaskStatusInterface):
             try:
                 if not user_cfg.telegram_user_chat_id:
                     continue
-                
-                    
+
                 jira_username = user_cfg.jira_username
-                if jira_username != 'a_kazemi':
-                    continue
                 tasks = self.jira_repository.get_user_actionable_tasks(jira_username)
                 
                 if not tasks:

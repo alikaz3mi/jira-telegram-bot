@@ -23,6 +23,10 @@ from jira_telegram_bot.settings.jira_board_config import JiraBoardSettings
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
+from jira_telegram_bot.utils.text_normalization import (
+    build_jql_summary_search,
+    summaries_match,
+)
 
 
 class JiraCloudRepository(TaskManagerRepositoryInterface):
@@ -736,6 +740,121 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         issue.update(fields=fields)
         LOGGER.info(f"Updated issue {issue_key} with fields: {fields}")
 
+    def convert_to_subtask(
+        self,
+        issue_key: str,
+        parent_key: str,
+    ) -> Optional[str]:
+        """Convert a standard issue (Task) to a Sub-task under a parent.
+
+        Tries in-place update first, then recreates the issue as a
+        Sub-task while preserving worklogs, comments, and attachments.
+
+        Args:
+            issue_key: Key of the issue to convert.
+            parent_key: Key of the parent story.
+
+        Returns:
+            Resulting issue key on success (same or new), None on failure.
+        """
+        try:
+            issue = self.jira.issue(issue_key)
+            current_type = issue.fields.issuetype.name
+
+            if current_type in ("Sub-task", "Sub-Task", "Subtask"):
+                parent = getattr(issue.fields, "parent", None)
+                if parent and parent.key == parent_key:
+                    LOGGER.info(f"{issue_key} is already a Sub-task of {parent_key}")
+                    return issue_key
+                LOGGER.warning(
+                    f"{issue_key} is a Sub-task of {parent.key if parent else 'unknown'}, "
+                    f"not {parent_key} — skipping re-parent",
+                )
+                return None
+
+            try:
+                issue.update(fields={
+                    "issuetype": {"name": "Sub-task"},
+                    "parent": {"key": parent_key},
+                })
+                LOGGER.info(
+                    f"Converted {issue_key} from {current_type} to Sub-task "
+                    f"under {parent_key} (worklogs & comments preserved)",
+                )
+                return issue_key
+            except Exception as e:
+                LOGGER.warning(f"In-place conversion failed for {issue_key}: {e}")
+
+            LOGGER.info(f"Recreating {issue_key} as Sub-task under {parent_key}")
+            return self._recreate_as_subtask_cloud(issue, issue_key, parent_key)
+
+        except Exception as e:
+            LOGGER.error(f"Failed to convert {issue_key} to Sub-task under {parent_key}: {e}")
+            return None
+
+    def _recreate_as_subtask_cloud(
+        self,
+        old_issue: Issue,
+        old_key: str,
+        parent_key: str,
+    ) -> Optional[str]:
+        """Recreate an issue as a Sub-task on Jira Cloud, migrating data.
+
+        Args:
+            old_issue: Original Jira issue object.
+            old_key: Original issue key.
+            parent_key: Parent story key.
+
+        Returns:
+            New issue key on success, None on failure.
+        """
+        try:
+            fields: dict = {
+                "project": {"key": old_issue.fields.project.key},
+                "summary": old_issue.fields.summary,
+                "description": old_issue.fields.description or "",
+                "issuetype": {"name": "Sub-task"},
+                "parent": {"key": parent_key},
+                "priority": {"name": old_issue.fields.priority.name},
+            }
+            if old_issue.fields.assignee:
+                fields["assignee"] = {"accountId": old_issue.fields.assignee.accountId}
+            if old_issue.fields.components:
+                fields["components"] = [{"name": c.name} for c in old_issue.fields.components]
+            if old_issue.fields.labels:
+                fields["labels"] = list(old_issue.fields.labels)
+            if old_issue.fields.duedate:
+                fields["duedate"] = old_issue.fields.duedate
+
+            new_issue = self.jira.create_issue(fields=fields)
+
+            try:
+                for worklog in self.jira.worklogs(old_key):
+                    self.jira.add_worklog(
+                        new_issue.key,
+                        timeSpent=worklog.timeSpent,
+                        comment=getattr(worklog, "comment", None) or "",
+                    )
+            except Exception as e:
+                LOGGER.warning(f"Error migrating worklogs to {new_issue.key}: {e}")
+
+            try:
+                for comment in self.jira.comments(old_key):
+                    self.jira.add_comment(new_issue.key, comment.body)
+            except Exception as e:
+                LOGGER.warning(f"Error migrating comments to {new_issue.key}: {e}")
+
+            old_issue.delete()
+            LOGGER.info(
+                f"Recreated {old_key} as Sub-task {new_issue.key} under "
+                f"{parent_key} (worklogs & comments migrated)",
+            )
+            return new_issue.key
+
+        except Exception as e:
+            LOGGER.error(f"Failed to recreate {old_key} as Sub-task: {e}")
+            return None
+
     def get_issue(self, issue_key: str) -> Optional[Issue]:
         """Get a Jira issue by key.
 
@@ -966,10 +1085,10 @@ class JiraCloudRepository(TaskManagerRepositoryInterface):
         Returns:
             Jira issue or None
         """
-        query = f'project = "{board}" AND summary ~ "{summary}"'
+        query = build_jql_summary_search(board, summary)
         results = self.search_issues(query)
         for result in results:
-            if result.fields.summary == summary:
+            if summaries_match(result.fields.summary, summary):
                 return result
         return None
 

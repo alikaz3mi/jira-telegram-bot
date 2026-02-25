@@ -99,6 +99,7 @@ class SynthPMUseCase:
                 "updated_jira_tasks": 0,
                 "created_developer_board_tasks": 0,
                 "updated_developer_board_tasks": 0,
+                "converted_to_subtasks": 0,
                 "deleted_tasks": 0,
                 "synced_statuses": 0,
                 "generated_documentation": 0,
@@ -183,6 +184,7 @@ class SynthPMUseCase:
                 f"{sync_results['created_developer_board_tasks']} dev tasks | "
                 f"Updated: {sync_results['updated_jira_tasks']} PM tasks, "
                 f"{sync_results['updated_developer_board_tasks']} dev tasks | "
+                f"Converted: {sync_results['converted_to_subtasks']} tasks→subtasks | "
                 f"Synced statuses: {sync_results['synced_statuses']} | "
                 f"Deleted: {sync_results['deleted_tasks']} | "
                 f"Skipped: {len(sync_results['skipped'])} | "
@@ -324,21 +326,22 @@ class SynthPMUseCase:
         self,
         features: List[SynthPMFeatureEntity],
     ) -> Dict[str, List[SynthPMFeatureEntity]]:
-        """Group features by their release column value.
+        """Group features by their story/feature name column value.
 
-        Features whose ``release`` is ``None`` (filtered out at parse
-        time when the value does not match the ``xx.xx.xx`` pattern)
-        are collected under ``"No Release"``.
+        Features are grouped by ``story_name`` (the raw value from the
+        ریلیز / Feature column).  Features whose ``story_name`` is
+        ``None`` are collected under ``"No Release"``.
 
         Args:
             features: List of feature entities
 
         Returns:
-            Dictionary mapping release names to lists of features
+            Dictionary mapping story/feature names to lists of features
         """
         release_groups: Dict[str, List[SynthPMFeatureEntity]] = {}
         for feature in features:
-            release_name = feature.release.strip() if feature.release else "No Release"
+            raw_name = feature.story_name.strip() if feature.story_name else ""
+            release_name = raw_name if raw_name else "No Release"
             if release_name not in release_groups:
                 release_groups[release_name] = []
             release_groups[release_name].append(feature)
@@ -445,14 +448,16 @@ class SynthPMUseCase:
                     except Exception as e:
                         LOGGER.warning(f"Could not update description for story {existing_story_key}: {e}")
                 else:
-                    LOGGER.warning(f"No release note found for release '{release_name}' in release_notes_map (available: {list(release_notes_map.keys())})")
+                    available_keys = list(release_notes_map.keys()) if release_notes_map else []
+                    LOGGER.warning(f"No release note found for release '{release_name}' in release_notes_map (available: {available_keys})")
             else:
                 # Create the story
                 release_note = release_notes_map.get(release_name) if release_notes_map else None
                 if release_note:
                     LOGGER.info(f"Creating new story for '{release_name}' with release note: doc_link={release_note.documentation_link}, desc_len={len(release_note.description) if release_note.description else 0}")
                 else:
-                    LOGGER.warning(f"Creating new story for '{release_name}' WITHOUT release note (available: {list(release_notes_map.keys())})")
+                    available_keys = list(release_notes_map.keys()) if release_notes_map else []
+                    LOGGER.warning(f"Creating new story for '{release_name}' WITHOUT release note (available: {available_keys})")
                 story_key = await self.repository.create_release_story(
                     release_name=release_name,
                     features=valid_features,
@@ -505,6 +510,27 @@ class SynthPMUseCase:
                         LOGGER.info(f"Skipping subtask update for {feature.task_title} - status {feature.status} does not allow updates")
                         continue
                     
+                    # Convert standalone Task to Sub-task if needed
+                    # (preserves all worklogs, comments, and attachments)
+                    resulting_key = await self.repository.convert_existing_task_to_subtask(
+                        issue_key=feature.developer_board_issue_key,
+                        parent_story_key=story_key,
+                    )
+                    if resulting_key:
+                        LOGGER.info(
+                            f"Ensured {feature.developer_board_issue_key} is a "
+                            f"Sub-task of {story_key} (result: {resulting_key})",
+                        )
+                        sync_results["converted_to_subtasks"] = (
+                            sync_results.get("converted_to_subtasks", 0) + 1
+                        )
+                        if resulting_key != feature.developer_board_issue_key:
+                            valid_subtask_keys.discard(feature.developer_board_issue_key)
+                            valid_subtask_keys.add(resulting_key)
+                            feature = feature.copy(
+                                update={"developer_board_issue_key": resulting_key},
+                            )
+
                     # Update the existing subtask
                     assignees = self._extract_assignees_from_feature(feature)
 
@@ -693,6 +719,27 @@ class SynthPMUseCase:
                     sync_results["updated_developer_board_tasks"] = (
                         sync_results.get("updated_developer_board_tasks", 0) + 1
                     )
+                    try:
+                        issue = self.repository.jira_repository.get_issue(
+                            feature.developer_board_issue_key,
+                        )
+                        if (
+                            issue
+                            and issue.fields.issuetype.name == "Story"
+                            and issue.fields.subtasks
+                        ):
+                            await self.repository.update_story_from_subtasks(
+                                feature.developer_board_issue_key,
+                            )
+                            LOGGER.info(
+                                f"Updated story {feature.developer_board_issue_key} "
+                                "metadata from subtasks"
+                            )
+                    except Exception as e:
+                        LOGGER.warning(
+                            f"Could not update story metadata for "
+                            f"{feature.developer_board_issue_key}: {e}"
+                        )
                 elif update_success is False:
                     LOGGER.debug(f"No changes needed for developer board task {feature.developer_board_issue_key}")
                 continue

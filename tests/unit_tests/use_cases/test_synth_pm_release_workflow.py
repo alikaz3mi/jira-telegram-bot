@@ -21,7 +21,7 @@ def create_test_feature(**overrides) -> SynthPMFeatureEntity:
         "sprint_list": ["45: 1403/09/01 - 1403/09/14"],
         "ai": "✓",
         "implementation_start_date": "2024-01-01",
-        "release": "Version 2.5.0",
+        "story_name": "Version 2.5.0",
     }
     defaults.update(overrides)
     return SynthPMFeatureEntity(**defaults)
@@ -47,6 +47,14 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         )
         self.repository.project_config = self.project_config
         
+        # Default async mocks for repository methods used across tests
+        self.repository.convert_existing_task_to_subtask = AsyncMock(return_value="DEV-KEY")
+        self.repository.update_story_from_subtasks = AsyncMock(return_value=True)
+        self.repository.update_release_note = AsyncMock(return_value=True)
+        self.repository.link_story_dependencies = AsyncMock(return_value=None)
+        self.repository.jira_repository = MagicMock()
+        self.repository.jira_repository.get_issue = MagicMock(return_value=None)
+        
         # Create use case
         self.use_case = SynthPMUseCase(
             repository=self.repository,
@@ -58,27 +66,27 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_group_features_by_release(self):
-        """Test grouping features by release column."""
+        """Test grouping features by story_name column."""
         features = [
             create_test_feature(
                 row_number=1,
                 task_title="Feature A",
-                release="04.12.01",
+                story_name="04.12.01",
             ),
             create_test_feature(
                 row_number=2,
                 task_title="Feature B",
-                release="04.12.01",
+                story_name="04.12.01",
             ),
             create_test_feature(
                 row_number=3,
                 task_title="Feature C",
-                release="04.12.02",
+                story_name="04.12.02",
             ),
             create_test_feature(
                 row_number=4,
                 task_title="Feature D",
-                release=None,
+                story_name=None,
             ),
         ]
         
@@ -102,9 +110,9 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(release_groups["No Release"][0].task_title, "Feature D")
 
     def test_group_features_by_release_all_same(self):
-        """Test grouping when all features have same release."""
+        """Test grouping when all features have same story_name."""
         features = [
-            create_test_feature(row_number=i, release="04.12.01")
+            create_test_feature(row_number=i, story_name="04.12.01")
             for i in range(5)
         ]
         
@@ -127,13 +135,13 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
             create_test_feature(
                 row_number=1,
                 task_title="Feature A",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
                 jira_issue_key="PM-101",
             ),
             create_test_feature(
                 row_number=2,
                 task_title="Feature B",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
                 jira_issue_key="PM-102",
             ),
         ]
@@ -323,13 +331,13 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
                 row_number=1,
                 task_title="Feature A",
                 jira_issue_key=None,  # No PM task yet
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
             ),
             create_test_feature(
                 row_number=2,
                 task_title="Feature B",
                 jira_issue_key="PM-102",  # Already has PM task
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
             ),
         ]
         
@@ -467,14 +475,14 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
                 task_title="Feature A",
                 developer_board_issue_key="DEV-101",  # Existing subtask
                 jira_issue_key="PM-101",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
             ),
             create_test_feature(
                 row_number=2,
                 task_title="Feature B",
                 developer_board_issue_key="DEV-102",  # Existing subtask
                 jira_issue_key="PM-102",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
             ),
         ]
         
@@ -603,14 +611,14 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
                 task_title="Feature A",
                 developer_board_issue_key="DEV-101",
                 jira_issue_key="PM-101",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
             ),
             create_test_feature(
                 row_number=2,
                 task_title="Feature B",
                 developer_board_issue_key="DEV-102",
                 jira_issue_key="PM-102",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
             ),
         ]
         
@@ -687,6 +695,14 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         )
         self.repository.project_config = self.project_config
         
+        # Default async mocks for repository methods used across tests
+        self.repository.convert_existing_task_to_subtask = AsyncMock(return_value="DEV-KEY")
+        self.repository.update_story_from_subtasks = AsyncMock(return_value=True)
+        self.repository.update_release_note = AsyncMock(return_value=True)
+        self.repository.link_story_dependencies = AsyncMock(return_value=None)
+        self.repository.jira_repository = MagicMock()
+        self.repository.jira_repository.get_issue = MagicMock(return_value=None)
+        
         # Create use case
         self.use_case = SynthPMUseCase(
             repository=self.repository,
@@ -703,25 +719,25 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
             create_test_feature(
                 row_number=1,
                 task_title="Feature A",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
                 jira_issue_key="PM-101",
             ),
             create_test_feature(
                 row_number=2,
                 task_title="Feature B",
-                release="Version 2.5.0",
+                story_name="Version 2.5.0",
                 jira_issue_key="PM-102",
             ),
             create_test_feature(
                 row_number=3,
                 task_title="Feature C",
-                release="Version 2.6.0",
+                story_name="Version 2.6.0",
                 jira_issue_key="PM-103",
             ),
             create_test_feature(
                 row_number=4,
                 task_title="Feature D",
-                release="Version 2.6.0",
+                story_name="Version 2.6.0",
                 jira_issue_key="PM-104",
             ),
         ]
@@ -746,6 +762,14 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         self.repository.update_sync_status = AsyncMock()
         self.repository.get_sync_status = AsyncMock(return_value=None)
         self.repository.create_jira_task_from_feature = AsyncMock(return_value="PM-101")
+        self.repository.get_release_notes = AsyncMock(return_value=[])
+        self.repository.sync_remaining_hours_to_sheet = AsyncMock(return_value=False)
+        self.repository.sync_jira_status_to_sheet = AsyncMock(return_value=False)
+        self.repository.update_story_from_subtasks = AsyncMock(return_value=True)
+        self.repository.update_release_note = AsyncMock(return_value=True)
+        self.repository.link_story_dependencies = AsyncMock(return_value=None)
+        self.repository.jira_repository = MagicMock()
+        self.repository.jira_repository.get_issue = MagicMock(return_value=None)
         
         # Mock user config
         self.user_config.get_all_user_configs.return_value = {}
@@ -763,13 +787,20 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.repository.create_subtask_for_release.await_count, 4)
 
     async def test_update_existing_subtasks(self):
-        """Test that existing subtasks are updated, not recreated."""
-        feature_with_key = create_test_feature(
+        """Test that existing subtasks are updated and converted, not recreated."""
+        feature_a = create_test_feature(
             row_number=1,
-            task_title="Existing Feature",
-            release="Version 2.5.0",
+            task_title="Existing Feature A",
+            story_name="Version 2.5.0",
             jira_issue_key="PM-101",
-            developer_board_issue_key="DEV-101",  # Already exists
+            developer_board_issue_key="DEV-101",
+        )
+        feature_b = create_test_feature(
+            row_number=2,
+            task_title="Existing Feature B",
+            story_name="Version 2.5.0",
+            jira_issue_key="PM-102",
+            developer_board_issue_key="DEV-102",
         )
         
         # Mock validation
@@ -787,6 +818,7 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         sync_results = {
             "updated_developer_board_tasks": 0,
             "created_developer_board_tasks": 0,
+            "converted_to_subtasks": 0,
             "errors": [],
             "skipped": [],
         }
@@ -794,21 +826,124 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         # Execute
         await self.use_case._create_release_story_with_subtasks(
             "Version 2.5.0",
-            [feature_with_key],
+            [feature_a, feature_b],
             sync_results,
         )
         
         # Verify update was called instead of create
-        self.repository.update_developer_board_task_from_feature.assert_awaited_once()
-        self.assertEqual(sync_results["updated_developer_board_tasks"], 1)
+        self.assertEqual(
+            self.repository.update_developer_board_task_from_feature.await_count, 2,
+        )
+        self.assertEqual(sync_results["updated_developer_board_tasks"], 2)
         self.assertEqual(sync_results["created_developer_board_tasks"], 0)
+        
+        # Verify conversion to subtask was attempted (preserves time & comments)
+        self.assertEqual(
+            self.repository.convert_existing_task_to_subtask.await_count, 2,
+        )
+        self.assertEqual(sync_results["converted_to_subtasks"], 2)
+
+    async def test_existing_task_converted_to_subtask_preserves_data(self):
+        """Test that standalone Task is converted to Sub-task under Story.
+
+        Conversion via issue type update preserves worklogs, comments,
+        and attachments — no data is lost.
+        """
+        feature_a = create_test_feature(
+            row_number=1,
+            task_title="Feature A",
+            story_name="اتصال به راست چین",
+            jira_issue_key="PM-101",
+            developer_board_issue_key="DEV-101",
+        )
+        feature_b = create_test_feature(
+            row_number=2,
+            task_title="Feature B",
+            story_name="اتصال به راست چین",
+            jira_issue_key="PM-102",
+            developer_board_issue_key="DEV-102",
+        )
+
+        self.repository.validate_feature_for_task_creation.return_value = (True, None)
+        self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
+        self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        self.repository.convert_existing_task_to_subtask = AsyncMock(return_value="DEV-101")
+        self.user_config.get_all_user_configs.return_value = {}
+
+        sync_results = {
+            "updated_developer_board_tasks": 0,
+            "created_developer_board_tasks": 0,
+            "converted_to_subtasks": 0,
+            "errors": [],
+            "skipped": [],
+        }
+
+        await self.use_case._create_release_story_with_subtasks(
+            "اتصال به راست چین",
+            [feature_a, feature_b],
+            sync_results,
+        )
+
+        self.assertEqual(
+            self.repository.convert_existing_task_to_subtask.await_count, 2,
+        )
+        self.repository.convert_existing_task_to_subtask.assert_any_await(
+            issue_key="DEV-101", parent_story_key="DEV-100",
+        )
+        self.repository.convert_existing_task_to_subtask.assert_any_await(
+            issue_key="DEV-102", parent_story_key="DEV-100",
+        )
+        self.assertEqual(sync_results["converted_to_subtasks"], 2)
+        self.assertEqual(sync_results["updated_developer_board_tasks"], 2)
+
+    async def test_conversion_failure_still_updates_task(self):
+        """Test that even if conversion fails, the task is still updated."""
+        feature = create_test_feature(
+            row_number=1,
+            task_title="Feature",
+            story_name="Version 2.5.0",
+            jira_issue_key="PM-101",
+            developer_board_issue_key="DEV-101",
+        )
+        dummy = create_test_feature(
+            row_number=2,
+            task_title="Dummy",
+            story_name="Version 2.5.0",
+            jira_issue_key="PM-102",
+        )
+
+        self.repository.validate_feature_for_task_creation.return_value = (True, None)
+        self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
+        self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        self.repository.convert_existing_task_to_subtask = AsyncMock(return_value=None)
+        self.repository.create_subtask_for_release = AsyncMock(return_value="DEV-201")
+        self.user_config.get_all_user_configs.return_value = {}
+
+        sync_results = {
+            "updated_developer_board_tasks": 0,
+            "created_developer_board_tasks": 0,
+            "converted_to_subtasks": 0,
+            "errors": [],
+            "skipped": [],
+        }
+
+        await self.use_case._create_release_story_with_subtasks(
+            "Version 2.5.0",
+            [feature, dummy],
+            sync_results,
+        )
+
+        self.repository.convert_existing_task_to_subtask.assert_awaited_once()
+        self.repository.update_developer_board_task_from_feature.assert_awaited_once()
+        self.assertEqual(sync_results["converted_to_subtasks"], 0)
+        self.assertEqual(sync_results["updated_developer_board_tasks"], 1)
 
     async def test_update_regular_task_existing(self):
         """Test updating regular task when it already exists."""
         feature = create_test_feature(
             row_number=1,
             task_title="Regular Task",
-            release="",  # No release
+            story_name="",  # No story name
             jira_issue_key="PM-101",
             developer_board_issue_key="DEV-101",  # Already exists
         )
@@ -836,7 +971,7 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         feature = create_test_feature(
             row_number=1,
             task_title="Single Feature",
-            release="Version 2.5.0",
+            story_name="Version 2.5.0",
             jira_issue_key="PM-101",
         )
         
