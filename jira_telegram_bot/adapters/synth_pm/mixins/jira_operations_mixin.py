@@ -15,6 +15,7 @@ from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface im
     TaskManagerRepositoryInterface,
 )
 from jira_telegram_bot.utils.text_normalization import build_jql_summary_search
+from jira_telegram_bot.utils.text_normalization import summaries_match
 
 
 class JiraOperationsMixin:
@@ -41,10 +42,16 @@ class JiraOperationsMixin:
             # Check if epic already exists
             existing_epic = self.jira_repository.search_issues(
                 build_jql_summary_search(project_key, epic_name, issue_type="Epic", exact=True),
+                max_results=20,
             )
 
-            if existing_epic:
-                return False, existing_epic[0].key
+            matched = [
+                e for e in existing_epic
+                if summaries_match(e.fields.summary, epic_name)
+            ]
+
+            if matched:
+                return False, matched[0].key
 
             # Create new epic
             epic_data = TaskData(

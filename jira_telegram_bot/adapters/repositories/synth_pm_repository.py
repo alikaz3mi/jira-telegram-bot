@@ -157,23 +157,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             return self.project_config.boards.pm_board.jira_board_key
         return None
 
-    def validate_feature_for_task_creation(
+    def _validate_status(
         self,
         feature: SynthPMFeatureEntity,
-        minimum_status: str = "۵. آماده پیاده سازی فنی",
+        minimum_status: str,
     ) -> tuple[bool, Optional[str]]:
-        """Validate if feature meets minimum requirements for task creation.
+        """Validate feature status meets minimum threshold.
 
         Args:
             feature: Feature entity to validate
-            minimum_status: Minimum status required for task creation
+            minimum_status: Minimum status required
 
         Returns:
             Tuple of (is_valid, error_message)
         """
-        if not feature.task_title or not feature.task_title.strip():
-            return False, f"Row {feature.row_number}: Task title is empty"
-
         status_order = [
             "۱. ثبت و اولویت بندی",
             "۲. تحلیل مسئله و RFP",
@@ -201,6 +198,51 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 )
         except ValueError:
             return False, f"Row {feature.row_number}: Status '{feature.status}' not found in status order"
+
+        return True, None
+
+    def validate_feature_for_update(
+        self,
+        feature: SynthPMFeatureEntity,
+        minimum_status: str = "۵. آماده پیاده سازی فنی",
+    ) -> tuple[bool, Optional[str]]:
+        """Validate if an existing feature meets minimum requirements for updating its Jira task.
+
+        Unlike task creation, updates allow empty sprints and dates so that
+        clearing those fields in the sheet propagates to Jira.
+
+        Args:
+            feature: Feature entity to validate
+            minimum_status: Minimum status required for task updates
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not feature.task_title or not feature.task_title.strip():
+            return False, f"Row {feature.row_number}: Task title is empty"
+
+        return self._validate_status(feature, minimum_status)
+
+    def validate_feature_for_task_creation(
+        self,
+        feature: SynthPMFeatureEntity,
+        minimum_status: str = "۵. آماده پیاده سازی فنی",
+    ) -> tuple[bool, Optional[str]]:
+        """Validate if feature meets minimum requirements for task creation.
+
+        Args:
+            feature: Feature entity to validate
+            minimum_status: Minimum status required for task creation
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not feature.task_title or not feature.task_title.strip():
+            return False, f"Row {feature.row_number}: Task title is empty"
+
+        is_valid, error_message = self._validate_status(feature, minimum_status)
+        if not is_valid:
+            return is_valid, error_message
 
         if not feature.involved_people or not feature.involved_people.strip():
             return (
@@ -403,6 +445,43 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             LOGGER.error(f"Error updating feature row {row_number}: {e}")
             return False
 
+    def _find_existing_issue(
+        self,
+        summary: str,
+        project_key: str,
+        issue_type: Optional[str] = None,
+        parent_key: Optional[str] = None,
+    ) -> Optional[str]:
+        """Search Jira for an existing issue by summary before creating a new one.
+
+        Args:
+            summary: Issue summary to search for.
+            project_key: Jira project key.
+            issue_type: Optionally restrict to a specific issue type.
+            parent_key: If given, only match subtasks under this parent.
+
+        Returns:
+            Existing issue key if found, None otherwise.
+        """
+        try:
+            jql = build_jql_summary_search(
+                project_key, summary, issue_type=issue_type, exact=True,
+            )
+            issues = self.jira_repository.search_issues(jql, max_results=20)
+
+            for issue in issues:
+                if not summaries_match(issue.fields.summary, summary):
+                    continue
+                if parent_key:
+                    parent = getattr(issue.fields, "parent", None)
+                    if not parent or parent.key != parent_key:
+                        continue
+                return issue.key
+            return None
+        except Exception as e:
+            LOGGER.warning(f"Error checking for existing issue '{summary}': {e}")
+            return None
+
     async def create_jira_task_from_feature(
         self,
         feature: SynthPMFeatureEntity,
@@ -426,6 +505,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         
         # Start and target end dates are extracted and set for each task
         try:
+            existing_key = self._find_existing_issue(
+                feature.task_title, self.pm_project_key, issue_type="Task",
+            )
+            if existing_key:
+                LOGGER.info(
+                    f"PM Board task already exists for '{feature.task_title}': {existing_key}, reusing",
+                )
+                await self.update_developer_board_feature(
+                    feature.sheet_row_number,
+                    {"jira_issue_key": existing_key},
+                )
+                return existing_key
+
             feature_dates_str = self.extract_dates_from_feature_in_str(feature)
 
             epic_link = None
@@ -1025,7 +1117,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             else:
                 # Build labels and description based on PM Board status
                 if pm_board_enabled and feature.jira_issue_key:
-                    labels = [f"PM-{feature.jira_issue_key}", feature.involved_people]
+                    labels = [feature.involved_people] if feature.involved_people else []
                     description = (
                         f"🔗 *Linked to PM Board*: {self.jira_repository.get_issue_url_by_key(feature.jira_issue_key)}\n\n"
                         f"👥 *Assignees*: {', '.join(assignees) if assignees else 'Unassigned'}\n\n"
@@ -1068,6 +1160,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 self.developer_board_project_key,
             )
 
+            existing_key = self._find_existing_issue(
+                feature.task_title,
+                self.developer_board_project_key,
+                issue_type=task_type,
+            )
+            if existing_key:
+                LOGGER.info(
+                    f"Developer board task already exists for '{feature.task_title}': {existing_key}",
+                )
+                return existing_key
+
             developer_board_issue = self.jira_repository.create_task(
                 developer_board_task_data,
             )
@@ -1083,7 +1186,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                         developer_board_issue.key,
                         assignees,
                         feature,
-                        sprint_info,
+                        sprint,
                         feature_dates_str
                     )
                     if subtask_keys:
@@ -1272,7 +1375,13 @@ class SynthPMRepository(SynthPMRepositoryInterface):
 
         first_info = SprintInfo.parse_sprint_string(sorted_sprints[0]) if sorted_sprints else None
         if first_info:
-            return self._get_or_create_sprint_cached(first_info, board_id, board_key)
+            fallback = self._get_or_create_sprint_cached(first_info, board_id, board_key)
+            if fallback and fallback.get("state") == "closed":
+                LOGGER.debug(
+                    f"Skipping closed fallback sprint {fallback.get('name')} for board {board_key}",
+                )
+                return None
+            return fallback
         return None
 
     def clear_sprint_cache(self) -> None:
@@ -1847,15 +1956,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 LOGGER.error(f"issue {developer_board_issue_key} not found")
                 return False
 
-            # Find linked PM Board issue key from labels
-            pm_board_issue_key = None
-            for label in developer_board_issue.fields.labels:
-                if label.startswith("PM-"):
-                    pm_board_issue_key = label.replace("PM-", "")
-                    break
-                elif label.startswith("PM Board-"):
-                    pm_board_issue_key = label.replace("PM Board-", "")
-                    break
+            # Find linked PM Board issue key from issue links first, then labels
+            pm_board_issue_key = self._find_pm_board_key_from_links(
+                developer_board_issue_key,
+            )
+
+            if not pm_board_issue_key:
+                for label in developer_board_issue.fields.labels:
+                    if label.startswith("PM-"):
+                        pm_board_issue_key = label.replace("PM-", "")
+                        break
+                    elif label.startswith("PM Board-"):
+                        pm_board_issue_key = label.replace("PM Board-", "")
+                        break
 
             if not pm_board_issue_key:
                 LOGGER.error(
@@ -2402,24 +2515,29 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             jql = build_jql_summary_search(
                 board_name, epic_name, issue_type="Epic", exact=True,
             )
-            issues = self.jira_repository.search_issues(jql, max_results=1)
-            if len(issues) == 0:
-                # TODO: In the future, get epic description from an epic specification sheet
-                epic_description = (
-                    f"Epic for {epic_name}\n\n"
-                    f"This epic was automatically created to group related tasks and stories."
-                )
-                
-                task_data = TaskData(
-                    project_key=board_name,
-                    summary=epic_name,
-                    description=epic_description,
-                    task_type="Epic",
-                )
-                issue = self.jira_repository.create_task(task_data)
-                issues = [issue]
+            issues = self.jira_repository.search_issues(jql, max_results=20)
 
-            return len(issues) > 0, issues[0].key if issues else None
+            matched = [
+                issue for issue in issues
+                if summaries_match(issue.fields.summary, epic_name)
+            ]
+
+            if matched:
+                return True, matched[0].key
+
+            epic_description = (
+                f"Epic for {epic_name}\n\n"
+                f"This epic was automatically created to group related tasks and stories."
+            )
+
+            task_data = TaskData(
+                project_key=board_name,
+                summary=epic_name,
+                description=epic_description,
+                task_type="Epic",
+            )
+            new_issue = self.jira_repository.create_task(task_data)
+            return True, new_issue.key
         except Exception as e:
             LOGGER.warning(f"Error validating epic '{epic_name}': {e}")
             return False, None
@@ -2467,6 +2585,30 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             return "To Do"
 
         return jira_status
+
+    def _find_pm_board_key_from_links(
+        self,
+        developer_board_issue_key: str,
+    ) -> Optional[str]:
+        """Find the PM Board issue key from issue links.
+
+        Args:
+            developer_board_issue_key: Developer board issue key
+
+        Returns:
+            PM Board issue key if found via links, None otherwise
+        """
+        try:
+            links = self.jira_repository.get_issue_links(developer_board_issue_key)
+            pm_project = self.pm_project_key
+            for link in links:
+                for direction in ("outwardIssue", "inwardIssue"):
+                    linked = link.get(direction)
+                    if linked and linked["key"].startswith(f"{pm_project}-"):
+                        return linked["key"]
+        except Exception:
+            pass
+        return None
 
     def _link_issues(self, pm_board_issue_key: str, developer_board_issue_key: str):
         """Link PM Board and Developer Board issues.
@@ -3010,7 +3152,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
         parent_issue_key: str,
         assignees: List[str],
         feature: SynthPMFeatureEntity,
-        sprint_info: SprintInfo,
+        sprint: Optional[Dict[str, Any]] = None,
         dates: Optional[Dict[str, str]] = None,
     ) -> List[str]:
         """Create subtasks for each assignee with dependency handling.
@@ -3019,7 +3161,7 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             parent_issue_key: Parent story issue key
             assignees: List of assignee usernames
             feature: Feature entity containing task details
-            sprint_info: Sprint information
+            sprint: Sprint dict (id/name/state) for the parent story.
             dates: Due dates for subtasks
 
         Returns:
@@ -3131,6 +3273,20 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                     story_points=story_points / 8 if story_points and story_points > 0 else None,
                     reporter=reporter,
                 )
+
+                existing_subtask_key = self._find_existing_issue(
+                    feature.task_title,
+                    project_key,
+                    issue_type="Sub-task",
+                    parent_key=parent_issue_key,
+                )
+                if existing_subtask_key:
+                    LOGGER.info(
+                        f"Subtask already exists for '{feature.task_title}' "
+                        f"under {parent_issue_key}: {existing_subtask_key}",
+                    )
+                    created_subtasks[component] = existing_subtask_key
+                    continue
 
                 subtask_issue = self.jira_repository.create_task(subtask_data)
                 created_subtasks[component] = subtask_issue.key
@@ -3580,6 +3736,19 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 target_end=dates.get("target_end"),
                 releases=releases if releases else None,
             )
+
+            existing_key = self._find_existing_issue(
+                feature.task_title,
+                self.developer_board_project_key,
+                issue_type="Sub-task",
+                parent_key=parent_issue_key,
+            )
+            if existing_key:
+                LOGGER.info(
+                    f"Subtask already exists for '{feature.task_title}' "
+                    f"under {parent_issue_key}: {existing_key}",
+                )
+                return existing_key
 
             subtask_issue = self.jira_repository.create_task(subtask_data)
             if subtask_issue:
@@ -4381,7 +4550,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
             jql = build_jql_summary_search(
                 project_key, release_name, issue_type="Story", exact=True,
             )
+            LOGGER.debug(f"Searching for existing story with JQL: {jql}")
             issues = self.jira_repository.search_issues(jql, max_results=20)
+
+            if not issues:
+                LOGGER.debug(f"No stories found via JQL for release '{release_name}'")
+                return None
+
+            LOGGER.debug(
+                f"JQL returned {len(issues)} candidate(s) for "
+                f"release '{release_name}': {[i.key for i in issues]}",
+            )
 
             if not issues:
                 return None
@@ -4507,6 +4686,17 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 project_key,
             )
             
+            existing_key = self._find_existing_issue(
+                release_name,
+                project_key,
+                issue_type="Story",
+            )
+            if existing_key:
+                LOGGER.info(
+                    f"Release story already exists for '{release_name}': {existing_key}",
+                )
+                return existing_key
+
             # Create the story issue
             story_issue = self.jira_repository.create_task(story_data)
             LOGGER.info(
@@ -4650,8 +4840,6 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 and self.project_config.boards.pm_board.enabled
             )
             labels = None
-            if pm_board_enabled and feature.jira_issue_key:
-                labels = [f"PM-{feature.jira_issue_key}"]
             
             subtask_data = TaskData(
                 project_key=self.developer_board_project_key,
@@ -4676,6 +4864,23 @@ class SynthPMRepository(SynthPMRepositoryInterface):
                 self.developer_board_project_key,
             )
             
+            existing_key = self._find_existing_issue(
+                feature.task_title,
+                self.developer_board_project_key,
+                issue_type="Sub-task",
+                parent_key=parent_story_key,
+            )
+            if existing_key:
+                LOGGER.info(
+                    f"Release subtask already exists for '{feature.task_title}' "
+                    f"under {parent_story_key}: {existing_key}",
+                )
+                await self.update_developer_board_feature(
+                    feature.sheet_row_number,
+                    {"developer_board_issue_key": existing_key},
+                )
+                return existing_key
+
             subtask_issue = self.jira_repository.create_task(subtask_data)
             LOGGER.info(
                 f"Created subtask {self.jira_repository.get_issue_url_by_key(subtask_issue.key)} "

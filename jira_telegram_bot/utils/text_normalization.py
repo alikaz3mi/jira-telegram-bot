@@ -64,35 +64,31 @@ def build_jql_summary_search(
 ) -> str:
     """Build a JQL query for finding issues by summary.
 
-    When ``exact=True`` the query uses ``summary = "..."`` for a
-    strict string comparison (recommended for story/epic lookups).
-    When ``exact=False`` the summary is normalised and the query
-    uses ``summary ~ "..."`` for Lucene full-text search.
+    Always uses ``summary ~ "..."`` (Lucene full-text) for the JQL
+    query because Jira Server's ``summary =`` operator is unreliable
+    with Persian / Arabic text.  The ``exact`` parameter is a hint
+    for callers: when True, callers should post-filter results with
+    ``summaries_match`` for a byte-level comparison.
 
     Args:
         project_key: Jira project key (e.g. ``PARSCHAT``).
         summary: Human-readable summary to search for.
         issue_type: Optional issue type filter (e.g. ``Story``).
-        exact: Use ``summary =`` instead of ``summary ~``.
+        exact: Hint that caller will post-filter for exact match.
 
     Returns:
         Ready-to-use JQL string.
     """
-    if exact:
-        escaped = escape_jql_string(summary)
-        operator = "="
-    else:
-        normalised = normalize_persian_text(summary)
-        escaped = escape_jql_string(normalised)
-        operator = "~"
+    normalised = normalize_persian_text(summary)
+    escaped = escape_jql_string(normalised)
 
     if issue_type:
         jql = (
             f'project = "{project_key}" AND issuetype = {issue_type} '
-            f'AND summary {operator} "{escaped}"'
+            f'AND summary ~ "{escaped}"'
         )
     else:
-        jql = f'project = "{project_key}" AND summary {operator} "{escaped}"'
+        jql = f'project = "{project_key}" AND summary ~ "{escaped}"'
     return jql
 
 

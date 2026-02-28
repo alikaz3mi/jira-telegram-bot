@@ -710,6 +710,8 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
             "priority": {"name": issue.fields.priority.name},
         }
 
+        if issue.fields.reporter:
+            fields["reporter"] = {"name": issue.fields.reporter.name}
         if issue.fields.assignee:
             fields["assignee"] = {"name": issue.fields.assignee.name}
         if issue.fields.components:
@@ -731,22 +733,87 @@ class JiraServerRepository(TaskManagerRepositoryInterface):
         return fields
 
     def _migrate_worklogs(self, source_key: str, target_key: str) -> None:
-        """Copy all worklogs from one issue to another.
+        """Copy all worklogs from one issue to another, preserving author.
+
+        Tries the REST API first so that the original worklog author is
+        retained (requires Jira admin / project-admin permissions).
+        Falls back to ``jira.add_worklog`` if the REST call is rejected.
 
         Args:
             source_key: Issue key to read worklogs from.
             target_key: Issue key to write worklogs to.
         """
         try:
-            for worklog in self.jira.worklogs(source_key):
-                self.jira.add_worklog(
-                    target_key,
-                    timeSpent=worklog.timeSpent,
-                    comment=getattr(worklog, "comment", None) or "",
-                    started=worklog.started,
+            worklogs = self.jira.worklogs(source_key)
+            if not worklogs:
+                return
+
+            server = self.jira._options["server"]
+
+            for worklog in worklogs:
+                author_name = getattr(
+                    getattr(worklog, "author", None), "name", None,
                 )
+                comment_text = getattr(worklog, "comment", None) or ""
+
+                migrated = self._add_worklog_via_rest(
+                    server, target_key, worklog, author_name, comment_text,
+                )
+                if not migrated:
+                    self.jira.add_worklog(
+                        target_key,
+                        timeSpent=worklog.timeSpent,
+                        comment=comment_text,
+                        started=worklog.started,
+                    )
         except Exception as e:
-            LOGGER.warning(f"Error migrating worklogs from {source_key} to {target_key}: {e}")
+            LOGGER.warning(
+                f"Error migrating worklogs from {source_key} to {target_key}: {e}",
+            )
+
+    def _add_worklog_via_rest(
+        self,
+        server: str,
+        target_key: str,
+        worklog,
+        author_name: Optional[str],
+        comment_text: str,
+    ) -> bool:
+        """Add a worklog via REST API to preserve the original author.
+
+        Args:
+            server: Jira server base URL.
+            target_key: Issue key to add the worklog to.
+            worklog: Original worklog object.
+            author_name: Original worklog author username.
+            comment_text: Worklog comment body.
+
+        Returns:
+            True if the REST call succeeded, False otherwise.
+        """
+        if not author_name:
+            return False
+        try:
+            url = (
+                f"{server}/rest/api/2/issue/{target_key}/worklog"
+                f"?notifyUsers=false&adjustEstimate=leave"
+            )
+            payload: dict = {
+                "timeSpent": worklog.timeSpent,
+                "started": worklog.started,
+                "comment": comment_text,
+                "author": {"name": author_name},
+            }
+            resp = self.jira._session.post(url, json=payload)
+            if resp.status_code in (200, 201):
+                return True
+            LOGGER.debug(
+                f"REST worklog POST for {target_key} returned "
+                f"{resp.status_code}: {resp.text[:200]}",
+            )
+        except Exception as e:
+            LOGGER.debug(f"REST worklog POST failed for {target_key}: {e}")
+        return False
 
     def _migrate_comments(self, source_key: str, target_key: str) -> None:
         """Copy all comments from one issue to another.

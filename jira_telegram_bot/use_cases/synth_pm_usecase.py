@@ -411,10 +411,17 @@ class SynthPMUseCase:
             
             valid_features = []
             for feature in features:
-                is_valid, error_message = self.repository.validate_feature_for_task_creation(
-                    feature,
-                    minimum_status=minimum_status,
-                )
+                has_existing_task = bool(feature.developer_board_issue_key)
+                if has_existing_task:
+                    is_valid, error_message = self.repository.validate_feature_for_update(
+                        feature,
+                        minimum_status=minimum_status,
+                    )
+                else:
+                    is_valid, error_message = self.repository.validate_feature_for_task_creation(
+                        feature,
+                        minimum_status=minimum_status,
+                    )
                 if is_valid:
                     valid_features.append(feature)
                 else:
@@ -806,14 +813,23 @@ class SynthPMUseCase:
                 LOGGER.debug(f"Row {feature.row_number}: Empty row, skipping")
                 return
 
-            # Validate feature meets minimum requirements for task creation
+            # Validate feature meets minimum requirements
             project_config = self.repository.project_config
             minimum_status = project_config.sync_settings.minimum_status_for_task_creation
             
-            is_valid, error_message = self.repository.validate_feature_for_task_creation(
-                feature,
-                minimum_status=minimum_status,
+            has_existing_task = bool(
+                feature.jira_issue_key and feature.developer_board_issue_key
             )
+            if has_existing_task:
+                is_valid, error_message = self.repository.validate_feature_for_update(
+                    feature,
+                    minimum_status=minimum_status,
+                )
+            else:
+                is_valid, error_message = self.repository.validate_feature_for_task_creation(
+                    feature,
+                    minimum_status=minimum_status,
+                )
 
             if not is_valid:
                 LOGGER.warning(error_message)

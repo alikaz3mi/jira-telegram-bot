@@ -130,21 +130,21 @@ class TestBuildJqlSummarySearch(unittest.TestCase):
         self.assertIn('project = "BOARD"', jql)
         self.assertIn('summary ~ "My Epic"', jql)
 
-    def test_exact_match_uses_equals_operator(self):
+    def test_exact_match_uses_fuzzy_operator(self):
         jql = build_jql_summary_search("PROJ", "exact title", exact=True)
-        self.assertIn('summary = "exact title"', jql)
-        self.assertNotIn("summary ~", jql)
+        self.assertIn('summary ~ "exact title"', jql)
 
     def test_exact_match_with_issue_type(self):
         jql = build_jql_summary_search(
             "PROJ", "My Story", issue_type="Story", exact=True,
         )
         self.assertIn("issuetype = Story", jql)
-        self.assertIn('summary = "My Story"', jql)
+        self.assertIn('summary ~ "My Story"', jql)
 
-    def test_exact_match_preserves_zwnj(self):
+    def test_exact_match_normalises_persian_text(self):
         jql = build_jql_summary_search("PROJ", "پیاده\u200cسازی", exact=True)
-        self.assertIn("\u200c", jql)
+        self.assertNotIn("\u200c", jql)
+        self.assertIn("پیادهسازی", jql)
 
     def test_exact_match_escapes_quotes(self):
         jql = build_jql_summary_search("PROJ", 'say "hi"', exact=True)

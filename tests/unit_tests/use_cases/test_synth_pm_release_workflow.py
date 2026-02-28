@@ -52,6 +52,7 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.repository.update_story_from_subtasks = AsyncMock(return_value=True)
         self.repository.update_release_note = AsyncMock(return_value=True)
         self.repository.link_story_dependencies = AsyncMock(return_value=None)
+        self.repository.validate_feature_for_update = MagicMock(return_value=(True, None))
         self.repository.jira_repository = MagicMock()
         self.repository.jira_repository.get_issue = MagicMock(return_value=None)
         
@@ -504,6 +505,11 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.repository.update_jira_task_description = AsyncMock()
         self.repository.jira_repository.delete_issue = MagicMock()
         
+        # Conversion returns same key (no recreation)
+        self.repository.convert_existing_task_to_subtask = AsyncMock(
+            side_effect=lambda issue_key, parent_story_key: issue_key
+        )
+        
         # Mock update methods
         self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
         
@@ -580,6 +586,11 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.repository.jira_repository.delete_issue = MagicMock()
         self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
         
+        # Conversion returns same key (no recreation)
+        self.repository.convert_existing_task_to_subtask = AsyncMock(
+            side_effect=lambda issue_key, parent_story_key: issue_key
+        )
+        
         # Mock user config
         self.user_config.get_all_user_configs.return_value = {}
         
@@ -638,6 +649,11 @@ class TestReleaseBasedWorkflow(unittest.IsolatedAsyncioTestCase):
         self.repository.get_story_by_release_name = AsyncMock(return_value="DEV-100")
         self.repository.update_jira_task_description = AsyncMock()
         self.repository.update_developer_board_task_from_feature = AsyncMock(return_value=True)
+        
+        # Conversion returns same key (no recreation)
+        self.repository.convert_existing_task_to_subtask = AsyncMock(
+            side_effect=lambda issue_key, parent_story_key: issue_key
+        )
         
         # Mock deletion failure
         self.repository.jira_repository.delete_issue = MagicMock(
@@ -700,6 +716,7 @@ class TestReleaseWorkflowIntegration(unittest.IsolatedAsyncioTestCase):
         self.repository.update_story_from_subtasks = AsyncMock(return_value=True)
         self.repository.update_release_note = AsyncMock(return_value=True)
         self.repository.link_story_dependencies = AsyncMock(return_value=None)
+        self.repository.validate_feature_for_update = MagicMock(return_value=(True, None))
         self.repository.jira_repository = MagicMock()
         self.repository.jira_repository.get_issue = MagicMock(return_value=None)
         

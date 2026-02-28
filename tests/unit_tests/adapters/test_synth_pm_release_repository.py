@@ -65,6 +65,12 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
                     sheet_name="Test Sheet",
                     data_range="A2:AY",
                 ),
+                pm_board=BoardConfig(
+                    jira_board_key="PM",
+                    sheet_name="PM Sheet",
+                    data_range="A2:AY",
+                    enabled=True,
+                ),
             ),
             telegram=TelegramConfig(
                 bot_token_env="TEST_BOT_TOKEN",
@@ -80,6 +86,7 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
         
         # Mock board IDs
         self.jira_repository.get_board_id.return_value = 123
+        self.jira_repository.jira_sprint_id = "customfield_10020"
         
         # Create repository
         self.repository = SynthPMRepository(
@@ -92,9 +99,9 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_story_by_release_name_found(self):
         """Test finding existing story by release name."""
-        # Mock Jira search
         mock_issue = MagicMock()
         mock_issue.key = "DEV-100"
+        mock_issue.fields.summary = "Version 2.5.0"
         self.jira_repository.search_issues.return_value = [mock_issue]
         
         result = await self.repository.get_story_by_release_name("Version 2.5.0")
@@ -178,9 +185,8 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
         task_data = call_args[0][0]
         self.assertEqual(task_data.task_type, "Story")
         self.assertIn("Version 2.5.0", task_data.summary)
-        self.assertIn("Feature A", task_data.description)
-        self.assertIn("Feature B", task_data.description)
-        self.assertIn("70.0h", task_data.description)  # Total hours
+        # No release_note passed, so description is empty
+        self.assertEqual(task_data.description, "")
 
     async def test_create_release_story_empty_features(self):
         """Test creating story with empty features list."""
@@ -249,6 +255,12 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
         )
         self.repository._map_components = MagicMock(return_value=["Backend"])
         self.repository._map_priority = MagicMock(return_value="High")
+        self.repository._create_release_not_exist = MagicMock()
+        
+        # Mock parent story for sprint inheritance
+        mock_parent = MagicMock()
+        mock_parent.fields.customfield_10020 = None
+        self.jira_repository.get_issue.return_value = mock_parent
         
         # Mock task creation
         mock_issue = MagicMock()
@@ -286,7 +298,7 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
         self.repository.update_developer_board_feature.assert_awaited_once()
 
     async def test_create_subtask_for_release_multiple_assignees(self):
-        """Test subtask creation with multiple assignees."""
+        """Test subtask creation with multiple assignees uses first assignee."""
         feature = create_test_feature(
             task_title="Complex feature",
             jira_issue_key="PM-101",
@@ -300,17 +312,18 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
         )
         self.repository._map_components = MagicMock(return_value=["Backend", "Frontend"])
         self.repository._map_priority = MagicMock(return_value="High")
+        self.repository._create_release_not_exist = MagicMock()
+        
+        # Mock parent story for sprint inheritance
+        mock_parent = MagicMock()
+        mock_parent.fields.customfield_10020 = None
+        self.jira_repository.get_issue.return_value = mock_parent
         
         # Mock task creation
         mock_issue = MagicMock()
         mock_issue.key = "DEV-101"
         self.jira_repository.create_task.return_value = mock_issue
         self.jira_repository.get_issue_url_by_key.return_value = "http://jira/DEV-101"
-        
-        # Mock subtask creation for assignees
-        self.repository._create_subtasks_for_assignees = AsyncMock(
-            return_value=["DEV-102", "DEV-103"]
-        )
         
         # Mock link and update
         self.repository._link_issues = MagicMock()
@@ -324,14 +337,11 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
         
         self.assertEqual(result, "DEV-101")
         
-        # Verify nested subtasks created
-        self.repository._create_subtasks_for_assignees.assert_awaited_once()
-        
-        # Verify no direct assignee on parent subtask
+        # First assignee is used, all assignees listed in description
         call_args = self.jira_repository.create_task.call_args
         task_data = call_args[0][0]
-        self.assertIsNone(task_data.assignee)
-        self.assertIsNone(task_data.story_points)
+        self.assertEqual(task_data.assignee, "john.doe")
+        self.assertIn("jane.smith", task_data.description)
 
     async def test_create_subtask_for_release_no_pm_task(self):
         """Test subtask creation when PM task doesn't exist yet."""
@@ -344,6 +354,12 @@ class TestReleaseRepositoryMethods(unittest.IsolatedAsyncioTestCase):
         self.repository.extract_dates_from_feature_in_str = MagicMock(return_value={})
         self.repository._map_components = MagicMock(return_value=[])
         self.repository._map_priority = MagicMock(return_value="Medium")
+        self.repository._create_release_not_exist = MagicMock()
+        
+        # Mock parent story for sprint inheritance
+        mock_parent = MagicMock()
+        mock_parent.fields.customfield_10020 = None
+        self.jira_repository.get_issue.return_value = mock_parent
         
         # Mock task creation
         mock_issue = MagicMock()

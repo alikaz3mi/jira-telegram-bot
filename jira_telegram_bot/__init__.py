@@ -8,7 +8,7 @@ from chromatrace import LoggingSettings
 
 from jira_telegram_bot.utils.basic_logger import loguru_logger
 
-__version__ = "2.40.89"
+__version__ = "2.40.92"
 __name__ = "jira_telegram_bot"
 
 
