@@ -5,11 +5,13 @@ from typing import Dict
 from typing import List
 
 import yaml
-from langchain.output_parsers import StructuredOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.adapters.ai_models.structured_output import (
+    StructuredOutputParser,
+)
 from jira_telegram_bot.settings.openai_settings import OpenAISettings
 
 
@@ -66,8 +68,8 @@ def parse_jira_prompt(content: str) -> Dict[str, str]:
         format_instructions = parser.get_format_instructions()
 
         llm = ChatOpenAI(
-            model_name=config.get("model_hint", "gpt-4o-mini"),
-            openai_api_key=settings.token,
+            model=config.get("model_hint", "gpt-4o-mini"),
+            api_key=settings.token,
             temperature=config.get("temperature", 0.2),
         )
 

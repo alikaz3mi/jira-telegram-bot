@@ -4,8 +4,9 @@ from collections import defaultdict
 from typing import Dict
 from typing import List
 
-from langchain import LLMChain
-from langchain import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import Runnable
 from langchain_openai import ChatOpenAI
 
 from jira_telegram_bot.entities.task import TaskData
@@ -31,7 +32,7 @@ class TaskGrouper(ITaskGrouper):
 
 
 class SummaryGenerator(ISummaryGenerator):
-    def __init__(self, llm_chain: LLMChain):
+    def __init__(self, llm_chain: Runnable):
         self.llm_chain = llm_chain
 
     def generate_summary(
@@ -53,14 +54,14 @@ class SummaryGenerator(ISummaryGenerator):
                 component_summary += epic_summary
             summaries.append(component_summary)
         final_summary = "\n".join(summaries)
-        response = self.llm_chain.run(final_summary)
+        response = self.llm_chain.invoke({"grouped_tasks": final_summary})
         return response
 
 
 class TaskProcessor:
     def __init__(
         self,
-        llm_chain: LLMChain,
+        llm_chain: Runnable,
         grouper: ITaskGrouper = None,
         generator: ISummaryGenerator = None,
     ):
@@ -74,7 +75,7 @@ class TaskProcessor:
 
 
 def create_llm_chain(settings):
-    llm = ChatOpenAI(model_name="o3-mini", openai_api_key=settings.token)
+    llm = ChatOpenAI(model="o3-mini", api_key=settings.token)
     prompt = PromptTemplate(
         input_variables=["grouped_tasks"],
         template="""
@@ -154,5 +155,5 @@ Edit
 ✅ نتیجه‌گیری کلی:
 [چکیده‌ای از همکاری بین گروه‌ها و دستاورد نهایی] """,
     )
-    llm_chain = LLMChain(llm=llm, prompt=prompt)
+    llm_chain = prompt | llm | StrOutputParser()
     return llm_chain

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Dict
 
-from langchain.output_parsers import ResponseSchema
-from langchain.output_parsers import StructuredOutputParser
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
+from jira_telegram_bot.adapters.ai_models.structured_output import (
+    StructuredOutputParser,
+)
 from jira_telegram_bot.use_cases.interfaces.llm_model_interface import (
     LLMModelInterface,
 )
@@ -22,13 +23,13 @@ class ParseJiraPromptUseCase:
 
     def run(self, content: str) -> Dict[str, str]:
         schema = [
-            ResponseSchema(
-                name="task_info",
-                description=(
+            {
+                "name": "task_info",
+                "description": (
                     "A JSON object containing summary, task_type, label, and description fields."
                 ),
-                type="json",
-            ),
+                "type": "json",
+            },
         ]
         parser = StructuredOutputParser.from_response_schemas(schema)
         format_instructions = parser.get_format_instructions()

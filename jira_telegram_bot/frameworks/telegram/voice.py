@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from langchain import LLMChain
-from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
 from telegram import InlineKeyboardButton
 from telegram import InlineKeyboardMarkup
 from telegram import Update
@@ -64,7 +64,7 @@ class VoiceReportHandler(TaskHandlerInterface):
         self.jira_repo = jira_repo
         self.openai = openai_gateway
 
-        # Create an LLMChain for final formal Farsi summarization.
+        # Runnable chain for the final formal Farsi summarization.
         # We'll use the same 'o3-mini' or a different model if needed.
         # The prompt is just an example. Adjust to suit your needs.
         self.summary_prompt = PromptTemplate(
@@ -82,9 +82,8 @@ class VoiceReportHandler(TaskHandlerInterface):
 گزارش نهایی را کاملاً فارسی و رسمی بنویسید.
             """,
         )
-        self.summary_chain = LLMChain(
-            llm=self.openai.get_llm(),
-            prompt=self.summary_prompt,
+        self.summary_chain = (
+            self.summary_prompt | self.openai.get_llm() | StrOutputParser()
         )
 
     def get_handler(self):
@@ -284,9 +283,11 @@ class VoiceReportHandler(TaskHandlerInterface):
             task_list_str = "\n".join(tasks_formatted)
 
             # Run the final LLM summarization
-            final_persian_report = self.summary_chain.run(
-                transcribed_text=transcribed_text,
-                task_list=task_list_str,
+            final_persian_report = self.summary_chain.invoke(
+                {
+                    "transcribed_text": transcribed_text,
+                    "task_list": task_list_str,
+                },
             )
 
             # Post the final text to each selected task as a comment

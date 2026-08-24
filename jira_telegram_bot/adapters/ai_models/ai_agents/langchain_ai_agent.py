@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Any
 from typing import Dict
 
-from langchain.output_parsers import ResponseSchema
-from langchain.output_parsers import StructuredOutputParser
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
+from jira_telegram_bot.adapters.ai_models.structured_output import (
+    StructuredOutputParser,
+)
 from jira_telegram_bot.adapters.ai_models.utils import llm_result_correction_chain
 from jira_telegram_bot.entities.structured_prompt import StructuredPrompt
 from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
@@ -27,9 +28,7 @@ class LangChainAiService(AIServiceProtocol):
     ) -> Dict[str, Any]:
         # TODO: get a model with the least used RPM and RPD. Or, that has at least 10% of the max RPM and RPD
         model = self.model_registry[prompt.ai_model_engine, prompt.ai_model_hint]
-        parser = StructuredOutputParser.from_response_schemas(
-            [ResponseSchema(**schema) for schema in prompt.schemas],
-        )
+        parser = StructuredOutputParser.from_response_schemas(prompt.schemas)
         tmpl = PromptTemplate(
             template=prompt.template,
             input_variables=prompt.input_variables,
