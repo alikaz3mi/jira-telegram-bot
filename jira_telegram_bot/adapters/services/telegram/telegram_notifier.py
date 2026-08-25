@@ -25,7 +25,7 @@ class TelegramNotifier(TelegramNotifierInterface):
     ):
         self.telegram_settings = telegram_settings
         self.user_config_repository = user_config_repository
-        self.base_url = f"https://api.telegram.org/bot{telegram_settings.TOKEN}"
+        self.base_url = f"https://api.telegram.org/bot{telegram_settings.HOOK_TOKEN}"
     
     async def send_personal_notification(
         self,

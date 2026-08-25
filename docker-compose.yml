@@ -114,3 +114,21 @@ services:
   #   networks:
   #     - jira-bot-network
 
+  daily-task-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: daily_task_tracker
+    image: jira_telegram_bot:v3
+    volumes:
+      - .:/app
+    command: >
+      python3 scripts/run_daily_task_tracker.py
+    restart: always
+    environment:
+      - DAILY_TASK_TRACKER_ENABLED=true
+      - DAILY_TASK_TRACKER_CRON_SCHEDULE=0 9 * * *
+      - DAILY_TASK_TRACKER_TIMEZONE=Asia/Tehran
+      - DAILY_TASK_TRACKER_EXCLUDE_WEEKENDS=true
+      - DAILY_TASK_TRACKER_EXCLUDE_HOLIDAYS=true
+
