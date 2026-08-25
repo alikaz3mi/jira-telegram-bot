@@ -171,7 +171,7 @@ def setup_and_run():
     application.add_handler(
         CallbackQueryHandler(
             daily_task_tracking_handler.handle_callback,
-            pattern=r"^(delay_|hours_|worklog_|skip_task|request_subtasks)"
+            pattern=r"^(delay_|hours_|worklog_|skip_task|request_subtasks|wlpick_|wlconfirm|wlcancel)"
         )
     )
     

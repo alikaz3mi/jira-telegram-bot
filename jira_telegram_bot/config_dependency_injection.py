@@ -259,9 +259,6 @@ from jira_telegram_bot.adapters.repositories.task_story_repository import (
 from jira_telegram_bot.use_cases.telegram_commands.get_current_stories import (
     GetCurrentStoriesUseCase,
 )
-from jira_telegram_bot.use_cases.telegram_commands.daily_task_status import (
-    DailyTaskStatus,
-)
 from jira_telegram_bot.use_cases.webhooks import JiraWebhookUseCase
 from jira_telegram_bot.use_cases.webhooks import TelegramWebhookUseCase
 from jira_telegram_bot.entities.bugs_synchronization import BugImprovementSyncConfig
@@ -927,14 +924,6 @@ def configure_team_evaluation_dependencies(container: Container):
         ),
     )
 
-    # Daily task status use case
-    container[DailyTaskStatus] = Singleton(
-        lambda c: DailyTaskStatus(
-            jira_repository=c[TaskManagerRepositoryInterface],
-            user_config=c[UserConfigInterface],
-        ),
-    )
-
     # Override JiraWebhookController to include sprint handler
     container[JiraWebhookController] = Singleton(
         lambda c: JiraWebhookController(
@@ -1059,6 +1048,9 @@ def _configure_daily_task_tracking(container: Container):
             request_subtask_creation_use_case=c[RequestSubtaskCreationUseCase],
             user_config_repository=c[UserConfigInterface],
             queue_manager=c[DailyTaskQueueManager],
+            parse_worklog_report_use_case=c[ParseWorklogReportUseCase],
+            confirm_worklog_report_use_case=c[ConfirmWorklogReportUseCase],
+            get_user_daily_tasks_use_case=c[GetUserDailyTasksUseCase],
         )
     )
 

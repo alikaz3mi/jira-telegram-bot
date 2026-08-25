@@ -112,3 +112,22 @@ DAILY_CHECK_COMPLETE = """
 DAILY_TASK_CHECK_TITLE = "بررسی روزانه تسک‌ها"
 THANK_YOU = "متشکریم!"
 ERROR_MESSAGE = "❌ خطا رخ داد"
+
+# ── free-text worklog reporting ──────────────────────
+WORKLOG_PARSING = "⏳ در حال بررسی گزارش شما..."
+WORKLOG_NO_TASKS = "❌ تسک بازی برای شما پیدا نشد."
+WORKLOG_NOT_UNDERSTOOD = (
+    "متوجه نشدم چقدر و روی چه کاری وقت گذاشتید.\n"
+    "مثال: «امروز ۳ ساعت روی رفع باگ ورود کار کردم»"
+)
+WORKLOG_CONFIRM_HEADER = "📝 این موارد را ثبت کنم؟"
+WORKLOG_CONFIRM_LINE = "• {hours} ساعت — {issue_key}: {summary}"
+WORKLOG_CONFIRM_BUTTON = "✅ ثبت کن"
+WORKLOG_CANCEL_BUTTON = "❌ لغو"
+WORKLOG_CANCELLED = "لغو شد. چیزی ثبت نشد."
+WORKLOG_SAVED_HEADER = "✅ ثبت شد:"
+WORKLOG_SAVED_LINE = "• {hours} ساعت روی {issue_key}"
+WORKLOG_SAVE_FAILED_LINE = "• ❌ {issue_key} ثبت نشد"
+WORKLOG_OTHER_TASK_BUTTON = "🔍 تسک دیگر"
+WORKLOG_SKIP_SPLIT_BUTTON = "⏭ رد کن"
+WORKLOG_SPLIT_SKIPPED = "این مورد ثبت نشد."

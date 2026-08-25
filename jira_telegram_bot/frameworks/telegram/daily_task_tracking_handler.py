@@ -24,6 +24,18 @@ from jira_telegram_bot.use_cases.daily_task_tracking.record_worklog_use_case imp
 from jira_telegram_bot.use_cases.daily_task_tracking.request_subtask_creation_use_case import (
     RequestSubtaskCreationUseCase,
 )
+from jira_telegram_bot.use_cases.daily_task_tracking.parse_worklog_report_use_case import (
+    ParseWorklogReportUseCase,
+)
+from jira_telegram_bot.use_cases.daily_task_tracking.confirm_worklog_report_use_case import (
+    ConfirmWorklogReportUseCase,
+)
+from jira_telegram_bot.use_cases.daily_task_tracking.get_user_daily_tasks_use_case import (
+    GetUserDailyTasksUseCase,
+)
+from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
+    WorklogSplitStatus,
+)
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
@@ -42,6 +54,7 @@ class DailyTaskTrackingHandler:
 
     WAITING_CUSTOM_HOURS = "waiting_custom_hours"
     WAITING_CUSTOM_DELAY = "waiting_custom_delay"
+    PENDING_REPORT = "pending_worklog_report"
 
     def __init__(
         self,
@@ -51,6 +64,9 @@ class DailyTaskTrackingHandler:
         request_subtask_creation_use_case: RequestSubtaskCreationUseCase,
         user_config_repository: UserConfigInterface,
         queue_manager: DailyTaskQueueManager,
+        parse_worklog_report_use_case: ParseWorklogReportUseCase = None,
+        confirm_worklog_report_use_case: ConfirmWorklogReportUseCase = None,
+        get_user_daily_tasks_use_case: GetUserDailyTasksUseCase = None,
     ):
         """Initialize the handler.
 
@@ -61,6 +77,9 @@ class DailyTaskTrackingHandler:
             request_subtask_creation_use_case: Use case for subtask requests
             user_config_repository: Repository for user config
             queue_manager: Task queue manager
+            parse_worklog_report_use_case: Parses a free-text work report
+            confirm_worklog_report_use_case: Decides what must be confirmed
+            get_user_daily_tasks_use_case: Supplies the issues to match against
         """
         self.record_delay = record_delay_reason_use_case
         self.record_time = record_time_spent_use_case
@@ -68,6 +87,9 @@ class DailyTaskTrackingHandler:
         self.request_subtask = request_subtask_creation_use_case
         self.user_config_repository = user_config_repository
         self.queue_manager = queue_manager
+        self.parse_worklog_report = parse_worklog_report_use_case
+        self.confirm_worklog_report = confirm_worklog_report_use_case
+        self.get_user_daily_tasks = get_user_daily_tasks_use_case
         self.task_sender = None  # Will be set by SendDailyTaskRemindersUseCase
 
     def create_delay_reason_keyboard(self) -> InlineKeyboardMarkup:
@@ -215,6 +237,16 @@ class DailyTaskTrackingHandler:
             elif data == "request_subtasks":
                 LOGGER.info("Processing subtask request")
                 await self._handle_subtask_request(query, context)
+            elif data.startswith("wlpick_"):
+                LOGGER.info("Processing worklog disambiguation")
+                await self._handle_worklog_pick(query, context, data)
+            elif data == "wlconfirm":
+                LOGGER.info("Processing worklog confirmation")
+                await self._handle_worklog_confirm(query, context)
+            elif data == "wlcancel":
+                LOGGER.info("Processing worklog cancellation")
+                context.user_data.pop(self.PENDING_REPORT, None)
+                await query.edit_message_text(persian_messages.WORKLOG_CANCELLED)
             elif data == "skip_task":
                 LOGGER.info("Processing skip task")
                 await query.edit_message_text(persian_messages.TASK_SKIPPED)
@@ -458,6 +490,9 @@ class DailyTaskTrackingHandler:
             await self._handle_custom_hours(update, context)
         elif state == self.WAITING_CUSTOM_DELAY:
             await self._handle_custom_delay(update, context)
+        else:
+            # Anything else is read as a free-text report of the day's work.
+            await self._handle_worklog_report(update, context)
 
     async def _handle_custom_hours(
         self,
@@ -574,6 +609,213 @@ class DailyTaskTrackingHandler:
             
             # Send next task
             await self._send_next_task_for_user(chat_id)
+
+    async def _handle_worklog_report(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> None:
+        """Read a free-text report of the day's work and offer to log it.
+
+        Args:
+            update: Telegram update
+            context: Callback context
+        """
+        if not (self.parse_worklog_report and self.confirm_worklog_report
+                and self.get_user_daily_tasks):
+            return
+
+        text = (update.message.text or "").strip()
+        if not text:
+            return
+
+        user_config = self.user_config_repository.get_user_config(
+            update.effective_user.username,
+        )
+        if not user_config:
+            return
+
+        notice = await update.message.reply_text(persian_messages.WORKLOG_PARSING)
+
+        try:
+            candidates = await self.get_user_daily_tasks.execute(
+                jira_username=user_config.jira_username,
+            )
+            if not candidates:
+                await notice.edit_text(persian_messages.WORKLOG_NO_TASKS)
+                return
+
+            report = await self.parse_worklog_report.execute(text, candidates)
+            if not report.splits:
+                await notice.edit_text(persian_messages.WORKLOG_NOT_UNDERSTOOD)
+                return
+
+            confirmation = self.confirm_worklog_report.execute(report, candidates)
+        except Exception as exc:
+            LOGGER.error(f"Failed to parse worklog report: {exc}", exc_info=True)
+            await notice.edit_text(persian_messages.ERROR_MESSAGE)
+            return
+
+        context.user_data[self.PENDING_REPORT] = {
+            "report": report,
+            "candidates": {task.issue_key: task.summary for task in candidates},
+            "candidate_objects": list(candidates),
+        }
+        await self._prompt_next_worklog_step(notice.edit_text, context, confirmation)
+
+    async def _prompt_next_worklog_step(
+        self,
+        send,
+        context: CallbackContext,
+        confirmation,
+    ) -> None:
+        """Ask the next outstanding question, or offer the final confirmation.
+
+        Args:
+            send: Coroutine function that renders text plus a keyboard
+            context: Callback context
+            confirmation: Result of the confirmation use case
+        """
+        if confirmation.questions:
+            question = confirmation.questions[0]
+            buttons = [
+                [InlineKeyboardButton(
+                    option.label,
+                    callback_data=f"wlpick_{question.split_index}_{option.issue_key}",
+                )]
+                for option in question.options
+            ]
+            buttons.append([InlineKeyboardButton(
+                persian_messages.WORKLOG_SKIP_SPLIT_BUTTON,
+                callback_data=f"wlpick_{question.split_index}_skip",
+            )])
+            await send(question.text, reply_markup=InlineKeyboardMarkup(buttons))
+            return
+
+        report = confirmation.report
+        summaries = context.user_data[self.PENDING_REPORT]["candidates"]
+        lines = [persian_messages.WORKLOG_CONFIRM_HEADER]
+        for split in report.splits:
+            if not split.is_ready:
+                continue
+            lines.append(persian_messages.WORKLOG_CONFIRM_LINE.format(
+                hours=self._format_hours(split.hours),
+                issue_key=split.issue_key,
+                summary=summaries.get(split.issue_key, ""),
+            ))
+        if confirmation.arithmetic_warning:
+            lines.append(f"\n⚠️ {confirmation.arithmetic_warning}")
+
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                persian_messages.WORKLOG_CONFIRM_BUTTON,
+                callback_data="wlconfirm",
+            ),
+            InlineKeyboardButton(
+                persian_messages.WORKLOG_CANCEL_BUTTON,
+                callback_data="wlcancel",
+            ),
+        ]])
+        await send("\n".join(lines), reply_markup=keyboard)
+
+    async def _handle_worklog_pick(
+        self,
+        query,
+        context: CallbackContext,
+        data: str,
+    ) -> None:
+        """Apply the user's answer to one disambiguation question.
+
+        Args:
+            query: Callback query
+            context: Callback context
+            data: Callback data, ``wlpick_<split index>_<issue key or skip>``
+        """
+        pending = context.user_data.get(self.PENDING_REPORT)
+        if not pending:
+            await query.edit_message_text(persian_messages.ERROR_MESSAGE)
+            return
+
+        _, raw_index, choice = data.split("_", 2)
+        report = pending["report"]
+        try:
+            split = report.splits[int(raw_index)]
+        except (ValueError, IndexError):
+            await query.edit_message_text(persian_messages.ERROR_MESSAGE)
+            return
+
+        if choice == "skip":
+            report.splits.remove(split)
+        else:
+            split.issue_key = choice
+            split.status = WorklogSplitStatus.RESOLVED
+
+        if not report.splits:
+            context.user_data.pop(self.PENDING_REPORT, None)
+            await query.edit_message_text(persian_messages.WORKLOG_SPLIT_SKIPPED)
+            return
+
+        # Re-run confirmation so the next unresolved split is asked about.
+        confirmation = self.confirm_worklog_report.execute(
+            report, pending["candidate_objects"],
+        )
+        await self._prompt_next_worklog_step(
+            query.edit_message_text, context, confirmation,
+        )
+
+    async def _handle_worklog_confirm(
+        self,
+        query,
+        context: CallbackContext,
+    ) -> None:
+        """Write the confirmed report to Jira as one worklog per split.
+
+        Args:
+            query: Callback query
+            context: Callback context
+        """
+        pending = context.user_data.pop(self.PENDING_REPORT, None)
+        if not pending:
+            await query.edit_message_text(persian_messages.ERROR_MESSAGE)
+            return
+
+        user_config = self.user_config_repository.get_user_config(
+            query.from_user.username,
+        )
+        if not user_config:
+            await query.edit_message_text(persian_messages.ERROR_MESSAGE)
+            return
+
+        lines = [persian_messages.WORKLOG_SAVED_HEADER]
+        for split in pending["report"].splits:
+            if not split.is_ready:
+                continue
+            try:
+                await self.record_worklog.execute(
+                    issue_key=split.issue_key,
+                    jira_username=user_config.jira_username,
+                    telegram_username=query.from_user.username,
+                    hours=split.hours,
+                    comment=split.description or None,
+                )
+                lines.append(persian_messages.WORKLOG_SAVED_LINE.format(
+                    hours=self._format_hours(split.hours),
+                    issue_key=split.issue_key,
+                ))
+            except Exception as exc:
+                LOGGER.error(
+                    f"Failed to log {split.hours}h on {split.issue_key}: {exc}",
+                )
+                lines.append(persian_messages.WORKLOG_SAVE_FAILED_LINE.format(
+                    issue_key=split.issue_key,
+                ))
+
+        await query.edit_message_text("\n".join(lines))
+
+    @staticmethod
+    def _format_hours(hours: float) -> str:
+        """Render hours without a trailing ``.0`` on whole numbers."""
+        return str(int(hours)) if float(hours).is_integer() else str(round(hours, 2))
 
     async def _send_next_task_for_user(self, chat_id: int) -> None:
         """Send next task for user.
