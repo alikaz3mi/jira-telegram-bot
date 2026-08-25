@@ -291,5 +291,62 @@ class TestWorklogReportFlow(unittest.IsolatedAsyncioTestCase):
         self.assertIn(self.handler.PENDING_REPORT, self.context.user_data)
 
 
+    async def test_intent_without_detail_asks_instead_of_erroring(self):
+        """"I want to log my time" gets a prompt for the missing detail."""
+        self.classify.execute.return_value = MessageIntent.WORKLOG
+        self.parse.execute.return_value = ParsedWorklogReport(
+            raw_text="...", splits=[],
+        )
+        update = self._update("میخوام تایمی که کار کردم رو ثبت کنم")
+
+        await self.handler._handle_free_text(update, self.context)
+
+        self.assertNotIn(self.handler.PENDING_REPORT, self.context.user_data)
+        self.assertTrue(self.handler._memory(self.context).turns)
+
+    async def test_history_is_passed_to_the_parser(self):
+        """A continuation is parsed together with what came before."""
+        self.classify.execute.return_value = MessageIntent.WORKLOG
+        self.parse.execute.return_value = ParsedWorklogReport(
+            raw_text="...", splits=[],
+        )
+        self.handler._memory(self.context).remember("قبلی", "پاسخ قبلی")
+
+        await self.handler._handle_free_text(
+            self._update("۳ ساعت"), self.context,
+        )
+
+        self.assertIn(
+            "پاسخ قبلی", self.parse.execute.call_args.kwargs["history"],
+        )
+
+    async def test_history_is_passed_to_the_answerer(self):
+        """A follow-up question can see the previous answer."""
+        self.classify.execute.return_value = MessageIntent.QUESTION
+        self.answer.execute.return_value = "بله، همین دوتا."
+        self.handler._memory(self.context).remember("تسکام؟", "دو تا داری")
+
+        await self.handler._handle_free_text(
+            self._update("فقط همین دوتاست؟"), self.context,
+        )
+
+        self.assertIn(
+            "دو تا داری", self.answer.execute.call_args.kwargs["history"],
+        )
+
+    async def test_answers_are_remembered_for_the_next_turn(self):
+        """Each exchange is recorded so the next message has context."""
+        self.classify.execute.return_value = MessageIntent.QUESTION
+        self.answer.execute.return_value = "دو تا تسک داری"
+
+        await self.handler._handle_free_text(
+            self._update("تسکام چیه؟"), self.context,
+        )
+
+        turns = self.handler._memory(self.context).turns
+        self.assertEqual(turns[-1].user, "تسکام چیه؟")
+        self.assertEqual(turns[-1].assistant, "دو تا تسک داری")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -36,6 +36,9 @@ from jira_telegram_bot.use_cases.daily_task_tracking.get_user_daily_tasks_use_ca
 from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
     WorklogSplitStatus,
 )
+from jira_telegram_bot.entities.daily_task_tracking.conversation_turn import (
+    ConversationMemory,
+)
 from jira_telegram_bot.use_cases.daily_task_tracking.classify_message_intent_use_case import (
     ClassifyMessageIntentUseCase,
     MessageIntent,
@@ -62,6 +65,7 @@ class DailyTaskTrackingHandler:
     WAITING_CUSTOM_HOURS = "waiting_custom_hours"
     WAITING_CUSTOM_DELAY = "waiting_custom_delay"
     PENDING_REPORT = "pending_worklog_report"
+    MEMORY = "conversation_memory"
 
     def __init__(
         self,
@@ -622,6 +626,48 @@ class DailyTaskTrackingHandler:
             # Send next task
             await self._send_next_task_for_user(chat_id)
 
+    def _memory(self, context: CallbackContext) -> ConversationMemory:
+        """Return this chat's short-term memory, creating it on first use.
+
+        Args:
+            context: Callback context
+
+        Returns:
+            The conversation memory for this chat.
+        """
+        memory = context.user_data.get(self.MEMORY)
+        if not isinstance(memory, ConversationMemory):
+            memory = ConversationMemory()
+            context.user_data[self.MEMORY] = memory
+        return memory
+
+    async def _reply_and_remember(
+        self,
+        context: CallbackContext,
+        send,
+        user_text: str,
+        answer: str,
+        parse_mode: str = None,
+    ) -> None:
+        """Send a reply and record the exchange for the next message.
+
+        Args:
+            context: Callback context
+            send: Coroutine function that renders the reply
+            user_text: What the user wrote
+            answer: What we are replying
+            parse_mode: Telegram parse mode, if the reply carries markup
+        """
+        try:
+            if parse_mode:
+                await send(answer, parse_mode=parse_mode)
+            else:
+                await send(answer)
+        except Exception as exc:
+            LOGGER.warning(f"Formatted reply rejected, sending plain: {exc}")
+            await send(answer)
+        self._memory(context).remember(user_text, answer)
+
     async def _handle_free_text(
         self,
         update: Update,
@@ -647,7 +693,12 @@ class DailyTaskTrackingHandler:
         elif intent is MessageIntent.QUESTION:
             await self._handle_task_question(update, context, text)
         else:
-            await update.message.reply_text(persian_messages.FREE_TEXT_HELP)
+            await self._reply_and_remember(
+                context,
+                update.message.reply_text,
+                text,
+                persian_messages.FREE_TEXT_HELP,
+            )
 
     async def _handle_task_question(
         self,
@@ -677,7 +728,9 @@ class DailyTaskTrackingHandler:
             tasks = await self.get_user_daily_tasks.execute(
                 jira_username=user_config.jira_username,
             )
-            answer = await self.answer_task_question.execute(question, tasks)
+            answer = await self.answer_task_question.execute(
+                question, tasks, history=self._memory(context).render(),
+            )
         except Exception as exc:
             LOGGER.error(f"Failed to answer question: {exc}", exc_info=True)
             await notice.edit_text(persian_messages.ERROR_MESSAGE)
@@ -687,11 +740,9 @@ class DailyTaskTrackingHandler:
             await notice.edit_text(persian_messages.QUESTION_NO_ANSWER)
             return
         # The answer carries <a href> links, so it must render as HTML.
-        try:
-            await notice.edit_text(answer, parse_mode="HTML")
-        except Exception as exc:
-            LOGGER.warning(f"HTML answer rejected, sending plain: {exc}")
-            await notice.edit_text(answer)
+        await self._reply_and_remember(
+            context, notice.edit_text, question, answer, parse_mode="HTML",
+        )
 
     async def _handle_worklog_report(
         self,
@@ -728,9 +779,17 @@ class DailyTaskTrackingHandler:
                 await notice.edit_text(persian_messages.WORKLOG_NO_TASKS)
                 return
 
-            report = await self.parse_worklog_report.execute(text, candidates)
+            report = await self.parse_worklog_report.execute(
+                text, candidates, history=self._memory(context).render(),
+            )
             if not report.splits:
-                await notice.edit_text(persian_messages.WORKLOG_NOT_UNDERSTOOD)
+                # They mean to log time but have not said how much or on what.
+                await self._reply_and_remember(
+                    context,
+                    notice.edit_text,
+                    text,
+                    persian_messages.WORKLOG_NEEDS_DETAIL,
+                )
                 return
 
             confirmation = self.confirm_worklog_report.execute(report, candidates)

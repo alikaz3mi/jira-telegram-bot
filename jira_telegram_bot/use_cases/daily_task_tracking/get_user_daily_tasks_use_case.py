@@ -73,10 +73,22 @@ class GetUserDailyTasksUseCase:
                 max_results=100,
             )
             
+            skipped = 0
             for issue in issues:
                 task_check = await self._evaluate_task(issue)
-                if task_check and task_check.check_status != TaskCheckStatus.OK:
+                if task_check is None:
+                    skipped += 1
+                    continue
+                if task_check.check_status != TaskCheckStatus.OK:
                     tasks_needing_attention.append(task_check)
+            
+            if skipped:
+                # A transient Jira error silently shortens the list otherwise,
+                # and the user is told about tasks they no longer appear to have.
+                LOGGER.warning(
+                    f"Dropped {skipped} of {len(issues)} issues for "
+                    f"{jira_username}; the list below is incomplete"
+                )
             
             LOGGER.info(
                 f"Found {len(tasks_needing_attention)} tasks needing attention for {jira_username}"

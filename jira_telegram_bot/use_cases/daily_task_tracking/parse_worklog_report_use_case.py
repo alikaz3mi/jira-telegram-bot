@@ -63,12 +63,15 @@ class ParseWorklogReportUseCase:
         self,
         text: str,
         candidates: Sequence[DailyTaskCheck],
+        history: str = "",
     ) -> ParsedWorklogReport:
         """Parse a work report against the issues the user could have worked on.
 
         Args:
             text: The user's message, as they wrote it
             candidates: The user's open issues, in the order shown to the model
+            history: Recent turns, so a message continuing an earlier one is
+                read together with it
 
         Returns:
             The parsed report; splits that could not be resolved confidently
@@ -85,6 +88,7 @@ class ParseWorklogReportUseCase:
             {
                 "content": text,
                 "candidates": self._format_candidates(candidates),
+                "history": history,
             },
             cleanse_llm_text=True,
         )

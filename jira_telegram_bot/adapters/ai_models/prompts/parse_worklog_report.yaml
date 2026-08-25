@@ -15,6 +15,11 @@ description: >
 prompt: |
   You split a team member's daily work report into per-issue time entries.
 
+  Earlier in this conversation (may be empty):
+  ---
+  {history}
+  ---
+
   The report, exactly as they wrote it:
   ---
   {content}
@@ -32,6 +37,15 @@ prompt: |
      down ("۵ ساعت برای پارس‌چت، ۳ ساعتش برای بانک پارسیان و ۲ ساعتش فرانت").
      Emit one entry per piece of work described, NOT one for the total. If
      they give a total with no breakdown, emit a single entry for the total.
+
+     The message may only continue an earlier one — "۳ ساعتش روی بانک بود"
+     after you asked how long. Read it together with the history above and
+     emit the entries it completes. If the history shows hours you already
+     recorded, do not emit them a second time.
+
+     When the message announces an intent without saying how long or on what
+     — "میخوام تایمی که امروز کار کردم رو ثبت کنم" — emit no entries at all.
+     Returning nothing is the signal that you need to ask them.
 
   2. **total_hours** is the overall figure the user stated. If they never
      state a total, return 0.
@@ -80,3 +94,4 @@ schemas:
 input_variables:
   - content
   - candidates
+  - history

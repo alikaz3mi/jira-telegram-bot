@@ -46,12 +46,14 @@ class AnswerTaskQuestionUseCase:
         self,
         question: str,
         tasks: Sequence[DailyTaskCheck],
+        history: str = "",
     ) -> str:
         """Answer a question against the user's own tasks.
 
         Args:
             question: What the user asked
             tasks: The user's open issues
+            history: Recent turns, so a follow-up reads as a follow-up
 
         Returns:
             The answer text, or an empty string if it could not be produced.
@@ -64,6 +66,7 @@ class AnswerTaskQuestionUseCase:
                     "content": question,
                     "tasks": self._format_tasks(tasks),
                     "base_url": self.base_url,
+                    "history": history,
                 },
                 cleanse_llm_text=True,
             )
