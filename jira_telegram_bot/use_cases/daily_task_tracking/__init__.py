@@ -33,6 +33,9 @@ from jira_telegram_bot.use_cases.daily_task_tracking.classify_message_intent_use
 from jira_telegram_bot.use_cases.daily_task_tracking.answer_task_question_use_case import (
     AnswerTaskQuestionUseCase,
 )
+from jira_telegram_bot.use_cases.daily_task_tracking.cached_user_tasks import (
+    CachedUserTasksUseCase,
+)
 
 __all__ = [
     "GetUserDailyTasksUseCase",
@@ -47,5 +50,6 @@ __all__ = [
     "ClassifyMessageIntentUseCase",
     "MessageIntent",
     "AnswerTaskQuestionUseCase",
+    "CachedUserTasksUseCase",
 ]
 

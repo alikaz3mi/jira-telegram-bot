@@ -957,6 +957,7 @@ def _configure_daily_task_tracking(container: Container):
         ConfirmWorklogReportUseCase,
         ClassifyMessageIntentUseCase,
         AnswerTaskQuestionUseCase,
+        CachedUserTasksUseCase,
     )
     from jira_telegram_bot.use_cases.daily_task_tracking.send_daily_task_reminders_use_case import (
         SendDailyTaskRemindersUseCase,
@@ -1053,7 +1054,12 @@ def _configure_daily_task_tracking(container: Container):
         lambda c: AnswerTaskQuestionUseCase(
             ai_service=c[AIServiceProtocol],
             prompt_catalog=c[PromptCatalogProtocol],
+            base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
         )
+    )
+
+    container[CachedUserTasksUseCase] = Singleton(
+        lambda c: CachedUserTasksUseCase(c[GetUserDailyTasksUseCase])
     )
 
     container[DailyTaskTrackingHandler] = Singleton(
@@ -1066,7 +1072,7 @@ def _configure_daily_task_tracking(container: Container):
             queue_manager=c[DailyTaskQueueManager],
             parse_worklog_report_use_case=c[ParseWorklogReportUseCase],
             confirm_worklog_report_use_case=c[ConfirmWorklogReportUseCase],
-            get_user_daily_tasks_use_case=c[GetUserDailyTasksUseCase],
+            get_user_daily_tasks_use_case=c[CachedUserTasksUseCase],
             classify_message_intent_use_case=c[ClassifyMessageIntentUseCase],
             answer_task_question_use_case=c[AnswerTaskQuestionUseCase],
         )

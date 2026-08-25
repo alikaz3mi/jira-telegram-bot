@@ -7,8 +7,8 @@ temperature: 0.1
 model_hint: "gpt-4o-mini"
 model_engine: "openai"
 description: >
-  Answer a team member's question about their own Jira tasks, using only the
-  tasks assigned to them.
+  Answer a team member's question about their own Jira tasks, honouring any
+  project or status filter they asked for, with each issue key hyperlinked.
 
 # ── prompt template ─────────────────────────────
 prompt: |
@@ -20,32 +20,64 @@ prompt: |
   {content}
   ---
 
-  Their current open tasks. This is everything you know; there is nothing else:
+  Their open tasks. This is everything you know; there is nothing else:
   ---
   {tasks}
   ---
 
   Rules:
 
-  - Answer only from the task list above. If it does not contain the answer,
-    say so plainly rather than guessing.
-  - Cite the issue key for every task you mention, e.g. "PARSCHAT-5004".
-  - Be brief. This is read on a phone: a few short lines or a small list, no
-    preamble, no restating the question.
-  - Dates in the list are Gregorian ISO. Mention them only if asked about
-    timing.
-  - You cannot change anything — you only read. If they are asking you to
-    change a task, tell them to use the buttons in the daily check instead.
+  1. **Answer the question they asked, not a broader one.** If they name a
+     project, a status or a timeframe, list ONLY the tasks that match and
+     leave every other task out. When they name nothing, list them all.
+
+     Match a named product against the `project=` field on each row. These
+     are the ParsChat projects, and a question about "پارسچت"/"parschat"
+     includes ALL of them:
+
+       project=PARSCHAT   the product itself
+       project=PCT        ParsChat ticketing
+       project=PCD        ParsChat development
+
+     A row whose project is one of those three IS a ParsChat task — say so.
+     Only answer "no tasks" when not a single row matches; check the
+     `project=` field of every row before you conclude that.
+
+  2. **Link every issue key.** Write each one as an HTML anchor exactly like
+     `<a href="{base_url}/browse/PARSCHAT-1">PARSCHAT-1</a>`. Never write a
+     bare key. `<a href>` is the ONLY tag Telegram accepts here — never emit
+     `<br>`, `<b>`, `<ul>`, `<li>` or any other tag. Separate lines with a
+     real newline character, not a tag.
+
+  3. **Be brief.** This is read on a phone. One line per task, shaped like:
+
+         <a href="...">KEY</a> — summary (وضعیت: Review)
+
+     Trim a long summary to about 60 characters. Write the status in prose as
+     shown; never copy the raw `status=` / `project=` field syntax from the
+     list into your answer. No preamble, no restating the question, no
+     closing remarks.
+
+  4. Answer only from the list above. If it does not contain the answer, say
+     so rather than guessing.
+
+  5. Dates are Gregorian ISO. Mention them only when asked about timing.
+
+  6. You can only read. If they are asking you to change a task, tell them to
+     use the buttons in the daily check instead.
 
   {format_instructions}
 
 # ── output schemas ──────────────────────────────
 schemas:
   - name: answer
-    description: "The reply, in the user's own language, ready to send as-is"
+    description: >
+      The reply in the user's language, ready to send as Telegram HTML.
+      Issue keys appear as <a href="..."> anchors and no other tags are used.
     type: string
 
 # ── input variables ─────────────────────────────
 input_variables:
   - content
   - tasks
+  - base_url

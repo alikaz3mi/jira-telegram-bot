@@ -29,15 +29,18 @@ class AnswerTaskQuestionUseCase:
         self,
         ai_service: AIServiceProtocol,
         prompt_catalog: PromptCatalogProtocol,
+        base_url: str = "",
     ):
         """Initialize the use case.
 
         Args:
             ai_service: Service that runs the structured LLM call
             prompt_catalog: Catalog the answering prompt is loaded from
+            base_url: Jira base URL, used to hyperlink issue keys
         """
         self.ai_service = ai_service
         self.prompt_catalog = prompt_catalog
+        self.base_url = base_url.rstrip("/")
 
     async def execute(
         self,
@@ -57,7 +60,11 @@ class AnswerTaskQuestionUseCase:
             prompt = await self.prompt_catalog.get_prompt(_PROMPT_TASK)
             result = await self.ai_service.run(
                 prompt,
-                {"content": question, "tasks": self._format_tasks(tasks)},
+                {
+                    "content": question,
+                    "tasks": self._format_tasks(tasks),
+                    "base_url": self.base_url,
+                },
                 cleanse_llm_text=True,
             )
             return str(result.get("answer", "")).strip()

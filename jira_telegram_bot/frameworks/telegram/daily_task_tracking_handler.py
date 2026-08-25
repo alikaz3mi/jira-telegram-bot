@@ -683,7 +683,15 @@ class DailyTaskTrackingHandler:
             await notice.edit_text(persian_messages.ERROR_MESSAGE)
             return
 
-        await notice.edit_text(answer or persian_messages.QUESTION_NO_ANSWER)
+        if not answer:
+            await notice.edit_text(persian_messages.QUESTION_NO_ANSWER)
+            return
+        # The answer carries <a href> links, so it must render as HTML.
+        try:
+            await notice.edit_text(answer, parse_mode="HTML")
+        except Exception as exc:
+            LOGGER.warning(f"HTML answer rejected, sending plain: {exc}")
+            await notice.edit_text(answer)
 
     async def _handle_worklog_report(
         self,
@@ -884,6 +892,11 @@ class DailyTaskTrackingHandler:
                 lines.append(persian_messages.WORKLOG_SAVE_FAILED_LINE.format(
                     issue_key=split.issue_key,
                 ))
+
+        # Worklog hours changed, so the cached list is now behind Jira.
+        invalidate = getattr(self.get_user_daily_tasks, "invalidate", None)
+        if invalidate:
+            invalidate(user_config.jira_username)
 
         await query.edit_message_text("\n".join(lines))
 
