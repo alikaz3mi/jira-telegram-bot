@@ -36,6 +36,13 @@ from jira_telegram_bot.use_cases.daily_task_tracking.get_user_daily_tasks_use_ca
 from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
     WorklogSplitStatus,
 )
+from jira_telegram_bot.use_cases.daily_task_tracking.classify_message_intent_use_case import (
+    ClassifyMessageIntentUseCase,
+    MessageIntent,
+)
+from jira_telegram_bot.use_cases.daily_task_tracking.answer_task_question_use_case import (
+    AnswerTaskQuestionUseCase,
+)
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
@@ -67,6 +74,8 @@ class DailyTaskTrackingHandler:
         parse_worklog_report_use_case: ParseWorklogReportUseCase = None,
         confirm_worklog_report_use_case: ConfirmWorklogReportUseCase = None,
         get_user_daily_tasks_use_case: GetUserDailyTasksUseCase = None,
+        classify_message_intent_use_case: ClassifyMessageIntentUseCase = None,
+        answer_task_question_use_case: AnswerTaskQuestionUseCase = None,
     ):
         """Initialize the handler.
 
@@ -80,6 +89,8 @@ class DailyTaskTrackingHandler:
             parse_worklog_report_use_case: Parses a free-text work report
             confirm_worklog_report_use_case: Decides what must be confirmed
             get_user_daily_tasks_use_case: Supplies the issues to match against
+            classify_message_intent_use_case: Routes a message to the right flow
+            answer_task_question_use_case: Answers questions about own tasks
         """
         self.record_delay = record_delay_reason_use_case
         self.record_time = record_time_spent_use_case
@@ -90,6 +101,8 @@ class DailyTaskTrackingHandler:
         self.parse_worklog_report = parse_worklog_report_use_case
         self.confirm_worklog_report = confirm_worklog_report_use_case
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
+        self.classify_message_intent = classify_message_intent_use_case
+        self.answer_task_question = answer_task_question_use_case
         self.task_sender = None  # Will be set by SendDailyTaskRemindersUseCase
 
     def create_delay_reason_keyboard(self) -> InlineKeyboardMarkup:
@@ -491,8 +504,7 @@ class DailyTaskTrackingHandler:
         elif state == self.WAITING_CUSTOM_DELAY:
             await self._handle_custom_delay(update, context)
         else:
-            # Anything else is read as a free-text report of the day's work.
-            await self._handle_worklog_report(update, context)
+            await self._handle_free_text(update, context)
 
     async def _handle_custom_hours(
         self,
@@ -609,6 +621,69 @@ class DailyTaskTrackingHandler:
             
             # Send next task
             await self._send_next_task_for_user(chat_id)
+
+    async def _handle_free_text(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> None:
+        """Route a free-text message to the flow that can serve it.
+
+        Args:
+            update: Telegram update
+            context: Callback context
+        """
+        text = (update.message.text or "").strip()
+        if not text:
+            return
+
+        intent = MessageIntent.WORKLOG
+        if self.classify_message_intent:
+            intent = await self.classify_message_intent.execute(text)
+        LOGGER.info(f"Free-text intent for {text[:40]!r}: {intent.value}")
+
+        if intent is MessageIntent.WORKLOG:
+            await self._handle_worklog_report(update, context)
+        elif intent is MessageIntent.QUESTION:
+            await self._handle_task_question(update, context, text)
+        else:
+            await update.message.reply_text(persian_messages.FREE_TEXT_HELP)
+
+    async def _handle_task_question(
+        self,
+        update: Update,
+        context: CallbackContext,
+        question: str,
+    ) -> None:
+        """Answer a question about the user's own tasks.
+
+        Args:
+            update: Telegram update
+            context: Callback context
+            question: The question as the user asked it
+        """
+        if not (self.answer_task_question and self.get_user_daily_tasks):
+            await update.message.reply_text(persian_messages.FREE_TEXT_HELP)
+            return
+
+        user_config = self.user_config_repository.get_user_config(
+            update.effective_user.username,
+        )
+        if not user_config:
+            return
+
+        notice = await update.message.reply_text(persian_messages.QUESTION_THINKING)
+        try:
+            tasks = await self.get_user_daily_tasks.execute(
+                jira_username=user_config.jira_username,
+            )
+            answer = await self.answer_task_question.execute(question, tasks)
+        except Exception as exc:
+            LOGGER.error(f"Failed to answer question: {exc}", exc_info=True)
+            await notice.edit_text(persian_messages.ERROR_MESSAGE)
+            return
+
+        await notice.edit_text(answer or persian_messages.QUESTION_NO_ANSWER)
 
     async def _handle_worklog_report(
         self,

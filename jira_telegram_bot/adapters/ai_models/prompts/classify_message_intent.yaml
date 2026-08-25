@@ -1,0 +1,51 @@
+# ── metadata ───────────────────────────────────────────
+id: classify_message_intent
+version: "2026-08-25"
+language: multi
+author: ai_agent_system
+temperature: 0.0
+model_hint: "gpt-4.1-nano"
+model_engine: "openai"
+description: >
+  Decide what a team member's free-text Telegram message is asking for, so the
+  bot answers a question instead of trying to log time against it.
+
+# ── prompt template ─────────────────────────────
+prompt: |
+  Classify what this team member wants. They are talking to a Jira assistant
+  that can log their work time and answer questions about their own tasks.
+
+  Message:
+  ---
+  {content}
+  ---
+
+  Answer with exactly one intent:
+
+  - "worklog" — they are REPORTING time already spent on work.
+    "امروز ۵ ساعت روی درگاه پرداخت کار کردم"، "۳ ساعت صرف رفع باگ شد"
+    Past tense, and an amount of time they spent.
+
+  - "question" — they are ASKING something about their tasks, deadlines,
+    sprint or workload.
+    "تسک‌های این هفته‌ام چیه؟"، "چی باید تحویل بدم؟"، "وضعیت PARSCHAT-1 چیه؟"
+    Note a question can mention time without reporting any.
+
+  - "chitchat" — a greeting or anything else, with nothing to do or answer.
+    "سلام"، "hello"، "مرسی"
+
+  Decide on what they want, not on keywords. A message that merely contains a
+  number is not a worklog unless they say they SPENT that time. When a message
+  both reports time and asks something, choose "worklog".
+
+  {format_instructions}
+
+# ── output schemas ──────────────────────────────
+schemas:
+  - name: intent
+    description: "Exactly one of: worklog, question, chitchat"
+    type: string
+
+# ── input variables ─────────────────────────────
+input_variables:
+  - content

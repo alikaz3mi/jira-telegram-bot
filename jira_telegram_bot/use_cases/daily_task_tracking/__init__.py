@@ -26,6 +26,13 @@ from jira_telegram_bot.use_cases.daily_task_tracking.parse_worklog_report_use_ca
 from jira_telegram_bot.use_cases.daily_task_tracking.confirm_worklog_report_use_case import (
     ConfirmWorklogReportUseCase,
 )
+from jira_telegram_bot.use_cases.daily_task_tracking.classify_message_intent_use_case import (
+    ClassifyMessageIntentUseCase,
+    MessageIntent,
+)
+from jira_telegram_bot.use_cases.daily_task_tracking.answer_task_question_use_case import (
+    AnswerTaskQuestionUseCase,
+)
 
 __all__ = [
     "GetUserDailyTasksUseCase",
@@ -37,5 +44,8 @@ __all__ = [
     "RequestSubtaskCreationUseCase",
     "ParseWorklogReportUseCase",
     "ConfirmWorklogReportUseCase",
+    "ClassifyMessageIntentUseCase",
+    "MessageIntent",
+    "AnswerTaskQuestionUseCase",
 ]
 

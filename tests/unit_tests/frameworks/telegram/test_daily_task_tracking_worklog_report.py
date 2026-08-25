@@ -16,6 +16,9 @@ from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
 from jira_telegram_bot.frameworks.telegram.daily_task_tracking_handler import (
     DailyTaskTrackingHandler,
 )
+from jira_telegram_bot.use_cases.daily_task_tracking.classify_message_intent_use_case import (
+    MessageIntent,
+)
 from jira_telegram_bot.use_cases.daily_task_tracking.confirm_worklog_report_use_case import (
     ConfirmWorklogReportUseCase,
 )
@@ -75,6 +78,9 @@ class TestWorklogReportFlow(unittest.IsolatedAsyncioTestCase):
         self.tasks = AsyncMock()
         self.tasks.execute.return_value = self.candidates
         self.record_worklog = AsyncMock()
+        self.classify = AsyncMock()
+        self.classify.execute.return_value = MessageIntent.WORKLOG
+        self.answer = AsyncMock()
 
         self.user_config = Mock()
         self.user_config.get_user_config.return_value = Mock(jira_username="ali")
@@ -89,6 +95,8 @@ class TestWorklogReportFlow(unittest.IsolatedAsyncioTestCase):
             parse_worklog_report_use_case=self.parse,
             confirm_worklog_report_use_case=ConfirmWorklogReportUseCase(),
             get_user_daily_tasks_use_case=self.tasks,
+            classify_message_intent_use_case=self.classify,
+            answer_task_question_use_case=self.answer,
         )
         self.context = Mock()
         self.context.user_data = {}
@@ -244,6 +252,43 @@ class TestWorklogReportFlow(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.record_worklog.execute.await_count, 2)
         self.assertIn("PARSCHAT-1", query.message.sent[-1])
+
+
+    async def test_question_is_answered_not_logged(self):
+        """A question about tasks is answered instead of parsed for hours."""
+        self.classify.execute.return_value = MessageIntent.QUESTION
+        self.answer.execute.return_value = "این هفته PARSCHAT-1 را داری."
+
+        await self.handler._handle_free_text(
+            self._update("این هفته چه تسکی دارم؟"), self.context,
+        )
+
+        self.answer.execute.assert_awaited_once()
+        self.parse.execute.assert_not_called()
+        self.assertNotIn(self.handler.PENDING_REPORT, self.context.user_data)
+
+    async def test_greeting_gets_help_not_a_worklog_error(self):
+        """A greeting is answered with help, not "I didn't understand hours"."""
+        self.classify.execute.return_value = MessageIntent.CHITCHAT
+
+        await self.handler._handle_free_text(self._update("hello"), self.context)
+
+        self.parse.execute.assert_not_called()
+        self.answer.execute.assert_not_called()
+
+    async def test_worklog_intent_still_reaches_the_parser(self):
+        """Reporting time keeps going to the worklog flow."""
+        self.classify.execute.return_value = MessageIntent.WORKLOG
+        self.parse.execute.return_value = ParsedWorklogReport(
+            raw_text="...", total_hours=3, splits=[_split(3, "PARSCHAT-1")],
+        )
+
+        await self.handler._handle_free_text(
+            self._update("۳ ساعت کار کردم"), self.context,
+        )
+
+        self.parse.execute.assert_awaited_once()
+        self.assertIn(self.handler.PENDING_REPORT, self.context.user_data)
 
 
 if __name__ == "__main__":

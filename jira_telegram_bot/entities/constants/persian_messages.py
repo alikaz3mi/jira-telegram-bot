@@ -131,3 +131,10 @@ WORKLOG_SAVE_FAILED_LINE = "• ❌ {issue_key} ثبت نشد"
 WORKLOG_OTHER_TASK_BUTTON = "🔍 تسک دیگر"
 WORKLOG_SKIP_SPLIT_BUTTON = "⏭ رد کن"
 WORKLOG_SPLIT_SKIPPED = "این مورد ثبت نشد."
+QUESTION_THINKING = "🤔 در حال بررسی تسک‌های شما..."
+QUESTION_NO_ANSWER = "نتوانستم پاسخی پیدا کنم."
+FREE_TEXT_HELP = (
+    "سلام! 👋\n"
+    "می‌توانید زمان کارتان را بگویید — مثلاً «امروز ۳ ساعت روی رفع باگ ورود کار کردم» —\n"
+    "یا درباره تسک‌هایتان بپرسید، مثلاً «این هفته چه تسک‌هایی دارم؟»"
+)
