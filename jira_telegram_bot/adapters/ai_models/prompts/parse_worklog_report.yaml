@@ -1,0 +1,82 @@
+# ── metadata ───────────────────────────────────────────
+id: parse_worklog_report
+version: "2026-08-25"
+language: multi
+author: ai_agent_system
+temperature: 0.0
+model_hint: "gpt-4o-mini"
+model_engine: "openai"
+description: >
+  Split a free-text daily work report (Persian, English, or mixed) into the
+  individual pieces of work it describes, matching each to one of the user's
+  own open Jira issues by list position.
+
+# ── prompt template ─────────────────────────────
+prompt: |
+  You split a team member's daily work report into per-issue time entries.
+
+  The report, exactly as they wrote it:
+  ---
+  {content}
+  ---
+
+  Their open issues. Match ONLY against this list, and refer to a row by its
+  index number:
+  ---
+  {candidates}
+  ---
+
+  Rules:
+
+  1. **Split the report.** The user usually states a total and then breaks it
+     down ("۵ ساعت برای پارس‌چت، ۳ ساعتش برای بانک پارسیان و ۲ ساعتش فرانت").
+     Emit one entry per piece of work described, NOT one for the total. If
+     they give a total with no breakdown, emit a single entry for the total.
+
+  2. **total_hours** is the overall figure the user stated. If they never
+     state a total, return 0.
+
+  3. **Match by index, never by key.** For each entry, list the candidate
+     indices whose summary, description, epic or project plausibly match what
+     the user described. Best match first. If nothing matches, return an empty
+     list. NEVER invent a Jira issue key — you have no way to know one.
+
+  4. **confidence** is how sure you are that your FIRST index is right:
+     - 0.9-1.0: the user effectively named the issue.
+     - 0.5-0.8: a plausible match, but another row could fit.
+     - 0.0-0.4: guessing, or nothing fits.
+     When two rows fit roughly equally, list both and score below 0.5. It is
+     far better to be asked than to log time against the wrong issue.
+
+  5. **description** is what the user said about that piece of work, in their
+     own words and their own language. Do not translate or embellish it.
+
+  6. **project_hint** is the project or product they named ("پارس‌چت"), if any.
+     Empty string when they named none.
+
+  Hours are decimal ("۲ ساعت و نیم" -> 2.5). Persian digits are digits.
+
+  {format_instructions}
+
+# ── output schemas ──────────────────────────────
+schemas:
+  - name: total_hours
+    description: "Total hours the user stated overall, as a number. 0 if unstated."
+    type: number
+
+  - name: project_hint
+    description: "Project or product the user named, or empty string."
+    type: string
+
+  - name: splits
+    description: >
+      Array of objects, one per piece of work described. Each object has:
+      "hours" (number), "description" (string, the user's own words),
+      "candidate_indices" (array of integers, best match first, may be empty),
+      and "confidence" (number between 0 and 1).
+    type: array
+
+# ── input variables ─────────────────────────────
+input_variables:
+  - content
+  - candidates

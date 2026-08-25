@@ -964,6 +964,8 @@ def _configure_daily_task_tracking(container: Container):
         RecordTimeSpentUseCase,
         RecordWorklogUseCase,
         RequestSubtaskCreationUseCase,
+        ParseWorklogReportUseCase,
+        ConfirmWorklogReportUseCase,
     )
     from jira_telegram_bot.use_cases.daily_task_tracking.send_daily_task_reminders_use_case import (
         SendDailyTaskRemindersUseCase,
@@ -1036,6 +1038,17 @@ def _configure_daily_task_tracking(container: Container):
 
     container[DailyTaskQueueManager] = Singleton(
         lambda c: DailyTaskQueueManager()
+    )
+
+    container[ParseWorklogReportUseCase] = Singleton(
+        lambda c: ParseWorklogReportUseCase(
+            ai_service=c[AIServiceProtocol],
+            prompt_catalog=c[PromptCatalogProtocol],
+        )
+    )
+
+    container[ConfirmWorklogReportUseCase] = Singleton(
+        lambda c: ConfirmWorklogReportUseCase()
     )
 
     container[DailyTaskTrackingHandler] = Singleton(

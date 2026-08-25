@@ -1,0 +1,185 @@
+"""Use case for turning a free-text work report into per-issue worklogs."""
+from __future__ import annotations
+
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Sequence
+
+from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.daily_task_tracking.daily_task_check import (
+    DailyTaskCheck,
+)
+from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
+    ParsedWorklogReport,
+)
+from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
+    ParsedWorklogSplit,
+)
+from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
+    WorklogSplitStatus,
+)
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
+    AIServiceProtocol,
+)
+from jira_telegram_bot.use_cases.interfaces.ai_service_interface import (
+    PromptCatalogProtocol,
+)
+
+_PROMPT_TASK = "parse_worklog_report"
+
+# Below this, the top candidate is not trusted on its own and the user is asked.
+CONFIDENCE_THRESHOLD = 0.75
+
+# Persian and Arabic-Indic digits, so "۲.۵" survives float().
+_DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+
+class ParseWorklogReportUseCase:
+    """Split a free-text report into worklog entries against the user's issues.
+
+    The model is never asked for a Jira key. It sees a numbered list of the
+    user's own open issues and answers with positions in that list, so the
+    worst it can do is point at the wrong row — which the confidence check
+    turns into a question rather than a wrong worklog.
+    """
+
+    def __init__(
+        self,
+        ai_service: AIServiceProtocol,
+        prompt_catalog: PromptCatalogProtocol,
+    ):
+        """Initialize the use case.
+
+        Args:
+            ai_service: Service that runs the structured LLM call
+            prompt_catalog: Catalog the parsing prompt is loaded from
+        """
+        self.ai_service = ai_service
+        self.prompt_catalog = prompt_catalog
+
+    async def execute(
+        self,
+        text: str,
+        candidates: Sequence[DailyTaskCheck],
+    ) -> ParsedWorklogReport:
+        """Parse a work report against the issues the user could have worked on.
+
+        Args:
+            text: The user's message, as they wrote it
+            candidates: The user's open issues, in the order shown to the model
+
+        Returns:
+            The parsed report; splits that could not be resolved confidently
+            are marked so the caller asks about them.
+        """
+        report = ParsedWorklogReport(raw_text=text)
+        if not candidates:
+            LOGGER.info("No candidate issues to match a worklog report against")
+            return report
+
+        prompt = await self.prompt_catalog.get_prompt(_PROMPT_TASK)
+        result = await self.ai_service.run(
+            prompt,
+            {
+                "content": text,
+                "candidates": self._format_candidates(candidates),
+            },
+            cleanse_llm_text=True,
+        )
+
+        report.total_hours = self._to_float(result.get("total_hours")) or None
+        report.project_hint = (result.get("project_hint") or "").strip() or None
+        report.splits = [
+            self._build_split(raw, candidates)
+            for raw in self._as_list(result.get("splits"))
+        ]
+        report.splits = [split for split in report.splits if split.hours > 0]
+        return report
+
+    @staticmethod
+    def _format_candidates(candidates: Sequence[DailyTaskCheck]) -> str:
+        """Render the issues as a numbered list for the model to point into."""
+        lines: List[str] = []
+        for index, task in enumerate(candidates):
+            parts = [f"[{index}] {task.issue_key}: {task.summary}"]
+            parts.append(f"project={task.project_key}")
+            if task.issue_type:
+                parts.append(f"type={task.issue_type}")
+            parts.append(f"status={task.status}")
+            if task.description:
+                snippet = " ".join(task.description.split())[:160]
+                parts.append(f"detail={snippet}")
+            lines.append(" | ".join(parts))
+        return "\n".join(lines)
+
+    def _build_split(
+        self,
+        raw: Any,
+        candidates: Sequence[DailyTaskCheck],
+    ) -> ParsedWorklogSplit:
+        """Turn one raw model entry into a split with a resolved status."""
+        if not isinstance(raw, dict):
+            raw = {}
+
+        indices = [
+            index
+            for index in self._as_int_list(raw.get("candidate_indices"))
+            if 0 <= index < len(candidates)
+        ]
+        confidence = self._to_float(raw.get("confidence"))
+        confidence = min(max(confidence, 0.0), 1.0)
+
+        split = ParsedWorklogSplit(
+            hours=self._to_float(raw.get("hours")),
+            description=str(raw.get("description") or "").strip(),
+            candidate_indices=indices,
+            confidence=confidence,
+        )
+
+        if not indices:
+            split.status = WorklogSplitStatus.UNMATCHED
+        elif len(indices) == 1 and confidence >= CONFIDENCE_THRESHOLD:
+            split.status = WorklogSplitStatus.RESOLVED
+            split.issue_key = candidates[indices[0]].issue_key
+        else:
+            split.status = WorklogSplitStatus.AMBIGUOUS
+        return split
+
+    @staticmethod
+    def _as_list(value: Any) -> List[Any]:
+        """Coerce the model's ``splits`` field to a list."""
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return [value]
+        return []
+
+    @classmethod
+    def _as_int_list(cls, value: Any) -> List[int]:
+        """Coerce the model's index field to a list of ints, dropping junk."""
+        if not isinstance(value, list):
+            value = [value]
+        indices: List[int] = []
+        for item in value:
+            try:
+                indices.append(int(cls._normalise_digits(item)))
+            except (TypeError, ValueError):
+                continue
+        return indices
+
+    @classmethod
+    def _to_float(cls, value: Any) -> float:
+        """Read a number that may arrive as a string with Persian digits."""
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            return float(cls._normalise_digits(value))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _normalise_digits(value: Any) -> str:
+        """Convert Persian/Arabic digits so ``float`` and ``int`` accept them."""
+        return str(value).translate(_DIGIT_MAP).strip()
