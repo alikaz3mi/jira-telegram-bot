@@ -34,6 +34,12 @@ SYSTEM_PROMPT = """\
   نگه دار و هیچ تگ HTML دیگری اضافه نکن.
 - کوتاه جواب بده. این پیام در تلگرام و روی موبایل خوانده می‌شود:
   بدون مقدمه، بدون تکرار سؤال، بدون جمع‌بندی اضافه.
+- وقتی توضیح یک تسک از استوری یا اپیک والد می‌آید، اول با یک جمله بگو آن
+  استوری چیست و عنوانش را با لینک بیاور — «این تسک بخشی از استوری
+  <a …>KEY</a> «عنوان» است» — بعد بگو خودِ این تسک چه سهمی از آن دارد.
+  کاربر باید بفهمد کار در چه زمینه‌ای است، نه فقط فهرست کارها را ببیند.
+- اگر تسک وابستگی دارد (blocks / is blocked by)، آن را بگو؛ همان تعیین
+  می‌کند الان می‌شود شروع کرد یا باید منتظر ماند.
 - اگر ابزار گفت اجازه دسترسی نیست، همان را بگو و توجیه نکن.
 - به زبان کاربر جواب بده. سؤال فارسی، پاسخ فارسی.
 - اگر سؤال ادامه گفت‌وگوی قبلی است، به آن تکیه کن و فهرست قبلی را دوباره
@@ -45,7 +51,7 @@ class TaskAssistantAgent:
     """Answers questions about tasks by calling scoped tools."""
 
     def __init__(self, model, alias_repository, get_user_daily_tasks_use_case,
-                 base_url: str = ""):
+                 base_url: str = "", task_manager_repository=None):
         """Initialize the agent.
 
         Args:
@@ -53,11 +59,14 @@ class TaskAssistantAgent:
             alias_repository: Resolves names to Jira keys and usernames
             get_user_daily_tasks_use_case: Source of a person's open tasks
             base_url: Jira base URL, used to build issue links
+            task_manager_repository: Reads parent Stories and Epics for a
+                Sub-task that carries no description of its own
         """
         self.model = model
         self.alias_repository = alias_repository
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
         self.base_url = base_url
+        self.task_manager_repository = task_manager_repository
 
     async def answer(
         self,
@@ -80,6 +89,7 @@ class TaskAssistantAgent:
             get_user_daily_tasks_use_case=self.get_user_daily_tasks,
             alias_repository=self.alias_repository,
             base_url=self.base_url,
+            task_manager_repository=self.task_manager_repository,
         )
 
         agent = create_agent(
@@ -116,13 +126,36 @@ class TaskAssistantAgent:
         """
         return [
             StructuredTool.from_function(
+                coroutine=tools.board_link,
+                name="board_link",
+                description=(
+                    "لینک جیرا برای دیدن همه تسک‌های یک نفر. person نام شخص "
+                    "(خالی یعنی خود کاربر)، project نام محصول. وقتی کاربر "
+                    "لینک می‌خواهد یا می‌خواهد همه را خودش ببیند، از این "
+                    "استفاده کن."
+                ),
+            ),
+            StructuredTool.from_function(
+                coroutine=tools.task_details,
+                name="task_details",
+                description=(
+                    "توضیح کامل یک تسک: شرح کار، وضعیت، مهلت و وابستگی‌ها. "
+                    "issue_key کلید جیرا مثل «FOLLOWUP-128». وقتی کاربر می‌پرسد "
+                    "این تسک چیست یا چه کاری باید انجام دهد، از این استفاده کن."
+                ),
+            ),
+            StructuredTool.from_function(
                 coroutine=tools.list_tasks,
                 name="list_tasks",
                 description=(
                     "فهرست تسک‌های باز. person نام شخص همان‌طور که کاربر گفته "
                     "(خالی یعنی خود کاربر)، project نام محصول همان‌طور که گفته "
                     "(مثل «پارسچت» یا «آواخرد»)، status وضعیت جیرا، "
-                    "due_within_days تعداد روز تا مهلت."
+                    "issue_type نوع آیتم مثل Story یا Bug، "
+                    "in_active_sprint=true فقط کارهای داخل اسپرینت جاری، "
+                    "due_within_days تعداد روز تا مهلت. "
+                    "دقت کن: «استوری‌های اسپرینت جاری» یعنی issue_type=Story "
+                    "و in_active_sprint=true — این ربطی به status ندارد."
                 ),
             ),
             StructuredTool.from_function(

@@ -1,0 +1,46 @@
+flowchart TD
+    MSG[Telegram message] --> STATE{awaiting a button answer?}
+    STATE -->|yes| BTN[custom hours / delay — existing flow]
+    STATE -->|no| CLS[classify intent · gpt-4.1-nano · temp 0]
+
+    MEM[(ConversationMemory · last 6 turns)] -.->|history| CLS
+    CLS --> INTENT{intent}
+
+    INTENT -->|chitchat| HELP[help text]
+    INTENT -->|question| AGENT
+    INTENT -->|worklog| PARSE[parse report · gpt-4o-mini]
+
+    subgraph LG[LangGraph agent · create_agent]
+        AGENT[agent node · gpt-4o-mini] --> DECIDE{tool call?}
+        DECIDE -->|yes| TOOLS[tool node]
+        TOOLS --> AGENT
+        DECIDE -->|no| DONE[final answer]
+    end
+
+    TOOLS --- T1[task_details]
+    TOOLS --- T2[list_tasks]
+    TOOLS --- T3[count_tasks]
+    TOOLS --- T4[logged_hours]
+    TOOLS --- T5[whoami]
+
+    CTX[[AssistantContext · identity bound in Python]] -.->|may_read| TOOLS
+    T1 -.-> PARENT[parent Story then Epic · description + attachments]
+    T2 -.-> CACHE[(task cache · per user · 120s)]
+    CACHE --> JQL[Jira JQL · open sprint · unresolved]
+    PARENT --> JIRA[(Jira)]
+    JQL --> JIRA
+
+    PARSE --> SPLIT{splits found?}
+    SPLIT -->|none| ASK[ask for hours and task]
+    SPLIT -->|some| ORD[resolve ordinals in Python]
+    ORD --> CONF{all resolved?}
+    CONF -->|no| PICK[ask which task · tappable options]
+    PICK --> CONF
+    CONF -->|yes| PREVIEW[confirm · hours · date · work type]
+    PREVIEW -->|confirmed| WRITE[write worklog · started = worked_on]
+    WRITE --> JIRA
+    WRITE --> INVAL([invalidate cache])
+
+    DONE --> MEM
+    HELP --> MEM
+    ASK --> MEM

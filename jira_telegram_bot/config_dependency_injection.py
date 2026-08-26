@@ -1077,6 +1077,7 @@ def _configure_daily_task_tracking(container: Container):
             alias_repository=c[EntityAliasRepository],
             get_user_daily_tasks_use_case=c[CachedUserTasksUseCase],
             base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
+            task_manager_repository=c[TaskManagerRepositoryInterface],
         )
     )
 
@@ -1108,6 +1109,7 @@ def _configure_daily_task_tracking(container: Container):
             daily_task_tracking_handler=c[DailyTaskTrackingHandler],
             telegram_token=c[TelegramConnectionSettings].HOOK_TOKEN,
             queue_manager=c[DailyTaskQueueManager],
+            base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
         )
     )
 

@@ -15,15 +15,16 @@ from jira_telegram_bot.use_cases.daily_task_tracking.send_daily_task_reminders_u
 )
 
 
-def _task(key, check_status, target_end=None):
+def _task(key, check_status, target_end=None, status="To Do", sprint=None):
     return DailyTaskCheck(
         issue_key=key,
         summary="کار",
-        status="To Do",
+        status=status,
         assignee="ali",
         check_status=check_status,
         project_key="PARSCHAT",
         target_end=target_end,
+        sprint_name=sprint,
     )
 
 
@@ -102,6 +103,43 @@ class TestReminderCap(unittest.TestCase):
         ]
 
         self.assertEqual(len(self.use_case._most_pressing(tasks)), 2)
+
+
+class TestBacklogExclusion(unittest.TestCase):
+    """Backlog with no sprint is not a commitment to ask about daily."""
+
+    def setUp(self):
+        self.use_case = SendDailyTaskRemindersUseCase.__new__(
+            SendDailyTaskRemindersUseCase,
+        )
+        self.use_case.base_url = "https://jira.example.com"
+
+    def test_backlog_without_a_sprint_is_excluded(self):
+        task = _task("B-1", TaskCheckStatus.SHOULD_BE_STARTED, status="Backlog")
+
+        self.assertTrue(self.use_case._is_loose_backlog(task))
+
+    def test_backlog_inside_a_sprint_is_kept(self):
+        """Pulled into a sprint, it is work someone took on."""
+        task = _task(
+            "B-2", TaskCheckStatus.SHOULD_BE_STARTED,
+            status="Backlog", sprint="S-1405-06-A",
+        )
+
+        self.assertFalse(self.use_case._is_loose_backlog(task))
+
+    def test_other_statuses_are_kept_without_a_sprint(self):
+        """Only Backlog status is treated this way, not everything sprintless."""
+        task = _task("T-1", TaskCheckStatus.IN_PROGRESS, status="In Progress")
+
+        self.assertFalse(self.use_case._is_loose_backlog(task))
+
+    def test_board_link_targets_the_right_person(self):
+        """What was skipped must stay one tap away."""
+        link = self.use_case._board_link("z_lotfian")
+
+        self.assertIn("z_lotfian", link)
+        self.assertTrue(link.startswith("https://jira.example.com/issues/?jql="))
 
 
 if __name__ == "__main__":

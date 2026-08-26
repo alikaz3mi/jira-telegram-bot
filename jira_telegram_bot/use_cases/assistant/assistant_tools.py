@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from datetime import timedelta
+from urllib.parse import quote
 from typing import List
 from typing import Optional
 from typing import Sequence
@@ -20,6 +21,9 @@ from jira_telegram_bot.adapters.repositories.file_storage.entity_alias_repositor
     EntityAliasRepository,
 )
 from jira_telegram_bot.entities.assistant_entities import EntityKind
+from jira_telegram_bot.entities.daily_task_tracking.daily_task_status import (
+    TaskCheckStatus,
+)
 from jira_telegram_bot.entities.daily_task_tracking.daily_task_check import (
     DailyTaskCheck,
 )
@@ -31,6 +35,11 @@ DENIED = (
     "شما اجازه دیدن تسک‌های افراد دیگر را ندارید. "
     "فقط می‌توانید درباره تسک‌های خودتان بپرسید."
 )
+
+
+# Jira Server keeps the Epic Link in a custom field; this instance uses
+# customfield_10100 (see .claude/rules/jira-conventions.md).
+EPIC_LINK_FIELD = "customfield_10100"
 
 
 class AssistantTools:
@@ -46,6 +55,7 @@ class AssistantTools:
         get_user_daily_tasks_use_case,
         alias_repository: EntityAliasRepository,
         base_url: str = "",
+        task_manager_repository=None,
     ):
         """Initialize the tool set.
 
@@ -54,17 +64,22 @@ class AssistantTools:
             get_user_daily_tasks_use_case: Source of a person's open tasks
             alias_repository: Resolves names to Jira keys and usernames
             base_url: Jira base URL, used to build issue links
+            task_manager_repository: Reads parent Stories and Epics, whose
+                descriptions explain a Sub-task that carries none of its own
         """
         self.context = context
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
         self.aliases = alias_repository
         self.base_url = base_url.rstrip("/")
+        self.task_manager_repository = task_manager_repository
 
     async def list_tasks(
         self,
         person: Optional[str] = None,
         project: Optional[str] = None,
         status: Optional[str] = None,
+        issue_type: Optional[str] = None,
+        in_active_sprint: Optional[bool] = None,
         due_within_days: Optional[int] = None,
     ) -> str:
         """List open tasks, filtered the way the question asked.
@@ -73,6 +88,9 @@ class AssistantTools:
             person: Whose tasks, as the user named them; None means the caller
             project: Which product or project, as the user named it
             status: A Jira status to keep, matched case-insensitively
+            issue_type: Keep only this issue type, e.g. "Story" or "Bug"
+            in_active_sprint: True keeps only work in an open sprint; False
+                keeps only work that belongs to no sprint
             due_within_days: Keep only tasks due within this many days
 
         Returns:
@@ -107,6 +125,21 @@ class AssistantTools:
         if status:
             wanted = status.strip().casefold()
             tasks = [task for task in tasks if (task.status or "").casefold() == wanted]
+
+        if issue_type:
+            wanted_type = issue_type.strip().casefold()
+            tasks = [
+                task for task in tasks
+                if (task.issue_type or "").casefold() == wanted_type
+            ]
+
+        if in_active_sprint is not None:
+            # The daily list mixes sprint work with unscheduled work, so
+            # "in the active sprint" has to be asked for explicitly.
+            tasks = [
+                task for task in tasks
+                if bool(task.sprint_name) is in_active_sprint
+            ]
 
         if due_within_days is not None:
             horizon = datetime.now() + timedelta(days=due_within_days)
@@ -191,6 +224,266 @@ class AssistantTools:
                 f"{self._link(task.issue_key)} — {self._hours(task.worklog_hours)} ساعت",
             )
         return "\n".join(lines)
+
+    async def task_details(self, issue_key: str) -> str:
+        """Explain what one task actually asks for.
+
+        Args:
+            issue_key: The Jira key, e.g. "FOLLOWUP-128"
+
+        Returns:
+            The task's description and status, or a refusal when the caller
+            may not read it.
+        """
+        key = (issue_key or "").strip().upper()
+        if not key:
+            return "کدام تسک؟ کلید تسک را بگویید."
+
+        for task in await self._fetch(self.context.jira_username):
+            if task.issue_key.upper() == key:
+                return self._describe(task)
+
+        # The daily list deliberately omits backlog and finished work, but a
+        # person can still ask about their own task by key. Fall back to a
+        # direct read, with the same permission check applied in Python.
+        return await self._describe_by_key(key)
+
+    async def _describe_by_key(self, key: str) -> str:
+        """Describe any single issue the caller is allowed to read.
+
+        Args:
+            key: The Jira key, already upper-cased
+
+        Returns:
+            The task's details, or a refusal when it is someone else's.
+        """
+        jira = self._jira()
+        if not jira:
+            return f"«{key}» بین تسک‌های باز شما نیست."
+
+        try:
+            issue = jira.issue(key)
+        except Exception:
+            return f"«{key}» را در جیرا پیدا نکردم."
+
+        assignee = getattr(getattr(issue.fields, "assignee", None), "name", "")
+        if not self.context.may_read(assignee or ""):
+            LOGGER.info(
+                f"{self.context.jira_username} denied task_details on {key}",
+            )
+            return DENIED
+
+        return self._describe(
+            DailyTaskCheck(
+                issue_key=issue.key,
+                summary=issue.fields.summary,
+                status=issue.fields.status.name,
+                assignee=assignee or "",
+                check_status=TaskCheckStatus.OK,
+                project_key=issue.key.split("-")[0],
+                description=getattr(issue.fields, "description", None),
+            ),
+        )
+
+    def _describe(self, task: DailyTaskCheck) -> str:
+        """Render one task at length, description included.
+
+        Args:
+            task: The task to describe
+
+        Returns:
+            The task, its status and what it asks for.
+        """
+        lines = [f"{self._link(task.issue_key)} — {task.summary}"]
+        lines.append(f"وضعیت: {task.status}")
+        if task.target_end:
+            lines.append(f"مهلت: {task.target_end:%Y-%m-%d}")
+        if task.dependencies and not task.dependencies_completed:
+            blockers = "، ".join(task.dependencies)
+            lines.append(f"وابسته به: {blockers}")
+        if task.worklog_hours:
+            lines.append(f"ثبت‌شده: {self._hours(task.worklog_hours)} ساعت")
+
+        description = (task.description or "").strip()
+        if description:
+            lines.append("")
+            lines.append(self._trim(description))
+        else:
+            # A Sub-task usually carries no description of its own; the work
+            # is explained on the Story it belongs to, and the reason for it
+            # on the Epic above that. Saying "no description" while that text
+            # sits one link away is unhelpful.
+            inherited = self._inherited_context(task.issue_key)
+            if inherited:
+                lines.append("")
+                lines.extend(inherited)
+            else:
+                lines.append("")
+                lines.append("این تسک و والدینش توضیحی در جیرا ندارند.")
+
+        related = self._related(task.issue_key)
+        if related:
+            lines.append("")
+            lines.append("تسک‌های مرتبط:")
+            lines.extend(related)
+
+        attachments = self._attachments(task.issue_key)
+        if attachments:
+            lines.append("")
+            lines.append("پیوست‌ها:")
+            lines.extend(attachments)
+        return "\n".join(lines)
+
+    def _jira(self):
+        """Return the Jira client, or None when the tools were built without one."""
+        repository = self.task_manager_repository
+        return getattr(repository, "jira", None) if repository else None
+
+    def _inherited_context(self, issue_key: str) -> List[str]:
+        """Pull the description from the task's Story, then its Epic.
+
+        Args:
+            issue_key: The task whose parents should be read
+
+        Returns:
+            Rendered lines describing the parents that carry text, nearest
+            first, or an empty list when none of them do.
+        """
+        lines: List[str] = []
+        if not self._jira():
+            return lines
+        try:
+            for parent_key, label in self._parent_chain(issue_key):
+                fields = self._jira().issue(parent_key).fields
+                text = (getattr(fields, "description", "") or "").strip()
+                if not text:
+                    continue
+                lines.append(f"{label} {self._link(parent_key)}: {fields.summary}")
+                lines.append(self._trim(text))
+                lines.append("")
+        except Exception as exc:
+            LOGGER.warning(f"Could not read parents of {issue_key}: {exc}")
+        return [line for line in lines if line is not None][:-1] if lines else []
+
+    def _parent_chain(self, issue_key: str):
+        """Yield (key, label) for the task's Story and Epic, nearest first.
+
+        Args:
+            issue_key: The task to walk up from
+
+        Yields:
+            The parent Story, then the Epic above it, when each exists.
+        """
+        jira = self._jira()
+        if not jira:
+            return
+        fields = jira.issue(issue_key).fields
+
+        parent = getattr(fields, "parent", None)
+        epic_key = getattr(fields, EPIC_LINK_FIELD, None)
+
+        if parent is not None:
+            yield parent.key, "از استوری"
+            parent_fields = jira.issue(parent.key).fields
+            epic_key = epic_key or getattr(parent_fields, EPIC_LINK_FIELD, None)
+
+        if epic_key:
+            yield epic_key, "از اپیک"
+
+    def _related(self, issue_key: str) -> List[str]:
+        """List issues linked to this one, with the relation named.
+
+        A "blocks" / "is blocked by" edge is often the answer to "what do I
+        actually do here" — it says what has to land first and what is
+        waiting on this.
+
+        Args:
+            issue_key: The task to read
+
+        Returns:
+            One line per linked issue, or an empty list.
+        """
+        if not self._jira():
+            return []
+        try:
+            fields = self._jira().issue(issue_key).fields
+        except Exception as exc:
+            LOGGER.warning(f"Could not read links of {issue_key}: {exc}")
+            return []
+
+        lines: List[str] = []
+        for link in getattr(fields, "issuelinks", None) or []:
+            other = getattr(link, "outwardIssue", None)
+            relation = link.type.outward if other else link.type.inward
+            other = other or getattr(link, "inwardIssue", None)
+            if other is None:
+                continue
+            summary = (getattr(other.fields, "summary", "") or "").strip()
+            status = getattr(getattr(other.fields, "status", None), "name", "")
+            suffix = f" (وضعیت: {status})" if status else ""
+            lines.append(
+                f"{relation}: {self._link(other.key)} — {summary}{suffix}",
+            )
+        return lines
+
+    def _attachments(self, issue_key: str) -> List[str]:
+        """List the task's attachments as links.
+
+        Args:
+            issue_key: The task to read
+
+        Returns:
+            One line per attachment, or an empty list.
+        """
+        if not self._jira():
+            return []
+        try:
+            fields = self._jira().issue(issue_key).fields
+            return [
+                f'<a href="{item.content}">{item.filename}</a>'
+                for item in (getattr(fields, "attachment", None) or [])
+            ]
+        except Exception as exc:
+            LOGGER.warning(f"Could not read attachments of {issue_key}: {exc}")
+            return []
+
+    @staticmethod
+    def _trim(text: str, limit: int = 1200) -> str:
+        """Shorten long description text for a phone screen."""
+        text = text.strip()
+        return f"{text[:limit - 1]}…" if len(text) > limit else text
+
+    async def board_link(
+        self,
+        person: Optional[str] = None,
+        project: Optional[str] = None,
+    ) -> str:
+        """Give a Jira link listing someone's open issues.
+
+        A chat answer is capped and summarised; when the user wants to see
+        everything, or scan it themselves, a link is the honest reply.
+
+        Args:
+            person: Whose issues, as the user named them; None means the caller
+            project: Optional product name to narrow the list
+
+        Returns:
+            A browsable Jira URL, or a refusal when the person is not readable.
+        """
+        target, error = self._resolve_person(person)
+        if error:
+            return error
+
+        clauses = [f'assignee = "{target}"', "resolution = Unresolved"]
+        if project:
+            resolution = self.aliases.resolve(project, EntityKind.PROJECT)
+            if not resolution.resolved:
+                return f"«{project}» را نشناختم."
+            clauses.append(f"project = {resolution.resolved.canonical}")
+
+        jql = " AND ".join(clauses) + " ORDER BY updated DESC"
+        url = f"{self.base_url}/issues/?jql={quote(jql)}"
+        return f'<a href="{url}">همه تسک‌های {self._label(target, person)}</a>'
 
     def whoami(self) -> str:
         """Describe the caller, so the model stops asking who it is talking to.

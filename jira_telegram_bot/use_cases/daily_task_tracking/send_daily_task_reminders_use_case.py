@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from urllib.parse import quote
 from typing import Any, Dict, List
 
 from jira_telegram_bot import LOGGER
@@ -67,6 +68,7 @@ class SendDailyTaskRemindersUseCase:
         daily_task_tracking_handler: Any,
         telegram_token: str,
         queue_manager: DailyTaskQueueManager,
+        base_url: str = "",
     ):
         """Initialize the use case.
 
@@ -80,6 +82,7 @@ class SendDailyTaskRemindersUseCase:
             daily_task_tracking_handler: Handler for telegram keyboards
             telegram_token: Telegram bot token
             queue_manager: Task queue manager
+            base_url: Jira base URL, used to link the tasks left unasked
         """
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
         self.detect_regression = detect_status_regression_use_case
@@ -90,6 +93,7 @@ class SendDailyTaskRemindersUseCase:
         self.handler = daily_task_tracking_handler
         self.telegram_token = telegram_token
         self.queue_manager = queue_manager
+        self.base_url = (base_url or "").rstrip("/")
         self.bot = Bot(token=telegram_token)
         self.welcome_sent_today = {}  # Track welcome messages per day per user
         
@@ -187,24 +191,32 @@ class SendDailyTaskRemindersUseCase:
         
         project_summary = ", ".join([f"{key}: {count}" for key, count in projects.items()])
         
-        # Nobody answers a hundred prompts one at a time, and a queue that
-        # long is abandoned rather than completed. Ask about the most
-        # pressing ones and say plainly how many were left out.
+        # Backlog items with no sprint are the backlog, not a commitment
+        # anyone took on for this fortnight. Asking about them daily buries
+        # the work that is actually in flight.
         total = len(tasks)
-        queued = self._most_pressing(tasks)
-        overflow = total - len(queued)
+        committed = [task for task in tasks if not self._is_loose_backlog(task)]
+        backlog = total - len(committed)
+
+        # Even after that, a few people carry more than anyone answers one at
+        # a time, so the queue is capped and the rest is offered as a link.
+        queued = self._most_pressing(committed)
+        overflow = len(committed) - len(queued)
 
         summary = (
-            f"📋 شما {total} تسک دارید که نیاز به بررسی دارند\n"
+            f"📋 شما {total} تسک باز دارید\n"
             f"📦 پروژه‌ها: {project_summary}\n\n"
         )
+        if backlog:
+            summary += f"({backlog} مورد در بک‌لاگ است و امروز پرسیده نمی‌شود.)\n"
         if overflow > 0:
             summary += (
-                f"برای امروز {len(queued)} تسک مهم‌تر را می‌پرسم "
-                f"({overflow} تسک دیگر باقی می‌ماند).\n"
-                f"هر وقت خواستید بپرسید «تسک‌هام چیه؟» تا بقیه را ببینید.\n\n"
+                f"از {len(committed)} تسک جاری، {len(queued)} مورد مهم‌تر را "
+                f"می‌پرسم.\n"
             )
-        summary += "لطفاً برای هر تسک پاسخ دهید."
+        if backlog or overflow > 0:
+            summary += f"همه تسک‌ها: {self._board_link(jira_username)}\n"
+        summary += "\nلطفاً برای هر تسک پاسخ دهید."
 
         await self.telegram_notifier._send_message(chat_id, summary)
 
@@ -229,6 +241,33 @@ class SendDailyTaskRemindersUseCase:
             )
         except Exception as e:
             LOGGER.error(f"Error sending welcome message: {e}")
+
+    @staticmethod
+    def _is_loose_backlog(task) -> bool:
+        """Whether a task is backlog rather than work taken on for a sprint.
+
+        Args:
+            task: The task to judge
+
+        Returns:
+            True for a Backlog-status task that belongs to no sprint.
+        """
+        return (task.status or "").strip().lower() == "backlog" and not task.sprint_name
+
+    def _board_link(self, jira_username: str) -> str:
+        """A Jira link showing everything assigned to this person.
+
+        Args:
+            jira_username: Whose issues to show
+
+        Returns:
+            A browsable URL, so nothing that was skipped is out of reach.
+        """
+        jql = (
+            f'assignee = "{jira_username}" AND resolution = Unresolved '
+            f"ORDER BY updated DESC"
+        )
+        return f"{self.base_url}/issues/?jql={quote(jql)}"
 
     def _most_pressing(self, tasks):
         """Pick the tasks worth interrupting someone about today.
