@@ -1,6 +1,9 @@
 """Use case for turning a free-text work report into per-issue worklogs."""
 from __future__ import annotations
 
+import re
+from datetime import date
+
 from typing import Any
 from typing import Dict
 from typing import List
@@ -89,14 +92,16 @@ class ParseWorklogReportUseCase:
                 "content": text,
                 "candidates": self._format_candidates(candidates),
                 "history": history,
+                "today": date.today().isoformat(),
             },
             cleanse_llm_text=True,
         )
 
         report.total_hours = self._to_float(result.get("total_hours")) or None
         report.project_hint = (result.get("project_hint") or "").strip() or None
+        ordinal_key = self._ordinal_issue_key(text, history)
         report.splits = [
-            self._build_split(raw, candidates)
+            self._build_split(raw, candidates, ordinal_key)
             for raw in self._as_list(result.get("splits"))
         ]
         report.splits = [split for split in report.splits if split.hours > 0]
@@ -122,8 +127,16 @@ class ParseWorklogReportUseCase:
         self,
         raw: Any,
         candidates: Sequence[DailyTaskCheck],
+        ordinal_key: Optional[str] = None,
     ) -> ParsedWorklogSplit:
-        """Turn one raw model entry into a split with a resolved status."""
+        """Turn one raw model entry into a split with a resolved status.
+
+        Args:
+            raw: One entry from the model's ``splits``
+            candidates: The issues the report was parsed against
+            ordinal_key: Issue key an ordinal in the message points at, which
+                settles the match the model could not make on its own
+        """
         if not isinstance(raw, dict):
             raw = {}
 
@@ -138,9 +151,20 @@ class ParseWorklogReportUseCase:
         split = ParsedWorklogSplit(
             hours=self._to_float(raw.get("hours")),
             description=str(raw.get("description") or "").strip(),
+            worked_on=self._to_past_date(raw.get("worked_on")),
+            work_type=self._clean(raw.get("work_type")),
             candidate_indices=indices,
             confidence=confidence,
         )
+
+        if ordinal_key and len(indices) != 1:
+            # "دومی" names one task exactly; trust it over the model's guess.
+            for position, candidate in enumerate(candidates):
+                if candidate.issue_key == ordinal_key:
+                    split.candidate_indices = [position]
+                    split.issue_key = ordinal_key
+                    split.status = WorklogSplitStatus.RESOLVED
+                    return split
 
         if not indices:
             split.status = WorklogSplitStatus.UNMATCHED
@@ -150,6 +174,81 @@ class ParseWorklogReportUseCase:
         else:
             split.status = WorklogSplitStatus.AMBIGUOUS
         return split
+
+    # Ordinals the team uses to point back at a list the bot just printed.
+    # Resolving these in Python rather than in the prompt keeps "دومی" as
+    # reliable as "تسک دوم" — the model was resolving one and not the other.
+    _ORDINALS = {
+        "اول": 0, "اولی": 0, "اولین": 0, "یکم": 0, "یکمی": 0,
+        "دوم": 1, "دومی": 1, "دومین": 1,
+        "سوم": 2, "سومی": 2, "سومین": 2,
+        "چهارم": 3, "چهارمی": 3, "چهارمین": 3,
+        "پنجم": 4, "پنجمی": 4, "پنجمین": 4,
+    }
+    _LAST = ("آخری", "آخرین", "اخری", "اخرین")
+
+    @classmethod
+    def _ordinal_issue_key(cls, text: str, history: str) -> Optional[str]:
+        """Resolve "the second one" against the list the bot last printed.
+
+        Args:
+            text: The user's message
+            history: The rendered conversation so far
+
+        Returns:
+            The issue key that ordinal points at, or None when the message
+            names no ordinal or the history holds no list to count.
+        """
+        if not history:
+            return None
+
+        keys: List[str] = []
+        for match in re.finditer(r"\b([A-Z][A-Z0-9]+-\d+)\b", history):
+            if match.group(1) not in keys:
+                keys.append(match.group(1))
+        if not keys:
+            return None
+
+        words = set(re.findall(r"[\u0600-\u06FF]+", text))
+        if words & set(cls._LAST):
+            return keys[-1]
+        for word in words:
+            index = cls._ORDINALS.get(word)
+            if index is not None and index < len(keys):
+                return keys[index]
+        return None
+
+    @staticmethod
+    def _clean(value: Any) -> Optional[str]:
+        """Return a trimmed string, or None for anything empty or null-ish."""
+        text = str(value or "").strip()
+        return text or None
+
+    @classmethod
+    def _to_past_date(cls, value: Any) -> Optional[str]:
+        """Validate a parsed work date, rejecting anything in the future.
+
+        A worklog dated ahead of today is always wrong and Jira accepts it
+        silently, so bad arithmetic from the model is dropped here.
+
+        Args:
+            value: The model's ``worked_on`` value
+
+        Returns:
+            An ISO date string of today or earlier, or None meaning today.
+        """
+        text = cls._clean(value)
+        if not text:
+            return None
+        try:
+            parsed = date.fromisoformat(cls._normalise_digits(text))
+        except (TypeError, ValueError):
+            LOGGER.warning(f"Ignoring unparseable work date {text!r}")
+            return None
+        if parsed > date.today():
+            LOGGER.warning(f"Ignoring future work date {text!r}")
+            return None
+        return parsed.isoformat()
 
     @staticmethod
     def _as_list(value: Any) -> List[Any]:

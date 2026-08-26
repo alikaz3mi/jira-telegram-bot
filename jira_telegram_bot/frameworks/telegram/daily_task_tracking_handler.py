@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, MessageHandler, filters
@@ -694,8 +695,14 @@ class DailyTaskTrackingHandler:
 
         intent = MessageIntent.WORKLOG
         if self.classify_message_intent:
-            intent = await self.classify_message_intent.execute(text)
-        LOGGER.info(f"Free-text intent for {text[:40]!r}: {intent.value}")
+            intent = await self.classify_message_intent.execute(
+                text, history=self._memory(context).render(),
+            )
+        LOGGER.info(
+            f"Free-text intent for {text[:40]!r}: {intent.value} "
+            f"(memory: {len(self._memory(context).turns)} turns, "
+            f"user_data id {id(context.user_data):x})"
+        )
 
         if intent is MessageIntent.WORKLOG:
             await self._handle_worklog_report(update, context)
@@ -882,11 +889,17 @@ class DailyTaskTrackingHandler:
         for split in report.splits:
             if not split.is_ready:
                 continue
-            lines.append(persian_messages.WORKLOG_CONFIRM_LINE.format(
+            line = persian_messages.WORKLOG_CONFIRM_LINE.format(
                 hours=self._format_hours(split.hours),
                 issue_key=split.issue_key,
                 summary=summaries.get(split.issue_key, ""),
-            ))
+            )
+            # Show a backdate and the work type, so what gets written to Jira
+            # is visible before it is confirmed.
+            extras = [part for part in (split.worked_on, split.work_type) if part]
+            if extras:
+                line += f"  ({'، '.join(extras)})"
+            lines.append(line)
         if confirmation.arithmetic_warning:
             lines.append(f"\n⚠️ {confirmation.arithmetic_warning}")
 
@@ -980,7 +993,8 @@ class DailyTaskTrackingHandler:
                     jira_username=user_config.jira_username,
                     telegram_username=query.from_user.username,
                     hours=split.hours,
-                    comment=split.description or None,
+                    comment=self._worklog_comment(split),
+                    started_date=split.worked_on,
                 )
                 lines.append(persian_messages.WORKLOG_SAVED_LINE.format(
                     hours=self._format_hours(split.hours),
@@ -1000,6 +1014,23 @@ class DailyTaskTrackingHandler:
             invalidate(user_config.jira_username)
 
         await query.edit_message_text("\n".join(lines))
+
+    @staticmethod
+    def _worklog_comment(split) -> Optional[str]:
+        """Build the worklog comment, keeping how the time was worked.
+
+        "ریموت" and "اضافه‌کاری" carry meaning for payroll here, so they are
+        recorded in the comment rather than dropped with the rest of the
+        phrasing.
+
+        Args:
+            split: The parsed piece of work
+
+        Returns:
+            The comment to store, or None when there is nothing to say.
+        """
+        parts = [part for part in (split.work_type, split.description) if part]
+        return " — ".join(parts) or None
 
     @staticmethod
     def _format_hours(hours: float) -> str:

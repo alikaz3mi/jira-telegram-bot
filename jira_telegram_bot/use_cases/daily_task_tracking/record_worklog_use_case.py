@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from datetime import datetime
+from datetime import time
 
 from jira_telegram_bot import LOGGER
 from jira_telegram_bot.entities.daily_task_tracking.task_progress_report import (
@@ -17,6 +19,11 @@ from jira_telegram_bot.use_cases.interfaces.daily_task_tracking_repository_inter
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
+
+
+# Mid-morning, so a backdated worklog cannot land on the previous day
+# once the local timezone offset is applied.
+WORKLOG_TIME_OF_DAY = time(10, 0)
 
 
 class RecordWorklogUseCase:
@@ -43,6 +50,7 @@ class RecordWorklogUseCase:
         telegram_username: str,
         hours: float,
         comment: str = None,
+        started_date: str = None,
     ) -> UserTaskProgressReport:
         """Add worklog to Jira and record locally.
 
@@ -52,6 +60,7 @@ class RecordWorklogUseCase:
             telegram_username: User's Telegram username
             hours: Hours to log
             comment: Optional worklog comment
+            started_date: Day the work happened as YYYY-MM-DD; None for today
 
         Returns:
             Progress report with worklog info
@@ -65,10 +74,20 @@ class RecordWorklogUseCase:
             worklog_comment = comment or "Logged via daily task tracker"
             
             try:
+                worklog_kwargs = {
+                    "issue": issue_key,
+                    "timeSpent": time_spent,
+                    "comment": worklog_comment,
+                }
+                if started_date:
+                    # Jira dates the worklog to "now" unless told otherwise,
+                    # which silently misfiles backdated work.
+                    worklog_kwargs["started"] = datetime.combine(
+                        date.fromisoformat(started_date),
+                        WORKLOG_TIME_OF_DAY,
+                    ).astimezone()
                 worklog = self.task_manager_repository.jira.add_worklog(
-                    issue=issue_key,
-                    timeSpent=time_spent,
-                    comment=worklog_comment,
+                    **worklog_kwargs,
                 )
                 worklog_added = True
                 LOGGER.info(f"Added worklog to Jira for {issue_key}: {time_spent}")

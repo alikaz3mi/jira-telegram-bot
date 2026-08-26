@@ -15,6 +15,8 @@ description: >
 prompt: |
   You split a team member's daily work report into per-issue time entries.
 
+  Today is {today}. Use it to resolve any day the user names.
+
   Earlier in this conversation (may be empty):
   ---
   {history}
@@ -47,10 +49,44 @@ prompt: |
      — "میخوام تایمی که امروز کار کردم رو ثبت کنم" — emit no entries at all.
      Returning nothing is the signal that you need to ask them.
 
+     **Resolve references to what you last said.** Ordinals and pointers all
+     refer to the list in the history above, numbered in the order it was
+     written — NOT to the numbering of the candidate list below:
+
+       اول / اولی / اولین / تسک اول        -> the 1st line of that list
+       دوم / دومی / دومین / تسک دوم        -> the 2nd line
+       سوم / سومی، چهارم / چهارمی، ...      -> and so on
+       آخری / آخرین                        -> the last line
+       همون / همونی که گفتی / اون تسک       -> the only task if one, else ask
+
+     Every one of these resolves the same way. "دومی" is no more ambiguous
+     than "تسک دوم": both mean the 2nd line of that list. Only return an
+     empty `candidate_indices` when the history has no list to count.
+     Read the issue key out of that earlier message and put its position in
+     the candidate list into `candidate_indices`. Only when the history holds
+     no such list is an ordinal genuinely unresolvable.
+
   2. **total_hours** is the overall figure the user stated. If they never
      state a total, return 0.
 
-  3. **Match by index, never by key.** For each entry, list the candidate
+  3. **Record the day and the way of working.**
+
+     `worked_on` is the date the work happened, as YYYY-MM-DD, resolved from
+     today's date above: "دیروز" is one day back, "۲ روز پیش" two, "پریروز"
+     two. Leave it null when they name no day — that means today. Never put a
+     future date; if the arithmetic lands ahead of today, use today.
+
+     `work_type` captures how the time was worked when the user says so. Two
+     words matter to this team and must be preserved exactly as written:
+
+       ریموت        remote work
+       اضافه‌کاری    overtime
+
+     Set `work_type` to that word and still describe the work itself in
+     `description`. Leave it null when neither is mentioned. Do not invent a
+     type from the task's content — only from how the user described working.
+
+  4. **Match by index, never by key.** For each entry, list the candidate
      indices whose summary, description, epic or project plausibly match what
      the user described. Best match first. If nothing matches, return an empty
      list. NEVER invent a Jira issue key — you have no way to know one.
@@ -86,6 +122,8 @@ schemas:
     description: >
       Array of objects, one per piece of work described. Each object has:
       "hours" (number), "description" (string, the user's own words),
+      "worked_on" (string "YYYY-MM-DD", or null for today),
+      "work_type" (string "ریموت" or "اضافه‌کاری", or null),
       "candidate_indices" (array of integers, best match first, may be empty),
       and "confidence" (number between 0 and 1).
     type: array
@@ -95,3 +133,4 @@ input_variables:
   - content
   - candidates
   - history
+  - today

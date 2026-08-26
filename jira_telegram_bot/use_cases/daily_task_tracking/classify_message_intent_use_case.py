@@ -45,11 +45,12 @@ class ClassifyMessageIntentUseCase:
         self.ai_service = ai_service
         self.prompt_catalog = prompt_catalog
 
-    async def execute(self, text: str) -> MessageIntent:
+    async def execute(self, text: str, history: str = "") -> MessageIntent:
         """Classify one message.
 
         Args:
             text: The user's message
+            history: Recent turns, so a fragment is read as the follow-up it is
 
         Returns:
             The intent; falls back to ``CHITCHAT`` when unclear, because
@@ -60,7 +61,9 @@ class ClassifyMessageIntentUseCase:
 
         try:
             prompt = await self.prompt_catalog.get_prompt(_PROMPT_TASK)
-            result = await self.ai_service.run(prompt, {"content": text})
+            result = await self.ai_service.run(
+                prompt, {"content": text, "history": history},
+            )
             raw = str(result.get("intent", "")).strip().lower()
             return MessageIntent(raw)
         except ValueError:

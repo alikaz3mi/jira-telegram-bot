@@ -15,6 +15,11 @@ prompt: |
   Classify what this team member wants. They are talking to a Jira assistant
   that can log their work time and answer questions about their own tasks.
 
+  Earlier in this conversation (may be empty):
+  ---
+  {history}
+  ---
+
   Message:
   ---
   {content}
@@ -38,6 +43,18 @@ prompt: |
   number is not a worklog unless they say they SPENT that time. When a message
   both reports time and asks something, choose "worklog".
 
+  **Read the message against the history.** A short fragment usually continues
+  what came before rather than starting something new:
+
+  - After you listed tasks, "اونایی که بالاترین اولویت رو دارن" narrows that
+    list — it is a "question", not chitchat.
+  - After you asked how long they worked, "۳ ساعت" is a "worklog".
+  - "فقط همین دوتاست؟" asks you to confirm the previous answer — "question".
+
+  Only choose "chitchat" when the message genuinely asks for nothing and
+  reports nothing, such as a bare greeting or thanks. A fragment that would be
+  meaningless on its own is almost never chitchat when history exists.
+
   {format_instructions}
 
 # ── output schemas ──────────────────────────────
@@ -49,3 +66,4 @@ schemas:
 # ── input variables ─────────────────────────────
 input_variables:
   - content
+  - history

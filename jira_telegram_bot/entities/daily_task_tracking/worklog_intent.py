@@ -37,6 +37,20 @@ class ParsedWorklogSplit(BaseModel):
     description: str = Field(
         description="What the user said they did, in their own words",
     )
+    worked_on: Optional[str] = Field(
+        default=None,
+        description=(
+            "The day the work happened as YYYY-MM-DD, or None for today. "
+            "Resolved from phrases like 'دیروز' or '۲ روز پیش'."
+        ),
+    )
+    work_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "A named way of working the team records in the worklog comment, "
+            "such as 'ریموت' or 'اضافه‌کاری'. None when not stated."
+        ),
+    )
     candidate_indices: List[int] = Field(
         default_factory=list,
         description="Indices into the candidate list this work may belong to",
