@@ -254,6 +254,50 @@ class TestWorklogReportFlow(unittest.IsolatedAsyncioTestCase):
         self.assertIn("PARSCHAT-1", query.message.sent[-1])
 
 
+    async def test_agent_is_preferred_over_the_single_shot_answerer(self):
+        """When the tool-using agent is available it handles the question."""
+        self.handler.task_assistant_agent = AsyncMock()
+        self.handler.task_assistant_agent.answer.return_value = "دو تا داری"
+        self.classify.execute.return_value = MessageIntent.QUESTION
+
+        await self.handler._handle_free_text(
+            self._update("تسکام چیه؟"), self.context,
+        )
+
+        self.handler.task_assistant_agent.answer.assert_awaited_once()
+        self.answer.execute.assert_not_called()
+
+    async def test_caller_identity_is_bound_outside_the_model(self):
+        """The agent is told who is asking; it cannot choose for itself."""
+        self.handler.task_assistant_agent = AsyncMock()
+        self.handler.task_assistant_agent.answer.return_value = "..."
+        self.classify.execute.return_value = MessageIntent.QUESTION
+
+        await self.handler._handle_free_text(
+            self._update("تسک زهرا چیه؟"), self.context,
+        )
+
+        ctx = self.handler.task_assistant_agent.answer.call_args.kwargs["context"]
+        self.assertEqual(ctx.jira_username, "ali")
+
+    def test_unknown_role_falls_back_to_member(self):
+        """A bad role must not widen access or break the assistant."""
+        from jira_telegram_bot.entities.assistant_entities import UserRole
+
+        for raw in ["typo", None, "", 42]:
+            self.assertIs(
+                self.handler._role_of(Mock(assistant_role=raw)),
+                UserRole.MEMBER,
+            )
+
+    def test_configured_role_is_honoured(self):
+        """A valid role is read as written, case and spacing aside."""
+        from jira_telegram_bot.entities.assistant_entities import UserRole
+
+        self.assertIs(
+            self.handler._role_of(Mock(assistant_role=" CTO ")), UserRole.CTO,
+        )
+
     async def test_question_is_answered_not_logged(self):
         """A question about tasks is answered instead of parsed for hours."""
         self.classify.execute.return_value = MessageIntent.QUESTION

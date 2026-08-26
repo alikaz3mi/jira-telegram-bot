@@ -39,6 +39,11 @@ from jira_telegram_bot.entities.daily_task_tracking.worklog_intent import (
 from jira_telegram_bot.entities.daily_task_tracking.conversation_turn import (
     ConversationMemory,
 )
+from jira_telegram_bot.entities.assistant_entities import UserRole
+from jira_telegram_bot.use_cases.assistant.agent_context import AssistantContext
+from jira_telegram_bot.use_cases.assistant.task_assistant_agent import (
+    TaskAssistantAgent,
+)
 from jira_telegram_bot.use_cases.daily_task_tracking.classify_message_intent_use_case import (
     ClassifyMessageIntentUseCase,
     MessageIntent,
@@ -80,6 +85,7 @@ class DailyTaskTrackingHandler:
         get_user_daily_tasks_use_case: GetUserDailyTasksUseCase = None,
         classify_message_intent_use_case: ClassifyMessageIntentUseCase = None,
         answer_task_question_use_case: AnswerTaskQuestionUseCase = None,
+        task_assistant_agent: TaskAssistantAgent = None,
     ):
         """Initialize the handler.
 
@@ -95,6 +101,8 @@ class DailyTaskTrackingHandler:
             get_user_daily_tasks_use_case: Supplies the issues to match against
             classify_message_intent_use_case: Routes a message to the right flow
             answer_task_question_use_case: Answers questions about own tasks
+            task_assistant_agent: Tool-using agent; preferred when available,
+                since it can look up other people and count as well as list
         """
         self.record_delay = record_delay_reason_use_case
         self.record_time = record_time_spent_use_case
@@ -107,6 +115,7 @@ class DailyTaskTrackingHandler:
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
         self.classify_message_intent = classify_message_intent_use_case
         self.answer_task_question = answer_task_question_use_case
+        self.task_assistant_agent = task_assistant_agent
         self.task_sender = None  # Will be set by SendDailyTaskRemindersUseCase
 
     def create_delay_reason_keyboard(self) -> InlineKeyboardMarkup:
@@ -700,6 +709,26 @@ class DailyTaskTrackingHandler:
                 persian_messages.FREE_TEXT_HELP,
             )
 
+    @staticmethod
+    def _role_of(user_config) -> UserRole:
+        """Read a caller's role, defaulting to the least privileged one.
+
+        A misspelt role in the config must not break the assistant, and it
+        must never widen access, so anything unrecognised reads as MEMBER.
+
+        Args:
+            user_config: The caller's configuration
+
+        Returns:
+            The configured role, or ``UserRole.MEMBER``.
+        """
+        raw = getattr(user_config, "assistant_role", None)
+        try:
+            return UserRole(str(raw).strip().lower())
+        except ValueError:
+            LOGGER.warning(f"Unknown assistant_role {raw!r}; treating as member")
+            return UserRole.MEMBER
+
     async def _handle_task_question(
         self,
         update: Update,
@@ -713,7 +742,7 @@ class DailyTaskTrackingHandler:
             context: Callback context
             question: The question as the user asked it
         """
-        if not (self.answer_task_question and self.get_user_daily_tasks):
+        if not (self.task_assistant_agent or self.answer_task_question):
             await update.message.reply_text(persian_messages.FREE_TEXT_HELP)
             return
 
@@ -725,12 +754,25 @@ class DailyTaskTrackingHandler:
 
         notice = await update.message.reply_text(persian_messages.QUESTION_THINKING)
         try:
-            tasks = await self.get_user_daily_tasks.execute(
-                jira_username=user_config.jira_username,
-            )
-            answer = await self.answer_task_question.execute(
-                question, tasks, history=self._memory(context).render(),
-            )
+            if self.task_assistant_agent:
+                # The agent can look people up and count, not just list, and
+                # binds identity outside the model.
+                answer = await self.task_assistant_agent.answer(
+                    question,
+                    context=AssistantContext(
+                        jira_username=user_config.jira_username,
+                        telegram_username=update.effective_user.username or "",
+                        role=self._role_of(user_config),
+                    ),
+                    memory=self._memory(context),
+                )
+            else:
+                tasks = await self.get_user_daily_tasks.execute(
+                    jira_username=user_config.jira_username,
+                )
+                answer = await self.answer_task_question.execute(
+                    question, tasks, history=self._memory(context).render(),
+                )
         except Exception as exc:
             LOGGER.error(f"Failed to answer question: {exc}", exc_info=True)
             await notice.edit_text(persian_messages.ERROR_MESSAGE)

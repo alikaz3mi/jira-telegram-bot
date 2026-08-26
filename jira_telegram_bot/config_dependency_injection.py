@@ -1062,6 +1062,24 @@ def _configure_daily_task_tracking(container: Container):
         lambda c: CachedUserTasksUseCase(c[GetUserDailyTasksUseCase])
     )
 
+    from jira_telegram_bot.adapters.repositories.file_storage.entity_alias_repository import (
+        EntityAliasRepository,
+    )
+    from jira_telegram_bot.use_cases.assistant.task_assistant_agent import (
+        TaskAssistantAgent,
+    )
+
+    container[EntityAliasRepository] = Singleton(lambda c: EntityAliasRepository())
+
+    container[TaskAssistantAgent] = Singleton(
+        lambda c: TaskAssistantAgent(
+            model=c[LLMModelInterface]["openai", "gpt-4o-mini"],
+            alias_repository=c[EntityAliasRepository],
+            get_user_daily_tasks_use_case=c[CachedUserTasksUseCase],
+            base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
+        )
+    )
+
     container[DailyTaskTrackingHandler] = Singleton(
         lambda c: DailyTaskTrackingHandler(
             record_delay_reason_use_case=c[RecordDelayReasonUseCase],
@@ -1075,6 +1093,7 @@ def _configure_daily_task_tracking(container: Container):
             get_user_daily_tasks_use_case=c[CachedUserTasksUseCase],
             classify_message_intent_use_case=c[ClassifyMessageIntentUseCase],
             answer_task_question_use_case=c[AnswerTaskQuestionUseCase],
+            task_assistant_agent=c[TaskAssistantAgent],
         )
     )
 

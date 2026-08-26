@@ -23,6 +23,9 @@ class UserConfig(BaseModel):
     user_components: Optional[dict] = None
     weekly_capacity: Optional[dict] = None
     board_roles: Optional[Dict[str, str]] = None  # Board name -> role (admin, member, viewer, etc.)
+    # Who this person may ask the assistant about: member (themselves),
+    # lead or cto (anyone). Read in Python, never decided by the model.
+    assistant_role: str = "member"
     project: FieldConfig = FieldConfig()
     component: FieldConfig = FieldConfig()
     task_type: FieldConfig = FieldConfig()

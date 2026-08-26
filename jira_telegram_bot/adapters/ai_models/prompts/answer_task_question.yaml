@@ -36,15 +36,24 @@ prompt: |
      project, a status or a timeframe, list ONLY the tasks that match and
      leave every other task out. When they name nothing, list them all.
 
-     Match a named product against the `project=` field on each row. These
-     are the ParsChat projects, and a question about "پارسچت"/"parschat"
-     includes ALL of them:
+     Match a named product against the `project=` field on each row. The
+     product names people use in conversation do not match the project keys,
+     so use this table — a question about a product covers EVERY key listed
+     for it:
 
-       project=PARSCHAT   the product itself
-       project=PCT        ParsChat ticketing
-       project=PCD        ParsChat development
+       پارس‌چت / parschat        -> PARSCHAT, PCT
+       آواخرد / avakherad       -> FOLLOWUP, AVA
+       خردیار / kheradyar       -> KHERADYAR
+       اکودارو / echoo-daroo    -> ECDAROO
+       ری‌تارگت / retargeting    -> RETARGET, RETKAN
+       داشبورد / dashboard      -> DASH
+       پارستک / parstech        -> PARS
+       تحلیل صدا / voice        -> VOICE
 
-     A row whose project is one of those three IS a ParsChat task — say so.
+     Avakherad's work is tracked under FOLLOWUP, not AVA, so a question about
+     آواخرد must list FOLLOWUP rows. A key not in this table is its own
+     project; match it by name.
+
      Only answer "no tasks" when not a single row matches; check the
      `project=` field of every row before you conclude that.
 
