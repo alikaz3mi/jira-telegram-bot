@@ -374,8 +374,15 @@ class GetUserDailyTasksUseCase:
         if status_lower in ["in progress", "doing"]:
             return TaskCheckStatus.IN_PROGRESS
         
-        if target_start and target_start.date() <= today.date():
-            if dependencies_completed:
-                return TaskCheckStatus.SHOULD_BE_STARTED
-        
+        if target_start and target_start.date() > today.date():
+            # Genuinely scheduled for later; nothing to ask about yet.
+            return TaskCheckStatus.OK
+
+        # No Target start means undated, not "not yet due". The JQL already
+        # limited this to the person's unresolved work in an open sprint, so
+        # an undated To Do belongs in the list — leaving it out made real
+        # sprint work invisible to the assistant.
+        if dependencies_completed:
+            return TaskCheckStatus.SHOULD_BE_STARTED
+
         return TaskCheckStatus.OK

@@ -700,8 +700,7 @@ class DailyTaskTrackingHandler:
             )
         LOGGER.info(
             f"Free-text intent for {text[:40]!r}: {intent.value} "
-            f"(memory: {len(self._memory(context).turns)} turns, "
-            f"user_data id {id(context.user_data):x})"
+            f"({len(self._memory(context).turns)} turns of history)"
         )
 
         if intent is MessageIntent.WORKLOG:
