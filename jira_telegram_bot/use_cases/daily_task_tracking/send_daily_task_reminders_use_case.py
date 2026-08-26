@@ -48,6 +48,11 @@ from jira_telegram_bot.frameworks.telegram.daily_task_queue_manager import (
 from telegram import Bot
 
 
+# A daily check-in people finish. Beyond this the queue is abandoned,
+# and an abandoned queue collects no answers at all.
+MAX_TASKS_PER_REMINDER = 12
+
+
 class SendDailyTaskRemindersUseCase:
     """Orchestrator use case for sending daily task reminders to all users."""
 
@@ -182,16 +187,29 @@ class SendDailyTaskRemindersUseCase:
         
         project_summary = ", ".join([f"{key}: {count}" for key, count in projects.items()])
         
-        # Send summary
-        await self.telegram_notifier._send_message(
-            chat_id,
-            f"📋 شما {len(tasks)} تسک دارید که نیاز به بررسی دارند\n"
+        # Nobody answers a hundred prompts one at a time, and a queue that
+        # long is abandoned rather than completed. Ask about the most
+        # pressing ones and say plainly how many were left out.
+        total = len(tasks)
+        queued = self._most_pressing(tasks)
+        overflow = total - len(queued)
+
+        summary = (
+            f"📋 شما {total} تسک دارید که نیاز به بررسی دارند\n"
             f"📦 پروژه‌ها: {project_summary}\n\n"
-            f"تسک‌ها یکی یکی برای شما ارسال می‌شوند. لطفاً برای هر تسک پاسخ دهید."
         )
-        
+        if overflow > 0:
+            summary += (
+                f"برای امروز {len(queued)} تسک مهم‌تر را می‌پرسم "
+                f"({overflow} تسک دیگر باقی می‌ماند).\n"
+                f"هر وقت خواستید بپرسید «تسک‌هام چیه؟» تا بقیه را ببینید.\n\n"
+            )
+        summary += "لطفاً برای هر تسک پاسخ دهید."
+
+        await self.telegram_notifier._send_message(chat_id, summary)
+
         # Create queue for this user
-        self.queue_manager.create_queue(chat_id, tasks)
+        self.queue_manager.create_queue(chat_id, queued)
         
         # Send first task
         await self._send_next_task_in_queue(chat_id)
@@ -211,6 +229,30 @@ class SendDailyTaskRemindersUseCase:
             )
         except Exception as e:
             LOGGER.error(f"Error sending welcome message: {e}")
+
+    def _most_pressing(self, tasks):
+        """Pick the tasks worth interrupting someone about today.
+
+        Args:
+            tasks: Everything needing attention for one person
+
+        Returns:
+            At most ``MAX_TASKS_PER_REMINDER`` tasks, worked-on and blocked
+            ones first, since those are the ones an answer changes.
+        """
+        def rank(task):
+            order = {
+                TaskCheckStatus.STATUS_REGRESSED: 0,
+                TaskCheckStatus.NEEDS_WORKLOG: 1,
+                TaskCheckStatus.IN_PROGRESS: 2,
+                TaskCheckStatus.SHOULD_BE_STARTED: 3,
+            }
+            return (
+                order.get(task.check_status, 4),
+                task.target_end or datetime.max,
+            )
+
+        return sorted(tasks, key=rank)[:MAX_TASKS_PER_REMINDER]
 
     async def _send_next_task_in_queue(self, chat_id: int) -> None:
         """Send next task from queue to user.
