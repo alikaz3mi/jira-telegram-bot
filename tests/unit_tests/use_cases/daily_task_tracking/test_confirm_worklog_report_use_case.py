@@ -117,8 +117,13 @@ class TestConfirmWorklogReportUseCase(unittest.TestCase):
             ["PARSCHAT-2", "PARSCHAT-3"],
         )
 
-    def test_unmatched_split_falls_back_to_user_tasks(self):
-        """With no shortlist the user still gets tappable options."""
+    def test_unmatched_split_offers_no_options(self):
+        """The user may have just said the task does not exist.
+
+        Offering the first few of their issues looks like a choice but is a
+        guess wearing a keyboard, and confirming it writes real hours to the
+        wrong issue. Ask instead.
+        """
         report = ParsedWorklogReport(
             raw_text="...",
             splits=[
@@ -133,9 +138,9 @@ class TestConfirmWorklogReportUseCase(unittest.TestCase):
 
         confirmation = self.use_case.execute(report, self.candidates)
 
-        options = confirmation.questions[0].options
-        self.assertTrue(options)
-        self.assertLessEqual(len(options), MAX_OPTIONS)
+        self.assertEqual(confirmation.questions[0].options, [])
+        self.assertIn("پیدا نکردم", confirmation.questions[0].text)
+        self.assertFalse(confirmation.is_ready)
 
     def test_options_are_capped_for_telegram(self):
         """A long issue list is trimmed to a readable keyboard."""

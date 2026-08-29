@@ -37,6 +37,7 @@ python-socketio[client]==5.16.4
 python-multipart==0.0.32
 httpx==0.28.1
 pandas==2.2.3
+tqdm==4.67.1
 pymongo[srv]
 # google-auth: must stay >=2.40 — langchain-google-genai pulls google-genai>=1.65,
 # which the previous ~=2.35.0 cap made unresolvable.

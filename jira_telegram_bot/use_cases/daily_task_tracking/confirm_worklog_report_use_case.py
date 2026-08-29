@@ -114,26 +114,33 @@ class ConfirmWorklogReportUseCase:
             if 0 <= position < len(candidates)
         ]
 
-        if not options:
-            # Nothing matched, so offer the user's issues rather than a dead end.
-            options = [
-                WorklogQuestionOption(
-                    label=self._option_label(task),
-                    issue_key=task.issue_key,
-                )
-                for task in candidates[:MAX_OPTIONS]
-            ]
-
-        if not options:
-            return None
-
         hours = self._format_hours(split.hours)
-        subject = split.description or "این بخش از کار"
+
+        if not options:
+            # Nothing matched. Offering the first few of the user's issues
+            # looks like a choice but is a guess wearing a keyboard: the user
+            # may have just said the task does not exist. Say so and let them
+            # name it or drop the entry.
+            return WorklogQuestion(
+                split_index=index,
+                text=(
+                    f"برای «{self._subject(split)}» ({hours} ساعت) تسکی پیدا "
+                    f"نکردم.\nکلید تسک را بنویسید (مثل PARSCHAT-123)، یا اگر "
+                    f"تسکی برایش ثبت نشده این مورد را رد کنید."
+                ),
+                options=[],
+            )
+
         return WorklogQuestion(
             split_index=index,
-            text=f"«{subject}» ({hours} ساعت) روی کدام تسک ثبت شود؟",
+            text=f"«{self._subject(split)}» ({hours} ساعت) روی کدام تسک ثبت شود؟",
             options=options,
         )
+
+    @staticmethod
+    def _subject(split: ParsedWorklogSplit) -> str:
+        """The user's own words for one piece of work, for quoting back."""
+        return (split.description or "").strip() or "این بخش از کار"
 
     def _check_arithmetic(self, report: ParsedWorklogReport) -> Optional[str]:
         """Flag a stated total that the pieces do not add up to."""

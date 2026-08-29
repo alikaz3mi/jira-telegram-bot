@@ -50,6 +50,18 @@ PRODUCT_ALIASES = {
 # listed: "خانوم لطفیان" normalises to "لطفیان" before matching.
 PERSON_ALIASES = {
     "a_kazemi": ["کاظمی", "علی کاظمی", "kazemi", "ali"],
+    # Added after the assistant could not resolve "خانوم بهرامی": eleven of
+    # nineteen active assignees were missing from this list, including the
+    # two people carrying the most open work.
+    "a_bahrami": ["بهرامی", "آسیه بهرامی", "bahrami", "asiyeh"],
+    "n_emamdadi": ["امامدادی", "نفیسه امامدادی", "emamdadi", "nafise"],
+    "z_ghamari": ["قمری", "زهرا قمری", "ghamari"],
+    "naeem.mohammadi": ["محمدی", "نعیم محمدی", "mohammadi", "naeem"],
+    "e_taghinezhad": ["تقی‌نژاد", "تقینژاد", "عرفان تقی‌نژاد", "taghinezhad", "erfan"],
+    "m_saeedi": ["سعیدی", "مهدی سعیدی", "saeedi"],
+    "z_salimi": ["سلیمی", "زهرا سلیمی", "salimi"],
+    "a_mohammadhadi": ["محمدهادی", "mohammadhadi"],
+    "a_sajjadi": ["سجادی", "sajjadi"],
     "z_lotfian": ["لطفیان", "زهرا لطفیان", "lotfian", "zahra"],
     "M_Samei": ["سمیعی", "samei"],
     "a_janloo": ["جانلو", "janloo"],

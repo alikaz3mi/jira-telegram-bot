@@ -165,6 +165,9 @@ class GetUserDailyTasksUseCase:
                 dependencies=dependencies,
                 dependencies_completed=dependencies_completed,
                 worklog_hours=worklog_hours,
+                parent_key=getattr(
+                    getattr(issue.fields, "parent", None), "key", None,
+                ),
                 issue_type=issue_type,
                 priority=priority,
                 description=description,

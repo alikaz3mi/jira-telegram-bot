@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from datetime import timedelta
 
 from typing import Any
 from typing import Dict
@@ -100,8 +101,9 @@ class ParseWorklogReportUseCase:
         report.total_hours = self._to_float(result.get("total_hours")) or None
         report.project_hint = (result.get("project_hint") or "").strip() or None
         ordinal_key = self._ordinal_issue_key(text, history)
+        weekday = self._weekday_date(text, date.today())
         report.splits = [
-            self._build_split(raw, candidates, ordinal_key)
+            self._build_split(raw, candidates, ordinal_key, weekday)
             for raw in self._as_list(result.get("splits"))
         ]
         report.splits = [split for split in report.splits if split.hours > 0]
@@ -128,6 +130,7 @@ class ParseWorklogReportUseCase:
         raw: Any,
         candidates: Sequence[DailyTaskCheck],
         ordinal_key: Optional[str] = None,
+        weekday: Optional[date] = None,
     ) -> ParsedWorklogSplit:
         """Turn one raw model entry into a split with a resolved status.
 
@@ -136,6 +139,8 @@ class ParseWorklogReportUseCase:
             candidates: The issues the report was parsed against
             ordinal_key: Issue key an ordinal in the message points at, which
                 settles the match the model could not make on its own
+            weekday: Date resolved in Python from a named weekday, which
+                overrides the model's arithmetic
         """
         if not isinstance(raw, dict):
             raw = {}
@@ -151,7 +156,10 @@ class ParseWorklogReportUseCase:
         split = ParsedWorklogSplit(
             hours=self._to_float(raw.get("hours")),
             description=str(raw.get("description") or "").strip(),
-            worked_on=self._to_past_date(raw.get("worked_on")),
+            worked_on=(
+                weekday.isoformat() if weekday
+                else self._to_past_date(raw.get("worked_on"))
+            ),
             work_type=self._clean(raw.get("work_type")),
             candidate_indices=indices,
             confidence=confidence,
@@ -216,6 +224,53 @@ class ParseWorklogReportUseCase:
             index = cls._ORDINALS.get(word)
             if index is not None and index < len(keys):
                 return keys[index]
+        return None
+
+    # Persian weekday names to Python's Monday=0 numbering. Weekday
+    # arithmetic is not something a language model does reliably: asked for
+    # "last Thursday" it returned a Tuesday, three days out, and a worklog
+    # filed against the wrong day is not visibly wrong to anyone reading it.
+    _WEEKDAYS = {
+        "دوشنبه": 0,
+        "سه‌شنبه": 1, "سه شنبه": 1, "سشنبه": 1,
+        "چهارشنبه": 2, "چارشنبه": 2,
+        "پنج‌شنبه": 3, "پنجشنبه": 3, "پنج شنبه": 3, "۵شنبه": 3, "5شنبه": 3,
+        "جمعه": 4,
+        "شنبه": 5,
+        "یکشنبه": 6, "یک‌شنبه": 6, "یکشنبه‌": 6,
+    }
+    # "last week" / "this week" qualifiers.
+    _LAST_WEEK = ("هفته پیش", "هفته‌ی پیش", "هفته گذشته", "هفته‌ی گذشته", "هفته قبل")
+
+    @classmethod
+    def _weekday_date(cls, text: str, today: date) -> Optional[date]:
+        """Resolve a Persian weekday phrase to an actual past date.
+
+        Args:
+            text: The user's message
+            today: The day the message was sent
+
+        Returns:
+            The date meant, or None when no weekday is named.
+        """
+        normalised = text.replace("\u200c", " ")
+        # Longest first, so "پنجشنبه" is not matched by "شنبه".
+        for name in sorted(cls._WEEKDAYS, key=len, reverse=True):
+            if name.replace("\u200c", " ") not in normalised:
+                continue
+            delta = (today.weekday() - cls._WEEKDAYS[name]) % 7
+            if delta == 0:
+                delta = 7
+
+            # The Persian week begins on Saturday, so the most recent Thursday
+            # can already belong to the previous week. Adding another seven
+            # days then skips a week the user did not mean. Only go back
+            # further when the day named is still inside the current week.
+            if any(q in normalised for q in cls._LAST_WEEK):
+                days_since_saturday = (today.weekday() - 5) % 7
+                if delta <= days_since_saturday:
+                    delta += 7
+            return today - timedelta(days=delta)
         return None
 
     @staticmethod

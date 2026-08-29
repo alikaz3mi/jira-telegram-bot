@@ -14,7 +14,11 @@ class FieldConfig(BaseModel):
 
 class UserConfig(BaseModel):
     telegram_username: Optional[str] = None
-    telegram_user_chat_id: int
+    # Optional so a teammate can be registered from Jira before anyone has
+    # their Telegram id. Senders already skip a user without one, rather
+    # than the whole entry being dropped at load time and the person going
+    # silently unknown to the bot.
+    telegram_user_chat_id: Optional[int] = None
     jira_username: str
     gitlab_username: Optional[str] = None
     google_sheet_name: Optional[str] = None

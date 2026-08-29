@@ -48,6 +48,14 @@ class DailyTaskCheck(BaseModel):
         default=0.0,
         description="Total hours logged",
     )
+    parent_key: Optional[str] = Field(
+        None,
+        description=(
+            "The Story or Task this Sub-task belongs to. A list of "
+            "sub-tasks alone is unreadable; the parent is what a person "
+            "recognises."
+        ),
+    )
     issue_type: Optional[str] = Field(
         None,
         description="Issue type (Task, Story, Bug, etc.)",

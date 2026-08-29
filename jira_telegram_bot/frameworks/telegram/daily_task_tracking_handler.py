@@ -1,6 +1,9 @@
 """Telegram handler for daily task tracking with Persian interface."""
 from __future__ import annotations
 
+import re
+from datetime import date
+
 from typing import TYPE_CHECKING
 from typing import Optional
 
@@ -71,6 +74,7 @@ class DailyTaskTrackingHandler:
     WAITING_CUSTOM_HOURS = "waiting_custom_hours"
     WAITING_CUSTOM_DELAY = "waiting_custom_delay"
     PENDING_REPORT = "pending_worklog_report"
+    WAITING_ISSUE_KEY = "waiting_issue_key"
     MEMORY = "conversation_memory"
 
     def __init__(
@@ -87,6 +91,7 @@ class DailyTaskTrackingHandler:
         classify_message_intent_use_case: ClassifyMessageIntentUseCase = None,
         answer_task_question_use_case: AnswerTaskQuestionUseCase = None,
         task_assistant_agent: TaskAssistantAgent = None,
+        base_url: str = "",
     ):
         """Initialize the handler.
 
@@ -104,6 +109,7 @@ class DailyTaskTrackingHandler:
             answer_task_question_use_case: Answers questions about own tasks
             task_assistant_agent: Tool-using agent; preferred when available,
                 since it can look up other people and count as well as list
+            base_url: Jira base URL, used to hyperlink issue keys
         """
         self.record_delay = record_delay_reason_use_case
         self.record_time = record_time_spent_use_case
@@ -117,6 +123,7 @@ class DailyTaskTrackingHandler:
         self.classify_message_intent = classify_message_intent_use_case
         self.answer_task_question = answer_task_question_use_case
         self.task_assistant_agent = task_assistant_agent
+        self.base_url = (base_url or "").rstrip("/")
         self.task_sender = None  # Will be set by SendDailyTaskRemindersUseCase
 
     def create_delay_reason_keyboard(self) -> InlineKeyboardMarkup:
@@ -517,6 +524,8 @@ class DailyTaskTrackingHandler:
             await self._handle_custom_hours(update, context)
         elif state == self.WAITING_CUSTOM_DELAY:
             await self._handle_custom_delay(update, context)
+        elif state == self.WAITING_ISSUE_KEY:
+            await self._handle_typed_issue_key(update, context)
         else:
             await self._handle_free_text(update, context)
 
@@ -868,6 +877,21 @@ class DailyTaskTrackingHandler:
         """
         if confirmation.questions:
             question = confirmation.questions[0]
+            if not question.options:
+                # Nothing matched: the user types the key or skips. Remember
+                # which split is waiting so the typed answer lands on it.
+                context.user_data["state"] = self.WAITING_ISSUE_KEY
+                context.user_data["awaiting_split"] = question.split_index
+                await send(
+                    question.text,
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton(
+                            persian_messages.WORKLOG_SKIP_SPLIT_BUTTON,
+                            callback_data=f"wlpick_{question.split_index}_skip",
+                        ),
+                    ]]),
+                )
+                return
             buttons = [
                 [InlineKeyboardButton(
                     option.label,
@@ -890,12 +914,16 @@ class DailyTaskTrackingHandler:
                 continue
             line = persian_messages.WORKLOG_CONFIRM_LINE.format(
                 hours=self._format_hours(split.hours),
-                issue_key=split.issue_key,
+                issue_key=self._issue_link(split.issue_key),
                 summary=summaries.get(split.issue_key, ""),
             )
             # Show a backdate and the work type, so what gets written to Jira
             # is visible before it is confirmed.
-            extras = [part for part in (split.worked_on, split.work_type) if part]
+            extras = [
+                part for part in (
+                    self._spell_date(split.worked_on), split.work_type,
+                ) if part
+            ]
             if extras:
                 line += f"  ({'، '.join(extras)})"
             lines.append(line)
@@ -912,7 +940,53 @@ class DailyTaskTrackingHandler:
                 callback_data="wlcancel",
             ),
         ]])
-        await send("\n".join(lines), reply_markup=keyboard)
+        await send(
+            "\n".join(lines), reply_markup=keyboard, parse_mode="HTML",
+        )
+
+    async def _handle_typed_issue_key(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> None:
+        """Accept an issue key typed in answer to "I could not find a task".
+
+        Args:
+            update: Telegram update
+            context: Callback context
+        """
+        pending = context.user_data.get(self.PENDING_REPORT)
+        split_index = context.user_data.get("awaiting_split")
+        if not pending or split_index is None:
+            context.user_data.pop("state", None)
+            return
+
+        key = (update.message.text or "").strip().upper()
+        if not re.fullmatch(r"[A-Z][A-Z0-9]+-\d+", key):
+            await update.message.reply_text(persian_messages.WORKLOG_KEY_INVALID)
+            return
+
+        # Only the person's own issues are accepted, so a typed key cannot be
+        # used to log time against somebody else's work.
+        candidates = pending["candidate_objects"]
+        if not any(task.issue_key.upper() == key for task in candidates):
+            await update.message.reply_text(
+                persian_messages.WORKLOG_KEY_NOT_YOURS.format(issue_key=key),
+            )
+            return
+
+        context.user_data.pop("state", None)
+        context.user_data.pop("awaiting_split", None)
+
+        report = pending["report"]
+        split = report.splits[split_index]
+        split.issue_key = key
+        split.status = WorklogSplitStatus.RESOLVED
+
+        confirmation = self.confirm_worklog_report.execute(report, candidates)
+        await self._prompt_next_worklog_step(
+            update.message.reply_text, context, confirmation,
+        )
 
     async def _handle_worklog_pick(
         self,
@@ -997,14 +1071,14 @@ class DailyTaskTrackingHandler:
                 )
                 lines.append(persian_messages.WORKLOG_SAVED_LINE.format(
                     hours=self._format_hours(split.hours),
-                    issue_key=split.issue_key,
+                    issue_key=self._issue_link(split.issue_key),
                 ))
             except Exception as exc:
                 LOGGER.error(
                     f"Failed to log {split.hours}h on {split.issue_key}: {exc}",
                 )
                 lines.append(persian_messages.WORKLOG_SAVE_FAILED_LINE.format(
-                    issue_key=split.issue_key,
+                    issue_key=self._issue_link(split.issue_key),
                 ))
 
         # Worklog hours changed, so the cached list is now behind Jira.
@@ -1012,7 +1086,43 @@ class DailyTaskTrackingHandler:
         if invalidate:
             invalidate(user_config.jira_username)
 
-        await query.edit_message_text("\n".join(lines))
+        await query.edit_message_text("\n".join(lines), parse_mode="HTML")
+
+    @staticmethod
+    def _spell_date(worked_on: Optional[str]) -> Optional[str]:
+        """Name the weekday alongside a backdated worklog.
+
+        A bare "2026-08-24" reads as correct even when it is three days out.
+        The weekday is what a person actually checks.
+
+        Args:
+            worked_on: ISO date the work happened, or None for today
+
+        Returns:
+            The date with its Persian weekday, or None when it is today.
+        """
+        if not worked_on:
+            return None
+        try:
+            day = date.fromisoformat(worked_on)
+        except ValueError:
+            return worked_on
+        names = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه",
+                 "جمعه", "شنبه", "یکشنبه"]
+        return f"{names[day.weekday()]} {worked_on}"
+
+    def _issue_link(self, issue_key: str) -> str:
+        """Render an issue key as a tappable Jira link.
+
+        Args:
+            issue_key: The key to link
+
+        Returns:
+            An anchor, or the bare key when no base URL is configured.
+        """
+        if not self.base_url:
+            return issue_key
+        return f'<a href="{self.base_url}/browse/{issue_key}">{issue_key}</a>'
 
     @staticmethod
     def _worklog_comment(split) -> Optional[str]:

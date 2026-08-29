@@ -189,5 +189,85 @@ class TestListTaskFilters(unittest.IsolatedAsyncioTestCase):
         self.assertIn("PARSCHAT-4208", result)
 
 
+class TestNestedRendering(unittest.IsolatedAsyncioTestCase):
+    """Sub-tasks belong under their parent, not in a flat wall of keys."""
+
+    def setUp(self):
+        from jira_telegram_bot.entities.daily_task_tracking.daily_task_check import (
+            DailyTaskCheck,
+        )
+        from jira_telegram_bot.entities.daily_task_tracking.daily_task_status import (
+            TaskCheckStatus,
+        )
+
+        def task(key, kind, parent=None):
+            return DailyTaskCheck(
+                issue_key=key, summary="کار", status="Backlog", assignee="ali",
+                check_status=TaskCheckStatus.SHOULD_BE_STARTED,
+                project_key="KHERADYAR", issue_type=kind, parent_key=parent,
+            )
+
+        self.tasks = AsyncMock()
+        self.tasks.execute.return_value = [
+            task("KHERADYAR-37", "Story"),
+            task("KHERADYAR-192", "Sub-task", "KHERADYAR-37"),
+            task("KHERADYAR-193", "Sub-task", "KHERADYAR-37"),
+            task("KHERADYAR-50", "Bug"),
+        ]
+        self.tools = AssistantTools(
+            context=AssistantContext(
+                jira_username="ali", telegram_username="ali", role=UserRole.MEMBER,
+            ),
+            get_user_daily_tasks_use_case=self.tasks,
+            alias_repository=Mock(),
+            base_url="https://jira.example.com",
+            task_manager_repository=Mock(),
+        )
+
+    async def test_subtasks_are_nested_under_their_parent(self):
+        lines = (await self.tools.list_tasks()).splitlines()
+
+        self.assertFalse(lines[0].startswith("   ↳"))
+        self.assertIn("KHERADYAR-37", lines[0])
+        self.assertTrue(lines[1].startswith("   ↳"))
+        self.assertTrue(lines[2].startswith("   ↳"))
+
+    async def test_top_level_types_are_not_indented(self):
+        """A Bug with no parent stays at the first level."""
+        lines = (await self.tools.list_tasks()).splitlines()
+        bug = [line for line in lines if "KHERADYAR-50" in line][0]
+
+        self.assertFalse(bug.startswith("   ↳"))
+
+    async def test_no_task_is_lost(self):
+        """Nesting must not drop anything from the count."""
+        rendered = await self.tools.list_tasks()
+
+        for key in ("KHERADYAR-37", "KHERADYAR-192", "KHERADYAR-193", "KHERADYAR-50"):
+            self.assertIn(key, rendered)
+
+    async def test_orphan_subtask_still_appears(self):
+        """A sub-task whose parent is absent is shown under its parent key."""
+        from jira_telegram_bot.entities.daily_task_tracking.daily_task_check import (
+            DailyTaskCheck,
+        )
+        from jira_telegram_bot.entities.daily_task_tracking.daily_task_status import (
+            TaskCheckStatus,
+        )
+        self.tasks.execute.return_value = [
+            DailyTaskCheck(
+                issue_key="KHERADYAR-9", summary="کار", status="Backlog",
+                assignee="ali", check_status=TaskCheckStatus.IN_PROGRESS,
+                project_key="KHERADYAR", issue_type="Sub-task",
+                parent_key="KHERADYAR-1",
+            ),
+        ]
+
+        rendered = await self.tools.list_tasks()
+
+        self.assertIn("KHERADYAR-9", rendered)
+        self.assertIn("KHERADYAR-1", rendered)
+
+
 if __name__ == "__main__":
     unittest.main()

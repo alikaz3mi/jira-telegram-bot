@@ -557,16 +557,62 @@ class AssistantTools:
         return spoken or jira_username
 
     def _render(self, tasks: Sequence[DailyTaskCheck]) -> str:
-        """Render tasks one per line, each key linked."""
-        lines = []
+        """Render tasks with sub-tasks nested under the work they belong to.
+
+        A flat list of forty sub-tasks is unreadable: the keys are unfamiliar
+        and the parent — the thing a person actually recognises — is missing.
+        Stories, Tasks and Bugs lead; their sub-tasks are indented beneath.
+
+        Args:
+            tasks: The tasks to show
+
+        Returns:
+            The rendered list.
+        """
+        by_key = {task.issue_key: task for task in tasks}
+        children: dict = {}
+        top: List[DailyTaskCheck] = []
+
         for task in tasks:
-            summary = (task.summary or "").strip()
-            if len(summary) > 60:
-                summary = f"{summary[:59]}…"
-            lines.append(
-                f"{self._link(task.issue_key)} — {summary} (وضعیت: {task.status})",
-            )
+            parent = task.parent_key
+            if parent and (parent in by_key or self._is_subtask(task)):
+                children.setdefault(parent, []).append(task)
+            else:
+                top.append(task)
+
+        lines: List[str] = []
+        for task in top:
+            lines.append(self._one_line(task))
+            for child in children.pop(task.issue_key, []):
+                lines.append(f"   ↳ {self._one_line(child)}")
+
+        # Sub-tasks whose parent is not in this list still have to appear, or
+        # the count stops matching what the user was told.
+        for parent_key, orphans in children.items():
+            lines.append(f"{self._link(parent_key)}:")
+            for child in orphans:
+                lines.append(f"   ↳ {self._one_line(child)}")
+
         return "\n".join(lines)
+
+    @staticmethod
+    def _is_subtask(task: DailyTaskCheck) -> bool:
+        """Whether this issue is a sub-task of something else."""
+        return (task.issue_type or "").strip().lower() in {"sub-task", "subtask"}
+
+    def _one_line(self, task: DailyTaskCheck) -> str:
+        """Render a single task as one line.
+
+        Args:
+            task: The task to render
+
+        Returns:
+            The linked key, a trimmed summary, and the status.
+        """
+        summary = (task.summary or "").strip()
+        if len(summary) > 60:
+            summary = f"{summary[:59]}…"
+        return f"{self._link(task.issue_key)} — {summary} (وضعیت: {task.status})"
 
     def _link(self, issue_key: str) -> str:
         """Render an issue key as a Telegram HTML link."""

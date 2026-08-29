@@ -55,12 +55,12 @@ class _Message:
         self.sent = []
         self.reply_markup = None
 
-    async def reply_text(self, text, reply_markup=None):
+    async def reply_text(self, text, reply_markup=None, parse_mode=None):
         notice = _Message()
         notice.sent.append(text)
         return notice
 
-    async def edit_text(self, text, reply_markup=None):
+    async def edit_text(self, text, reply_markup=None, parse_mode=None):
         self.sent.append(text)
         self.reply_markup = reply_markup
         return self

@@ -1095,6 +1095,7 @@ def _configure_daily_task_tracking(container: Container):
             classify_message_intent_use_case=c[ClassifyMessageIntentUseCase],
             answer_task_question_use_case=c[AnswerTaskQuestionUseCase],
             task_assistant_agent=c[TaskAssistantAgent],
+            base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
         )
     )
 

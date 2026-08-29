@@ -1,8 +1,11 @@
-version: '3.8'
-
 networks:
   jira-bot-network:
     name: jira-telegram-bot-network
+    external: true
+  # Where postgres_development actually lives; the bot reads the Jira
+  # warehouse from it.
+  parschat-service-network:
+    name: parschat_service_network
     external: true
   
 
@@ -17,8 +20,29 @@ services:
     volumes:
       - .:/app
     command: >
-      python3 jira_telegram_bot
+      python3 -m jira_telegram_bot
     restart: always
+    # Settings read .env relative to the working directory, so the mount at
+    # /app is what makes credentials resolve; WORKDIR is already /app.
+    env_file:
+      - .env
+    environment:
+      # Postgres runs as postgres_development on parschat_service_network and
+      # listens on 5432 there; the 65432 in .env is its published host port,
+      # which is not reachable from inside a container on that network.
+      - db_host=postgres_development
+      - db_port=5432
+      # user_config.json and the alias table live under this directory.
+      - DATA_DIR=/app/data
+      - TZ=Asia/Tehran
+    networks:
+      - jira-bot-network
+      - parschat-service-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   
   # synth-pm-api:
   #   build:

@@ -88,6 +88,16 @@ prompt: |
 
   4. **Match by index, never by key.** For each entry, list the candidate
      indices whose summary, description, epic or project plausibly match what
+     **A project name is not a match.** "برای پارسچت کار کردم" names a
+     product, not a task: it narrows the candidates, it does not pick one.
+     Return every plausible candidate, or none — never one arbitrary issue
+     from that project.
+
+     **Believe the user when they say the task is missing.** "تسکش برام ثبت
+     نشده"، "تسکی براش نیست"، "هنوز ساخته نشده" mean no candidate is correct.
+     Return an empty `candidate_indices` for that entry no matter how close a
+     summary looks. Guessing writes real hours to the wrong issue.
+
      the user described. Best match first. If nothing matches, return an empty
      list. NEVER invent a Jira issue key — you have no way to know one.
 
