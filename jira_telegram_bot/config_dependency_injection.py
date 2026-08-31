@@ -1103,6 +1103,8 @@ def _configure_daily_task_tracking(container: Container):
             model=c[LLMModelInterface]["openai", "gpt-4o-mini"],
             alias_repository=c[EntityAliasRepository],
             get_user_daily_tasks_use_case=c[CachedUserTasksUseCase],
+            user_config_repository=c[UserConfigInterface],
+            rank_candidates_use_case=c[RankCandidatesUseCase],
             base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
             task_manager_repository=c[TaskManagerRepositoryInterface],
         )

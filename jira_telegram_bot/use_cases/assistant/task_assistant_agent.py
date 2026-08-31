@@ -8,6 +8,7 @@ model has no way to influence.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import List
 
 from langchain.agents import create_agent
@@ -20,6 +21,11 @@ from jira_telegram_bot.entities.daily_task_tracking.conversation_turn import (
     ConversationMemory,
 )
 from jira_telegram_bot.use_cases.assistant.assistant_tools import AssistantTools
+
+# A tool loop that never converges must not leave somebody watching a
+# spinner. Long enough for several Jira round trips, short enough to fail
+# while the person is still reading.
+ANSWER_TIMEOUT_SECONDS = 90
 
 SYSTEM_PROMPT = """\
 تو دستیار جیرای یک تیم مهندسی هستی و به سؤال‌های اعضا درباره تسک‌هایشان
@@ -44,6 +50,12 @@ SYSTEM_PROMPT = """\
 - به زبان کاربر جواب بده. سؤال فارسی، پاسخ فارسی.
 - اگر سؤال ادامه گفت‌وگوی قبلی است، به آن تکیه کن و فهرست قبلی را دوباره
   چاپ نکن؛ تأیید یا اصلاح کن.
+- سؤال درباره «اسپرینت» یا «تیم» یا یک واحد کاری (طراحی، بک‌اند،
+  فرانت، هوش، دواپس) با list_tasks جواب داده نمی‌شود؛ آن ابزار فقط
+  تسک‌های خودِ کاربر را می‌بیند. برای این سؤال‌ها sprint_board را
+  صدا بزن.
+- هرگز فهرستی را با برچسبی که ابزار نداده معرفی نکن. اگر ابزار
+  نگفت این تسک‌ها «طراحی» هستند، تو هم نگو.
 """
 
 
@@ -51,7 +63,8 @@ class TaskAssistantAgent:
     """Answers questions about tasks by calling scoped tools."""
 
     def __init__(self, model, alias_repository, get_user_daily_tasks_use_case,
-                 base_url: str = "", task_manager_repository=None):
+                 base_url: str = "", task_manager_repository=None,
+                 user_config_repository=None, rank_candidates_use_case=None):
         """Initialize the agent.
 
         Args:
@@ -61,18 +74,25 @@ class TaskAssistantAgent:
             base_url: Jira base URL, used to build issue links
             task_manager_repository: Reads parent Stories and Epics for a
                 Sub-task that carries no description of its own
+            user_config_repository: Maps people to their unit on a project,
+                so "the design side" resolves to actual people
+            rank_candidates_use_case: Ranks issues against a topic by
+                meaning, for subject questions
         """
         self.model = model
         self.alias_repository = alias_repository
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
         self.base_url = base_url
         self.task_manager_repository = task_manager_repository
+        self.user_config_repository = user_config_repository
+        self.rank_candidates = rank_candidates_use_case
 
     async def answer(
         self,
         question: str,
         context,
         memory: ConversationMemory = None,
+        media_sink: List = None,
     ) -> str:
         """Answer one question as the given caller.
 
@@ -80,6 +100,8 @@ class TaskAssistantAgent:
             question: What the user asked
             context: Who is asking and what they may read
             memory: Recent turns, so a follow-up reads as a follow-up
+            media_sink: List the tools append sendable attachments to; the
+                caller sends them after the text
 
         Returns:
             The reply, ready to send as Telegram HTML.
@@ -90,6 +112,9 @@ class TaskAssistantAgent:
             alias_repository=self.alias_repository,
             base_url=self.base_url,
             task_manager_repository=self.task_manager_repository,
+            user_config_repository=self.user_config_repository,
+            media_sink=media_sink,
+            rank_candidates_use_case=self.rank_candidates,
         )
 
         agent = create_agent(
@@ -99,9 +124,24 @@ class TaskAssistantAgent:
         )
 
         try:
-            result = await agent.ainvoke(
-                {"messages": self._history(memory) + [HumanMessage(content=question)]},
+            result = await asyncio.wait_for(
+                agent.ainvoke(
+                    {
+                        "messages": self._history(memory)
+                        + [HumanMessage(content=question)],
+                    },
+                ),
+                timeout=ANSWER_TIMEOUT_SECONDS,
             )
+        except asyncio.TimeoutError:
+            # Without this the tool loop can run until the user gives up,
+            # leaving them looking at a "thinking" message that never
+            # resolves. Failing visibly is the lesser harm.
+            LOGGER.error(
+                f"Assistant agent timed out after {ANSWER_TIMEOUT_SECONDS}s "
+                f"on: {question[:80]}",
+            )
+            return ""
         except Exception as exc:
             LOGGER.error(f"Assistant agent failed: {exc}", exc_info=True)
             return ""
@@ -156,6 +196,39 @@ class TaskAssistantAgent:
                     "due_within_days تعداد روز تا مهلت. "
                     "دقت کن: «استوری‌های اسپرینت جاری» یعنی issue_type=Story "
                     "و in_active_sprint=true — این ربطی به status ندارد."
+                ),
+            ),
+            StructuredTool.from_function(
+                coroutine=tools.my_briefing,
+                name="my_briefing",
+                description=(
+                    "خلاصه‌ی کار کاربر: اول باگ‌های فوری، بعد هدف اسپرینت "
+                    "جاری بر اساس اپیک‌ها، بعد سهم خود کاربر با لینک. "
+                    "project اختیاری است. برای سؤال‌های کلی مثل «تسک‌های من "
+                    "چیه؟»، «امروز چیکار کنم؟»، «وضعیتم چطوره؟» از این "
+                    "استفاده کن، نه از list_tasks — این تصویر کامل‌تری "
+                    "می‌دهد و باگ فوری را جا نمی‌اندازد."
+                ),
+            ),
+            StructuredTool.from_function(
+                coroutine=tools.sprint_board,
+                name="sprint_board",
+                description=(
+                    "کارهای اسپرینت جاری یک پروژه برای کل تیم. "
+                    "project نام محصول (مثل «پارسچت»)، "
+                    "unit واحد کاری اگر کاربر گفت (مثل «طراحی»، «بک‌اند»، "
+                    "«فرانت»، «هوش»، «دواپس»)، "
+                    "person اگر درباره یک نفر خاص پرسید، "
+                    "issue_type مثل Story، "
+                    "topic موضوعی که کاربر پرسیده (مثل «اینستاگرام» یا "
+                    "«سهمیه») — این با معنا جست‌وجو می‌کند نه با کلمه، پس "
+                    "کارهای مرتبط با عبارت متفاوت را هم پیدا می‌کند. "
+                    "اگر کاربر درباره یک موضوع پرسید حتماً topic را بده؛ "
+                    "بدون آن کل اسپرینت برمی‌گردد و جواب اشتباه می‌شود. "
+                    "برای هر سؤالی درباره «توی اسپرینت چه کاری هست» که "
+                    "مخصوص خودِ کاربر نیست، حتماً از این استفاده کن — "
+                    "list_tasks فقط تسک‌های خودِ کاربر را می‌بیند و برای "
+                    "این سؤال‌ها جواب اشتباه می‌دهد."
                 ),
             ),
             StructuredTool.from_function(

@@ -1,6 +1,6 @@
 flowchart TD
     MSG[Telegram message] --> STATE{awaiting a button answer?}
-    STATE -->|yes| BTN[custom hours / delay — existing flow]
+    STATE -->|yes| BTN[custom hours / delay / issue key]
     STATE -->|no| CLS[classify intent · gpt-4.1-nano · temp 0]
 
     MEM[(ConversationMemory · last 6 turns)] -.->|history| CLS
@@ -10,36 +10,85 @@ flowchart TD
     INTENT -->|question| AGENT
     INTENT -->|worklog| PARSE[parse report · gpt-4o-mini]
 
-    subgraph LG[LangGraph agent · create_agent]
+    subgraph LG[LangGraph agent · create_agent · 90s timeout]
         AGENT[agent node · gpt-4o-mini] --> DECIDE{tool call?}
         DECIDE -->|yes| TOOLS[tool node]
         TOOLS --> AGENT
         DECIDE -->|no| DONE[final answer]
     end
 
-    TOOLS --- T1[task_details]
-    TOOLS --- T2[list_tasks]
-    TOOLS --- T3[count_tasks]
-    TOOLS --- T4[logged_hours]
-    TOOLS --- T5[whoami]
+    subgraph PERSONAL[scoped to the caller · assignee = caller]
+        T1[task_details]
+        T2[list_tasks]
+        T3[count_tasks]
+        T4[logged_hours]
+        T5[whoami]
+        T6[board_link]
+        T7[my_briefing]
+    end
 
-    CTX[[AssistantContext · identity bound in Python]] -.->|may_read| TOOLS
+    subgraph PROJECT[scoped to a project · no assignee filter]
+        T8[sprint_epics]
+        T9[sprint_board · unit / person / type / topic]
+    end
+
+    TOOLS --- PERSONAL
+    TOOLS --- PROJECT
+
+    CTX[[AssistantContext · identity bound in Python]] -.->|may_read| PERSONAL
+    CTX -.->|may_read_others OR own work in project| PROJECT
+
+    T9 -.->|unit| UNITS[(user_components · who does design)]
+    T9 -.->|topic| TRANK[rank_texts · embedding · floor 0.38]
+    T8 -.-> EPIC[roll stories up to Epic Link · cf_10100]
+
+    T7 --> URG[urgent bugs · Highest/High · statusCategory != Done]
+    T7 --> PURP[sprint purpose = its epics · no sprint goal is set]
+    T7 --> OWN[own share · sprint first]
+    URG --> MEDIA[[queue screenshots]]
+    MEDIA --> SEND[download bytes · send_photo / send_video]
+
     T1 -.-> PARENT[parent Story then Epic · description + attachments]
     T2 -.-> CACHE[(task cache · per user · 120s)]
     CACHE --> JQL[Jira JQL · open sprint · unresolved]
     PARENT --> JIRA[(Jira)]
     JQL --> JIRA
+    PROJECT --> JIRA
 
-    PARSE --> SPLIT{splits found?}
+    PARSE --> NARROW[named project narrows candidates BEFORE the model sees them]
+    NARROW --> SPLIT{splits found?}
     SPLIT -->|none| ASK[ask for hours and task]
-    SPLIT -->|some| ORD[resolve ordinals in Python]
-    ORD --> CONF{all resolved?}
+    SPLIT -->|some| ORD[resolve ordinals + weekdays in Python]
+    ORD --> RANK[rank each split · embedding · 512 dims]
+
+    subgraph EMB[retrieval · text-embedding-3-small]
+        RANK --> GATE{margin over runner-up >= 0.08?}
+        GATE -->|no| NOMATCH[report no match · never guess]
+        GATE -->|yes| SHORT[shortlist of 5]
+        CACHE2[(vector cache · SHA-256 of text)] -.-> RANK
+    end
+
+    NOMATCH --> CONF
+    SHORT --> CONF{all resolved?}
     CONF -->|no| PICK[ask which task · tappable options]
     PICK --> CONF
-    CONF -->|yes| PREVIEW[confirm · hours · date · work type]
+    CONF -->|yes| PREVIEW[confirm · hours · weekday · work type]
     PREVIEW -->|confirmed| WRITE[write worklog · started = worked_on]
     WRITE --> JIRA
     WRITE --> INVAL([invalidate cache])
+    WRITE --> FOLLOW{digest session open?}
+    FOLLOW -->|yes| REMAIN[ask only what the report did not cover]
+    FOLLOW -->|no| ENDW[done]
+
+    CRON[cron 09:00 · gated to one user] --> DIGEST
+    subgraph DAILY[daily digest]
+        DIGEST[build digest] --> UNBLOCK[blockers cleared · inwardIssue only]
+        DIGEST --> REGRESS[regressed]
+        DIGEST --> FLIGHT[in flight / waiting]
+        DIGEST --> ONEQ[one open question]
+    end
+    ONEQ --> PARSE
+    REMAIN --> QUEUE[per-task queue · max 8 · finish later]
 
     DONE --> MEM
     HELP --> MEM

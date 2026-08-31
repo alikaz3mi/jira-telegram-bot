@@ -74,6 +74,10 @@ if TYPE_CHECKING:
     )
 
 
+# A briefing with a dozen screenshots is a wall, not an answer.
+MAX_MEDIA_PER_ANSWER = 4
+
+
 class DailyTaskTrackingHandler:
     """Handler for daily task tracking conversations."""
 
@@ -792,6 +796,7 @@ class DailyTaskTrackingHandler:
             return
 
         notice = await update.message.reply_text(persian_messages.QUESTION_THINKING)
+        media: list = []
         try:
             if self.task_assistant_agent:
                 # The agent can look people up and count, not just list, and
@@ -804,6 +809,7 @@ class DailyTaskTrackingHandler:
                         role=self._role_of(user_config),
                     ),
                     memory=self._memory(context),
+                    media_sink=media,
                 )
             else:
                 tasks = await self.get_user_daily_tasks.execute(
@@ -824,6 +830,45 @@ class DailyTaskTrackingHandler:
         await self._reply_and_remember(
             context, notice.edit_text, question, answer, parse_mode="HTML",
         )
+        await self._send_media(context.bot, update.effective_chat.id, media)
+
+    async def _send_media(self, bot, chat_id: int, media: list) -> None:
+        """Send the screenshots a tool queued alongside its answer.
+
+        Telegram cannot fetch an authenticated Jira URL, so the bytes are
+        downloaded here and uploaded. A screenshot is usually the fastest
+        way to understand a bug, and a link behind a login is not something
+        anyone glances at on a phone.
+
+        Args:
+            bot: The Telegram bot to upload through
+            chat_id: Where to send them
+            media: Attachment records queued by the tools
+        """
+        for item in media[:MAX_MEDIA_PER_ANSWER]:
+            try:
+                payload = item["attachment"].get()
+            except Exception as exc:
+                LOGGER.warning(
+                    f"Could not download {item['filename']} from "
+                    f"{item['issue_key']}: {exc}",
+                )
+                continue
+
+            caption = f"{item['issue_key']} — {item['filename']}"
+            try:
+                if item["mime"].startswith("video/"):
+                    await bot.send_video(
+                        chat_id=chat_id, video=payload, caption=caption,
+                    )
+                else:
+                    await bot.send_photo(
+                        chat_id=chat_id, photo=payload, caption=caption,
+                    )
+            except Exception as exc:
+                LOGGER.warning(
+                    f"Could not send {item['filename']} to {chat_id}: {exc}",
+                )
 
     async def _handle_worklog_report(
         self,

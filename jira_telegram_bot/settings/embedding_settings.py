@@ -39,6 +39,24 @@ class EmbeddingSettings(CustomizedSettings):
             "0.15-0.27, non-matches by 0.02-0.04."
         ),
     )
+    min_topic_similarity: float = Field(
+        default=0.38,
+        description=(
+            "Floor for topic search, higher than the worklog floor. A "
+            "worklog names one issue; a topic spans a whole epic, and a "
+            "subject the project has never heard of still scores ~0.35 "
+            "against dozens of summaries. Measured on this sprint: every "
+            "true Instagram match scored >= 0.400, while an absent topic "
+            "peaked at 0.349."
+        ),
+    )
+    topic_matches: int = Field(
+        default=25,
+        description=(
+            "How many issues a topic search may return. A topic spans a "
+            "whole epic, so this is larger than the worklog shortlist."
+        ),
+    )
     shortlist_size: int = Field(
         default=5,
         description="How many issues to hand the model after ranking",

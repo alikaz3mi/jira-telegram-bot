@@ -41,6 +41,30 @@ DENIED = (
 # customfield_10100 (see .claude/rules/jira-conventions.md).
 EPIC_LINK_FIELD = "customfield_10100"
 
+# Interrupt-worthy. Anything below this is the ordinary backlog, and
+# leading with it would make the urgent section meaningless.
+URGENT_PRIORITIES = ("Highest", "High")
+
+# A briefing is read on a phone before a standup.
+MAX_PURPOSE_EPICS = 5
+MAX_OWN_SHARE = 8
+MAX_MEDIA = 3
+
+# Spoken discipline -> the unit string recorded in `user_components`. These
+# issues carry no component or label in Jira, so a person's configured unit
+# is the only record of who does design, backend, and so on.
+_UNIT_ALIASES = {
+    "طراحی": "UI/UX", "دیزاین": "UI/UX", "یو‌آی": "UI/UX", "یوآی": "UI/UX",
+    "رابط کاربری": "UI/UX", "ui": "UI/UX", "ux": "UI/UX", "ui/ux": "UI/UX",
+    "design": "UI/UX",
+    "بک‌اند": "Backend", "بکند": "Backend", "بک اند": "Backend",
+    "backend": "Backend", "back-end": "Backend",
+    "فرانت": "Front-end", "فرانت‌اند": "Front-end", "فرانت اند": "Front-end",
+    "frontend": "Front-end", "front-end": "Front-end",
+    "هوش": "AI", "هوش مصنوعی": "AI", "ai": "AI",
+    "دواپس": "DevOps", "devops": "DevOps", "زیرساخت": "DevOps",
+}
+
 
 class AssistantTools:
     """Data access for the assistant, scoped to one caller.
@@ -56,6 +80,9 @@ class AssistantTools:
         alias_repository: EntityAliasRepository,
         base_url: str = "",
         task_manager_repository=None,
+        user_config_repository=None,
+        media_sink=None,
+        rank_candidates_use_case=None,
     ):
         """Initialize the tool set.
 
@@ -66,12 +93,24 @@ class AssistantTools:
             base_url: Jira base URL, used to build issue links
             task_manager_repository: Reads parent Stories and Epics, whose
                 descriptions explain a Sub-task that carries none of its own
+            user_config_repository: Maps people to the unit they work in on
+                a project, which is the only record of who does design
+            media_sink: List a tool appends attachments to, for the
+                handler to send after the answer
+            rank_candidates_use_case: Ranks issues against a topic by
+                meaning, so «اینستاگرام» finds «ویترین» and «کامنت» too
         """
         self.context = context
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
         self.aliases = alias_repository
         self.base_url = base_url.rstrip("/")
         self.task_manager_repository = task_manager_repository
+        self.user_config_repository = user_config_repository
+        # Attachments a tool wants sent as real files. Telegram cannot fetch
+        # an authenticated Jira URL, so a link is a dead end for the reader;
+        # the handler downloads what lands here and uploads the bytes.
+        self.media_sink = media_sink if media_sink is not None else []
+        self.rank_candidates = rank_candidates_use_case
 
     async def list_tasks(
         self,
@@ -497,6 +536,489 @@ class AssistantTools:
             else "فقط به تسک‌های خودش دسترسی دارد"
         )
         return f"کاربر {self.context.jira_username} ({self.context.role.value}) — {scope}"
+
+    async def my_briefing(self, project: Optional[str] = None) -> str:
+        """Open a check-in with what matters before what is merely assigned.
+
+        A bare list of issue keys makes somebody reconstruct the point of
+        their own sprint. This leads with anything on fire, then what the
+        sprint is actually for, and only then their own share of it.
+
+        Args:
+            project: Restrict to one product, as the user named it
+
+        Returns:
+            The briefing, ready to send as Telegram HTML.
+        """
+        project_key = None
+        if project:
+            match, error = self._resolve_project(project)
+            if error:
+                return error
+            project_key = match.canonical
+
+        tasks = await self._fetch(self.context.jira_username)
+        if project_key:
+            tasks = [task for task in tasks if task.project_key == project_key]
+
+        sections: List[str] = []
+        urgent = await self._urgent_bugs(project_key)
+        if urgent:
+            sections.append(self._render_urgent(urgent))
+
+        purpose = await self._sprint_purpose(project_key or self._busiest(tasks))
+        if purpose:
+            sections.append(purpose)
+
+        sections.append(self._render_own_share(tasks))
+
+        if not sections:
+            return "چیزی برای گزارش پیدا نکردم."
+        return "\n\n".join(section for section in sections if section)
+
+    async def _urgent_bugs(self, project_key: Optional[str]) -> List:
+        """The caller's own unresolved bugs at a priority worth interrupting for.
+
+        Args:
+            project_key: Restrict to one project, or None for all
+
+        Returns:
+            The bugs, highest priority first.
+        """
+        if not self.task_manager_repository:
+            return []
+
+        clauses = [
+            f'assignee = "{self.context.jira_username}"',
+            "issuetype = Bug",
+            "resolution = Unresolved",
+            # Some workflows reach Cancel or Done without ever setting a
+            # resolution, so `Unresolved` alone still returns finished work.
+            # Announcing a cancelled bug as urgent is worse than silence.
+            "statusCategory != Done",
+            f"priority in ({', '.join(URGENT_PRIORITIES)})",
+        ]
+        if project_key:
+            clauses.append(f'project = "{project_key}"')
+
+        try:
+            return self.task_manager_repository.search_issues(
+                jql=" AND ".join(clauses) + " ORDER BY priority DESC",
+                max_results=10,
+                fields="summary,status,priority,attachment",
+            )
+        except Exception as exc:
+            LOGGER.error(f"Urgent bug lookup failed: {exc}")
+            return []
+
+    def _render_urgent(self, bugs: Sequence) -> str:
+        """Render the urgent bugs, queueing any screenshot they carry."""
+        lines = [f"🔴 {len(bugs)} باگ فوری روی شماست:"]
+        for bug in bugs:
+            priority = getattr(
+                getattr(bug.fields, "priority", None), "name", "",
+            )
+            summary = str(getattr(bug.fields, "summary", "") or "").strip()
+            if len(summary) > 55:
+                summary = f"{summary[:54]}…"
+            status = getattr(getattr(bug.fields, "status", None), "name", "?")
+            lines.append(
+                f"   {self._link(str(bug.key))} — {summary} "
+                f"({priority}، {status})",
+            )
+            self._queue_media(bug)
+        return "\n".join(lines)
+
+    def _queue_media(self, issue) -> None:
+        """Queue an issue's images for sending alongside the answer.
+
+        A bug report's screenshot is usually the fastest way to understand
+        it, and a link to it behind Jira's login is not something a person
+        can glance at on a phone.
+
+        Args:
+            issue: The issue whose attachments to queue
+        """
+        for item in (getattr(issue.fields, "attachment", None) or [])[:MAX_MEDIA]:
+            mime = str(getattr(item, "mimeType", "") or "")
+            if not mime.startswith(("image/", "video/")):
+                continue
+            self.media_sink.append({
+                "issue_key": str(issue.key),
+                "filename": str(getattr(item, "filename", "") or "file"),
+                "mime": mime,
+                "attachment": item,
+            })
+
+    async def _sprint_purpose(self, project_key: Optional[str]) -> str:
+        """Say what the current sprint is for, in terms of its epics.
+
+        No sprint here carries a goal, so the epics its stories belong to
+        are the only statement of intent the data holds.
+
+        Args:
+            project_key: The project whose sprint to describe
+
+        Returns:
+            The rendered section, or an empty string when unavailable.
+        """
+        if not project_key or not self.task_manager_repository:
+            return ""
+
+        try:
+            stories = self.task_manager_repository.search_issues(
+                jql=(
+                    f'project = "{project_key}" '
+                    f"AND sprint in openSprints() AND issuetype = Story"
+                ),
+                max_results=100,
+                fields=f"summary,{EPIC_LINK_FIELD}",
+            )
+        except Exception as exc:
+            LOGGER.error(f"Sprint purpose lookup failed: {exc}")
+            return ""
+
+        if not stories:
+            return ""
+
+        grouped, _ = self._group_by_epic(stories)
+        if not grouped:
+            return ""
+
+        lines = [f"🎯 اسپرینت جاری {project_key} روی این‌ها متمرکز است:"]
+        ordered = sorted(grouped.items(), key=lambda item: -len(item[1]))
+        for epic_key, epic_stories in ordered[:MAX_PURPOSE_EPICS]:
+            title = self._epic_title(epic_key) or epic_key
+            lines.append(
+                f"   • {title} ({len(epic_stories)} استوری) "
+                f"{self._link(epic_key)}",
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _is_finished(task: DailyTaskCheck) -> bool:
+        """Whether a task is over, whatever its resolution field says."""
+        return (task.status or "").strip().lower() in {
+            "done", "closed", "resolved", "cancel", "cancelled", "canceled",
+        }
+
+    @staticmethod
+    def _busiest(tasks: Sequence[DailyTaskCheck]) -> Optional[str]:
+        """The project whose current sprint the person is most committed to.
+
+        Counting all open work picks whichever project has the largest
+        backlog, which is usually not the one running a sprint. Sprint
+        commitments decide it, and only when there are none does the
+        overall count stand in.
+
+        Args:
+            tasks: The person's open tasks
+
+        Returns:
+            The project key, or None when they have no open work.
+        """
+        committed: dict = {}
+        overall: dict = {}
+        for task in tasks:
+            overall[task.project_key] = overall.get(task.project_key, 0) + 1
+            if task.sprint_name:
+                committed[task.project_key] = committed.get(task.project_key, 0) + 1
+
+        pool = committed or overall
+        return max(pool, key=pool.get) if pool else None
+
+    def _render_own_share(self, tasks: Sequence[DailyTaskCheck]) -> str:
+        """Render the caller's own work, sprint commitments first."""
+        tasks = [task for task in tasks if not self._is_finished(task)]
+        if not tasks:
+            return "📋 تسک بازی روی شما نیست."
+
+        in_sprint = [task for task in tasks if task.sprint_name]
+        shown = in_sprint or list(tasks)
+
+        heading = (
+            f"📋 سهم شما از اسپرینت ({len(in_sprint)} مورد):"
+            if in_sprint
+            else f"📋 کارهای باز شما ({len(tasks)} مورد):"
+        )
+        lines = [heading]
+        for task in shown[:MAX_OWN_SHARE]:
+            lines.append(f"   {self._one_line(task)}")
+
+        hidden = len(shown) - MAX_OWN_SHARE
+        if hidden > 0:
+            lines.append(f"   و {hidden} مورد دیگر")
+        return "\n".join(lines)
+
+    async def sprint_board(
+        self,
+        project: str,
+        unit: Optional[str] = None,
+        person: Optional[str] = None,
+        issue_type: Optional[str] = None,
+        topic: Optional[str] = None,
+    ) -> str:
+        """List what a project's open sprint holds, for the whole team.
+
+        The per-person tools cannot answer this. They query
+        ``assignee = <caller>``, so "what design work is in the sprint?"
+        came back as the caller's own backend stories relabelled as design
+        — a confident wrong answer about somebody else's work.
+
+        Args:
+            project: The product or project, as the user named it
+            unit: The discipline asked about — «طراحی», «بک‌اند», «فرانت»,
+                «هوش», «دواپس» — resolved through each person's recorded
+                unit on this project
+            person: Restrict to one person, as the user named them
+            issue_type: Restrict to one issue type, e.g. "Story"
+            topic: A subject to search for — «اینستاگرام», «سهمیه». Matched
+                by meaning, so related wording is found too
+
+        Returns:
+            The sprint's issues grouped by assignee, or why there are none.
+        """
+        match, error = self._resolve_project(project)
+        if error:
+            return error
+
+        if not self.task_manager_repository:
+            return "دسترسی به جیرا برای این پرسش در دسترس نیست."
+
+        allowed, denial = await self._may_read_project(match.canonical)
+        if not allowed:
+            return denial
+
+        # A filter that could not be applied must never be silently
+        # dropped: the answer would describe the whole sprint while the
+        # question asked for one slice of it.
+        owners: Optional[set] = None
+        if unit:
+            owners, unit_error = self._unit_members(unit, match.canonical)
+            if unit_error:
+                return unit_error
+
+        target = None
+        if person:
+            target, person_error = self._resolve_person(person)
+            if person_error:
+                return person_error
+
+        try:
+            issues = self.task_manager_repository.search_issues(
+                jql=(
+                    f'project = "{match.canonical}" '
+                    f"AND sprint in openSprints()"
+                ),
+                max_results=200,
+                fields="summary,status,assignee,issuetype",
+            )
+        except Exception as exc:
+            LOGGER.error(f"Sprint board lookup failed for {match.canonical}: {exc}")
+            return "خواندن اسپرینت جاری از جیرا ناموفق بود."
+
+        if not issues:
+            return f"اسپرینت جاری {match.display_name} خالی است."
+
+        total = len(issues)
+        kept = [
+            issue for issue in issues
+            if self._matches_filters(issue, owners, target, issue_type)
+        ]
+
+        if topic:
+            kept, topic_error = await self._by_topic(topic, kept)
+            if topic_error:
+                return topic_error
+
+        if not kept:
+            return self._nothing_matched(
+                match, unit, person, issue_type, topic, total,
+            )
+
+        return self._render_board(match, kept, unit or topic, person, total)
+
+    async def _by_topic(self, topic: str, issues: Sequence) -> tuple:
+        """Keep the issues that are about a subject, by meaning not wording.
+
+        A keyword filter answers "Instagram" with only the issues that spell
+        it out, missing «ویترین» and «کامنت» that are plainly the same work.
+        Ranking by embedding finds those, and — unlike the model reading a
+        whole sprint — can say that nothing matched.
+
+        Args:
+            topic: The subject asked about
+            issues: The issues still in play
+
+        Returns:
+            The matching issues, and an error message when the search could
+            not run at all.
+        """
+        if not self.rank_candidates:
+            return [], (
+                "جست‌وجوی موضوعی در دسترس نیست، پس نمی‌توانم مطمئن باشم "
+                "فهرست کامل است."
+            )
+
+        texts = [
+            str(getattr(getattr(issue, "fields", None), "summary", "") or "")
+            for issue in issues
+        ]
+        ranked = await self.rank_candidates.rank_texts(topic, texts)
+
+        if ranked is None:
+            # Returning everything here would be the original bug: a list
+            # the reader takes for the answer to their question.
+            return [], (
+                "جست‌وجوی موضوعی الان کار نکرد. دوباره بپرسید یا بدون "
+                "موضوع بپرسید تا کل اسپرینت را بدهم."
+            )
+
+        return [issues[index] for index, _ in ranked], None
+
+
+
+    def _matches_filters(
+        self,
+        issue,
+        owners: Optional[set],
+        target: Optional[str],
+        issue_type: Optional[str],
+    ) -> bool:
+        """Whether one sprint issue survives the filters that were asked for."""
+        assignee = self._assignee_of(issue)
+
+        if owners is not None:
+            if not assignee or assignee.lower() not in owners:
+                return False
+
+        if target and (not assignee or assignee.lower() != target.lower()):
+            return False
+
+        if issue_type:
+            kind = getattr(
+                getattr(getattr(issue, "fields", None), "issuetype", None),
+                "name", "",
+            )
+            if str(kind).casefold() != issue_type.strip().casefold():
+                return False
+
+        return True
+
+    @staticmethod
+    def _assignee_of(issue) -> Optional[str]:
+        """The Jira username an issue is assigned to, if any."""
+        assignee = getattr(getattr(issue, "fields", None), "assignee", None)
+        return getattr(assignee, "name", None) if assignee else None
+
+    def _unit_members(self, unit: str, project_key: str) -> tuple:
+        """Everyone recorded as working in one discipline on a project.
+
+        Jira here carries no component or label on these issues, so the
+        only record of who does design is the unit each person is assigned
+        in their configuration.
+
+        Args:
+            unit: The discipline as the user named it
+            project_key: The project whose assignments to read
+
+        Returns:
+            The Jira usernames in that unit, and an error message when the
+            unit is unknown or nobody is recorded in it.
+        """
+        canonical = self._canonical_unit(unit)
+        if not canonical:
+            known = "، ".join(sorted(set(_UNIT_ALIASES.values())))
+            return None, (
+                f"«{unit}» را به‌عنوان یک واحد نمی‌شناسم. "
+                f"واحدهای شناخته‌شده: {known}"
+            )
+
+        if not self.user_config_repository:
+            return None, "اطلاعات واحدهای تیم در دسترس نیست."
+
+        try:
+            configs = self.user_config_repository.get_all_user_configs()
+        except Exception as exc:
+            LOGGER.error(f"Could not read user configs: {exc}")
+            return None, "اطلاعات واحدهای تیم خوانده نشد."
+
+        members = {
+            config.jira_username.lower()
+            for config in configs.values()
+            if config.jira_username
+            and (config.user_components or {}).get(project_key) == canonical
+        }
+
+        if not members:
+            return None, (
+                f"در {project_key} کسی با واحد «{canonical}» ثبت نشده است."
+            )
+
+        LOGGER.info(
+            f"Unit {canonical} on {project_key} resolves to {sorted(members)}",
+        )
+        return members, None
+
+    @staticmethod
+    def _canonical_unit(unit: str) -> Optional[str]:
+        """Resolve a spoken discipline to the unit recorded in configuration."""
+        spoken = unit.replace("\u200c", "").strip().casefold()
+        for alias, canonical in _UNIT_ALIASES.items():
+            if alias.replace("\u200c", "").casefold() == spoken:
+                return canonical
+        return None
+
+    def _nothing_matched(
+        self,
+        match,
+        unit: Optional[str],
+        person: Optional[str],
+        issue_type: Optional[str],
+        topic: Optional[str],
+        total: int,
+    ) -> str:
+        """Say that a filter matched nothing, and say which filter it was."""
+        asked = "، ".join(
+            part for part in (
+                f"واحد {unit}" if unit else "",
+                f"شخص {person}" if person else "",
+                f"نوع {issue_type}" if issue_type else "",
+                f"موضوع «{topic}»" if topic else "",
+            ) if part
+        )
+        return (
+            f"در اسپرینت جاری {match.display_name} ({total} آیتم) چیزی با "
+            f"{asked or 'این شرط‌ها'} پیدا نشد."
+        )
+
+    def _render_board(
+        self,
+        match,
+        issues: Sequence,
+        unit: Optional[str],
+        person: Optional[str],
+        total: int,
+    ) -> str:
+        """Render the matching sprint issues, grouped by who owns them."""
+        scope = f" — {unit}" if unit else (f" — {person}" if person else "")
+        lines = [
+            f"اسپرینت جاری {match.display_name}{scope}: "
+            f"{len(issues)} از {total} آیتم.",
+        ]
+
+        grouped: dict = {}
+        for issue in issues:
+            grouped.setdefault(self._assignee_of(issue) or "بدون مسئول", []).append(
+                issue,
+            )
+
+        for owner, owned in sorted(grouped.items(), key=lambda item: -len(item[1])):
+            lines.append(f"\n{owner} ({len(owned)}):")
+            for issue in owned:
+                lines.append(f"   {self._story_line(issue)}")
+
+        return "\n".join(lines)
 
     async def sprint_epics(self, project: str) -> str:
         """Summarise the open sprint of a project by the epics it advances.

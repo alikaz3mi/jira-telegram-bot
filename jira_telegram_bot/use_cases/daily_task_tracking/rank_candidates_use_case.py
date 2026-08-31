@@ -102,6 +102,60 @@ class RankCandidatesUseCase:
         )
         return shortlist
 
+    async def rank_texts(
+        self,
+        query: str,
+        texts: Sequence[str],
+    ) -> Optional[List[Tuple[int, float]]]:
+        """Rank arbitrary texts against a query, by position.
+
+        The sprint tools hold raw Jira issues rather than ``DailyTaskCheck``,
+        and a topic question — "what is planned for Instagram?" — is the same
+        retrieval problem as matching a worklog. This exposes the ranking
+        without the entity type.
+
+        Args:
+            query: What the user asked about
+            texts: The texts to rank, in caller order
+
+        Returns:
+            (index, score) pairs above the floor, best first; an empty list
+            when nothing resembles the query; None when ranking was
+            unavailable and the caller should keep its own behaviour.
+        """
+        if not query.strip() or not texts:
+            return None
+
+        vectors = await self.embeddings.embed([query] + list(texts))
+        if len(vectors) != len(texts) + 1:
+            LOGGER.info("Embeddings unavailable; leaving texts unranked")
+            return None
+
+        question, corpus = vectors[0], vectors[1:]
+        scored = [
+            (index, self._similarity(question, vector))
+            for index, vector in enumerate(corpus)
+        ]
+        scored.sort(key=lambda pair: -pair[1])
+
+        floor = self.settings.min_topic_similarity
+        if scored[0][1] < floor:
+            LOGGER.info(
+                f"Best topic match scored {scored[0][1]:.3f}, below "
+                f"{floor}; reporting no match",
+            )
+            return []
+
+        kept = [
+            pair for pair in scored[:self.settings.topic_matches]
+            if pair[1] >= floor
+        ]
+        LOGGER.info(
+            f"Topic search kept {len(kept)} of {len(texts)}; "
+            f"best {scored[0][1]:.3f}",
+        )
+        return kept
+
     @staticmethod
     def _describe(task: DailyTaskCheck) -> str:
         """Render an issue as the text it is matched on."""
