@@ -1,7 +1,7 @@
 """Use case for getting user's daily tasks that need attention."""
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional
 
 from jira_telegram_bot import LOGGER
@@ -14,6 +14,10 @@ from jira_telegram_bot.entities.daily_task_tracking.daily_task_status import (
 from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface import (
     TaskManagerRepositoryInterface,
 )
+
+
+# How long a finished blocker still counts as news worth mentioning.
+BLOCKER_RECENCY_DAYS = 3
 
 
 class GetUserDailyTasksUseCase:
@@ -130,8 +134,8 @@ class GetUserDailyTasksUseCase:
             project_key = issue.fields.project.key
             
             dependencies = self._get_dependencies(issue)
-            dependencies_completed = await self._check_dependencies_completed(
-                dependencies
+            dependencies_completed, cleared_recently = self._inspect_dependencies(
+                dependencies,
             )
             
             worklog_hours = self._get_total_worklog_hours(issue)
@@ -164,6 +168,7 @@ class GetUserDailyTasksUseCase:
                 project_key=project_key,
                 dependencies=dependencies,
                 dependencies_completed=dependencies_completed,
+                blockers_cleared_recently=cleared_recently,
                 worklog_hours=worklog_hours,
                 parent_key=getattr(
                     getattr(issue.fields, "parent", None), "key", None,
@@ -271,22 +276,33 @@ class GetUserDailyTasksUseCase:
             List of dependency issue keys
         """
         dependencies = []
-        
+
         try:
             if hasattr(issue.fields, "issuelinks"):
                 for link in issue.fields.issuelinks:
-                    if hasattr(link, "type"):
-                        link_type = getattr(link.type, "name", "")
-                        
-                        if "blocks" in link_type.lower() or "depends" in link_type.lower():
-                            if hasattr(link, "inwardIssue"):
-                                dependencies.append(link.inwardIssue.key)
-                            elif hasattr(link, "outwardIssue"):
-                                dependencies.append(link.outwardIssue.key)
-        
+                    if not hasattr(link, "type"):
+                        continue
+
+                    link_type = getattr(link.type, "name", "")
+                    if not (
+                        "blocks" in link_type.lower()
+                        or "depends" in link_type.lower()
+                    ):
+                        continue
+
+                    # Direction decides meaning. Jira puts the issue this one
+                    # waits on in `inwardIssue` ("is blocked by"); an
+                    # `outwardIssue` is what this issue blocks, which is the
+                    # reverse and is not a prerequisite. Treating both alike
+                    # made a task that blocks others look like it depended
+                    # on them.
+                    inward = getattr(link, "inwardIssue", None)
+                    if inward is not None:
+                        dependencies.append(inward.key)
+
         except Exception as e:
             LOGGER.debug(f"Error getting dependencies for {issue.key}: {e}")
-        
+
         return dependencies
 
     async def _check_dependencies_completed(
@@ -301,27 +317,80 @@ class GetUserDailyTasksUseCase:
         Returns:
             True if all dependencies completed or no dependencies
         """
+        completed, _ = self._inspect_dependencies(dependency_keys)
+        return completed
+
+    def _inspect_dependencies(
+        self,
+        dependency_keys: List[str],
+    ) -> tuple:
+        """Check dependencies and note which of them finished recently.
+
+        "All clear" is a state; "this finished yesterday" is news. Only the
+        second is worth telling somebody about, so both come back here.
+
+        Args:
+            dependency_keys: Issues this task waits on
+
+        Returns:
+            Whether every dependency is done, and the keys of those that
+            reached done within the recency window.
+        """
         if not dependency_keys:
-            return True
-        
-        try:
-            for dep_key in dependency_keys:
-                try:
-                    dep_issue = self.task_manager_repository.get_issue(dep_key)
-                    status = getattr(dep_issue.fields.status, "name", "").lower()
-                    
-                    if status not in ["done", "closed", "resolved"]:
-                        return False
-                        
-                except Exception as e:
-                    LOGGER.debug(f"Error checking dependency {dep_key}: {e}")
-                    return False
-            
-            return True
-            
-        except Exception as e:
-            LOGGER.debug(f"Error checking dependencies: {e}")
-            return False
+            return True, []
+
+        completed = True
+        recent: List[str] = []
+        horizon = datetime.now(timezone.utc) - timedelta(
+            days=BLOCKER_RECENCY_DAYS,
+        )
+
+        for dep_key in dependency_keys:
+            try:
+                dep_issue = self.task_manager_repository.get_issue(dep_key)
+                status = getattr(dep_issue.fields.status, "name", "").lower()
+
+                if status not in ["done", "closed", "resolved"]:
+                    completed = False
+                    continue
+
+                if self._finished_since(dep_issue, horizon):
+                    recent.append(dep_key)
+
+            except Exception as e:
+                LOGGER.debug(f"Error checking dependency {dep_key}: {e}")
+                completed = False
+
+        return completed, recent
+
+    @staticmethod
+    def _finished_since(issue, horizon: datetime) -> bool:
+        """Whether an issue reached its done state after a given moment.
+
+        ``resolutiondate`` is empty on workflows here that reach a Done
+        status without setting a resolution, so ``updated`` stands in for
+        it. That is looser — an edit counts as a change — but it errs
+        towards mentioning a blocker rather than staying silent about one.
+
+        Args:
+            issue: The dependency issue
+            horizon: The earliest moment that still counts as recent
+
+        Returns:
+            True when the issue looks to have finished since the horizon.
+        """
+        for field in ("resolutiondate", "updated"):
+            stamp = getattr(issue.fields, field, None)
+            if not stamp:
+                continue
+            try:
+                moment = datetime.fromisoformat(str(stamp))
+            except ValueError:
+                continue
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=timezone.utc)
+            return moment >= horizon
+        return False
 
     def _get_total_worklog_hours(self, issue) -> float:
         """Get total worklog hours for an issue.

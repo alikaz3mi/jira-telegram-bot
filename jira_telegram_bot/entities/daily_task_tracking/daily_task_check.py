@@ -44,6 +44,13 @@ class DailyTaskCheck(BaseModel):
         default=True,
         description="Whether all dependencies are completed",
     )
+    blockers_cleared_recently: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Blockers finished in the last few days. This is the news a "
+            "person can act on: the work is no longer waiting on anyone."
+        ),
+    )
     worklog_hours: float = Field(
         default=0.0,
         description="Total hours logged",

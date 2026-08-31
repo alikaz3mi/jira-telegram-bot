@@ -12,6 +12,7 @@ from typing import Optional
 from typing import Sequence
 
 from jira_telegram_bot import LOGGER
+from jira_telegram_bot.entities.assistant_entities import EntityKind
 from jira_telegram_bot.entities.daily_task_tracking.daily_task_check import (
     DailyTaskCheck,
 )
@@ -36,6 +37,9 @@ _PROMPT_TASK = "parse_worklog_report"
 # Below this, the top candidate is not trusted on its own and the user is asked.
 CONFIDENCE_THRESHOLD = 0.75
 
+# A similarity this high is the user having effectively named the issue.
+_STRONG_MATCH = 0.45
+
 # Persian and Arabic-Indic digits, so "۲.۵" survives float().
 _DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
@@ -53,15 +57,23 @@ class ParseWorklogReportUseCase:
         self,
         ai_service: AIServiceProtocol,
         prompt_catalog: PromptCatalogProtocol,
+        alias_repository=None,
+        rank_candidates_use_case=None,
     ):
         """Initialize the use case.
 
         Args:
             ai_service: Service that runs the structured LLM call
             prompt_catalog: Catalog the parsing prompt is loaded from
+            alias_repository: Resolves a spoken product name to a project key,
+                so "برای پارسچت" narrows the candidates the user is offered
+            rank_candidates_use_case: Orders issues by similarity to the
+                described work, so the model chooses from a shortlist
         """
         self.ai_service = ai_service
         self.prompt_catalog = prompt_catalog
+        self.alias_repository = alias_repository
+        self.rank_candidates = rank_candidates_use_case
 
     async def execute(
         self,
@@ -86,12 +98,14 @@ class ParseWorklogReportUseCase:
             LOGGER.info("No candidate issues to match a worklog report against")
             return report
 
+        shown = self._restrict_to_named_project(text, candidates)
+
         prompt = await self.prompt_catalog.get_prompt(_PROMPT_TASK)
         result = await self.ai_service.run(
             prompt,
             {
                 "content": text,
-                "candidates": self._format_candidates(candidates),
+                "candidates": self._format_candidates(shown),
                 "history": history,
                 "today": date.today().isoformat(),
             },
@@ -103,11 +117,191 @@ class ParseWorklogReportUseCase:
         ordinal_key = self._ordinal_issue_key(text, history)
         weekday = self._weekday_date(text, date.today())
         report.splits = [
-            self._build_split(raw, candidates, ordinal_key, weekday)
+            self._build_split(raw, shown, ordinal_key, weekday)
             for raw in self._as_list(result.get("splits"))
         ]
+        self._reindex_onto(report, shown, candidates)
+        await self._rerank_splits(report, candidates)
         report.splits = [split for split in report.splits if split.hours > 0]
         return report
+
+    async def _rerank_splits(
+        self,
+        report: ParsedWorklogReport,
+        candidates: Sequence[DailyTaskCheck],
+    ) -> None:
+        """Settle each split against the issues, by what it actually describes.
+
+        Ranking the whole message does not work: "دیروز ۲ ساعت ریموت روی
+        تنزل خودکار کار کردم" embeds hours, a date and a way of working
+        alongside the task, and the noise buries the signal — the right
+        issue still led, but by 0.04 instead of 0.15. Each split carries
+        only its own description, which is the text worth comparing.
+
+        Only splits the model left unsettled are touched, so a confident
+        reading is never second-guessed by similarity.
+
+        Args:
+            report: The parsed report, mutated in place
+            candidates: The full candidate list indices refer to
+        """
+        if not self.rank_candidates or len(candidates) <= 1:
+            return
+
+        for split in report.splits:
+            if split.is_ready or not split.description:
+                continue
+
+            ranked = await self.rank_candidates.execute(
+                split.description, candidates,
+            )
+            if ranked is None:
+                continue
+            if not ranked:
+                split.candidate_indices = []
+                split.status = WorklogSplitStatus.UNMATCHED
+                continue
+
+            position = {
+                task.issue_key: index
+                for index, task in enumerate(candidates)
+            }
+            split.candidate_indices = [
+                position[task.issue_key]
+                for task, _ in ranked
+                if task.issue_key in position
+            ]
+            best_task, best_score = ranked[0]
+            if len(ranked) == 1 or best_score >= _STRONG_MATCH:
+                split.issue_key = best_task.issue_key
+                split.status = WorklogSplitStatus.RESOLVED
+                LOGGER.info(
+                    f"Similarity settled a split on {best_task.issue_key} "
+                    f"at {best_score:.3f}",
+                )
+            else:
+                split.status = WorklogSplitStatus.AMBIGUOUS
+
+    def _restrict_to_named_project(
+        self,
+        text: str,
+        candidates: Sequence[DailyTaskCheck],
+    ) -> Sequence[DailyTaskCheck]:
+        """Show the model only the project the user named.
+
+        "برای پارسچت ۴ ساعت" states a project. Filtering the model's answer
+        afterwards is too late: if it shortlisted only out-of-project issues
+        there is nothing left to keep, and the user is offered buttons that
+        are all wrong. Narrowing the list it sees means every option it can
+        return is in the right project.
+
+        Falls back to the full list when the name does not resolve or the
+        user has no open work there, since no options at all is worse.
+
+        Args:
+            text: The user's message, which may name a project
+            candidates: The user's open issues
+
+        Returns:
+            The issues to show the model.
+        """
+        project_key = self._resolve_project_key(self._spoken_project(text))
+        if not project_key:
+            return candidates
+
+        narrowed = [
+            task for task in candidates if task.project_key == project_key
+        ]
+        if not narrowed:
+            LOGGER.info(
+                f"User named {project_key} but has no open issues there; "
+                f"showing all {len(candidates)} candidates",
+            )
+            return candidates
+
+        dropped = len(candidates) - len(narrowed)
+        if dropped:
+            LOGGER.info(
+                f"Named project {project_key} narrowed candidates from "
+                f"{len(candidates)} to {len(narrowed)}",
+            )
+        return narrowed
+
+    def _spoken_project(self, text: str) -> Optional[str]:
+        """Find a known project name in the user's own words.
+
+        The model's ``project_hint`` arrives too late to choose what it is
+        shown, so the message is scanned directly against the alias table.
+
+        Args:
+            text: The user's message
+
+        Returns:
+            The alias as written, or None when no known project is named.
+        """
+        if not self.alias_repository:
+            return None
+        try:
+            aliases = self.alias_repository.all_of(EntityKind.PROJECT)
+        except Exception as exc:
+            LOGGER.error(f"Could not read project aliases: {exc}")
+            return None
+
+        haystack = text.replace("\u200c", "").casefold()
+        best: Optional[str] = None
+        for entry in aliases:
+            written = str(entry.alias)
+            needle = written.replace("\u200c", "").casefold()
+            if len(needle) > 2 and needle in haystack:
+                if best is None or len(needle) > len(best):
+                    best = written
+        return best
+
+    @staticmethod
+    def _reindex_onto(
+        report: ParsedWorklogReport,
+        shown: Sequence[DailyTaskCheck],
+        candidates: Sequence[DailyTaskCheck],
+    ) -> None:
+        """Translate indices into the shown list back to the full list.
+
+        The caller confirms against the full candidate list, so an index
+        that means one issue here and another there would write the hours to
+        the wrong task.
+
+        Args:
+            report: The parsed report, mutated in place
+            shown: The list the model pointed into
+            candidates: The full list the caller will confirm against
+        """
+        if shown is candidates:
+            return
+        position = {task.issue_key: index for index, task in enumerate(candidates)}
+        for split in report.splits:
+            split.candidate_indices = [
+                position[shown[index].issue_key]
+                for index in split.candidate_indices
+                if 0 <= index < len(shown) and shown[index].issue_key in position
+            ]
+
+    def _resolve_project_key(self, hint: Optional[str]) -> Optional[str]:
+        """Resolve a spoken product name to a project key.
+
+        Args:
+            hint: The project the user named, if any
+
+        Returns:
+            The canonical project key, or None when it does not resolve.
+        """
+        if not hint or not self.alias_repository:
+            return None
+        try:
+            resolution = self.alias_repository.resolve(hint, EntityKind.PROJECT)
+        except Exception as exc:
+            LOGGER.error(f"Could not resolve project hint {hint!r}: {exc}")
+            return None
+        match = resolution.resolved
+        return match.canonical if match else None
 
     @staticmethod
     def _format_candidates(candidates: Sequence[DailyTaskCheck]) -> str:

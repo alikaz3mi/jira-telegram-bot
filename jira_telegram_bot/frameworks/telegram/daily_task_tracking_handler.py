@@ -58,6 +58,12 @@ from jira_telegram_bot.use_cases.daily_task_tracking.answer_task_question_use_ca
 from jira_telegram_bot.use_cases.interfaces.user_config_interface import (
     UserConfigInterface,
 )
+from jira_telegram_bot.use_cases.daily_task_tracking.build_daily_digest_use_case import (
+    BuildDailyDigestUseCase,
+)
+from jira_telegram_bot.use_cases.daily_task_tracking.send_daily_task_reminders_use_case import (
+    MAX_TASKS_PER_REMINDER,
+)
 from jira_telegram_bot.frameworks.telegram.daily_task_queue_manager import (
     DailyTaskQueueManager,
 )
@@ -125,6 +131,12 @@ class DailyTaskTrackingHandler:
         self.task_assistant_agent = task_assistant_agent
         self.base_url = (base_url or "").rstrip("/")
         self.task_sender = None  # Will be set by SendDailyTaskRemindersUseCase
+        # Also set by SendDailyTaskRemindersUseCase, which owns the bot the
+        # reminder sends through.
+        self.message_sender = None
+        # Chat id -> the tasks a digest offered and how many may be asked
+        # about, so a reply can be matched against what was actually shown.
+        self.digest_sessions: dict = {}
 
     def create_delay_reason_keyboard(self) -> InlineKeyboardMarkup:
         """Create inline keyboard for delay reasons.
@@ -179,7 +191,11 @@ class DailyTaskTrackingHandler:
                 InlineKeyboardButton(
                     persian_messages.SKIP_TASK,
                     callback_data="skip_task",
-                )
+                ),
+                InlineKeyboardButton(
+                    persian_messages.FINISH_LATER,
+                    callback_data="finish_later",
+                ),
             ],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -234,7 +250,11 @@ class DailyTaskTrackingHandler:
                 InlineKeyboardButton(
                     persian_messages.SKIP_TASK,
                     callback_data="skip_task",
-                )
+                ),
+                InlineKeyboardButton(
+                    persian_messages.FINISH_LATER,
+                    callback_data="finish_later",
+                ),
             ],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -286,6 +306,10 @@ class DailyTaskTrackingHandler:
                 await query.edit_message_text(persian_messages.TASK_SKIPPED)
                 # Send next task
                 await self._send_next_task_for_user(chat_id)
+            elif data == "finish_later":
+                LOGGER.info("Processing finish later")
+                await query.edit_message_text(persian_messages.CHECK_PAUSED)
+                self.queue_manager.clear_queue(chat_id)
             
         except Exception as e:
             LOGGER.error(f"Error handling callback: {e}", exc_info=True)
@@ -1087,6 +1111,52 @@ class DailyTaskTrackingHandler:
             invalidate(user_config.jira_username)
 
         await query.edit_message_text("\n".join(lines), parse_mode="HTML")
+        await self._follow_up_after_digest(query.message.chat_id, pending)
+
+    async def _follow_up_after_digest(self, chat_id: int, pending: dict) -> None:
+        """Ask about the work a digest reply did not account for.
+
+        Someone who has just written a report should not then be asked
+        about the tasks they described. Only the remainder is queued, and
+        when a report covers everything nothing further is asked at all.
+
+        Args:
+            chat_id: Whose check-in this is
+            pending: The confirmed report, holding the tasks it was parsed
+                against
+        """
+        session = self.digest_sessions.pop(chat_id, None)
+        if not session:
+            return
+
+        reported = {
+            split.issue_key
+            for split in pending["report"].splits
+            if split.issue_key
+        }
+        remaining = BuildDailyDigestUseCase.unaccounted_for(
+            session["tasks"], reported, session["limit"],
+        )
+
+        if not self.message_sender:
+            LOGGER.error("message_sender is not set; cannot follow up")
+            return
+
+        if not remaining:
+            await self.message_sender(
+                chat_id, persian_messages.DIGEST_ALL_COVERED.strip(),
+            )
+            return
+
+        await self.message_sender(
+            chat_id,
+            persian_messages.DIGEST_REMAINING.format(
+                count=len(remaining),
+            ).strip(),
+        )
+        self.queue_manager.create_queue(chat_id, remaining)
+        if self.task_sender:
+            await self.task_sender(chat_id)
 
     @staticmethod
     def _spell_date(worked_on: Optional[str]) -> Optional[str]:
@@ -1145,6 +1215,44 @@ class DailyTaskTrackingHandler:
     def _format_hours(hours: float) -> str:
         """Render hours without a trailing ``.0`` on whole numbers."""
         return str(int(hours)) if float(hours).is_integer() else str(round(hours, 2))
+
+    async def tasks_command(self, update: Update, context: CallbackContext) -> None:
+        """Ask about today's tasks one at a time, on request.
+
+        The digest offers this for people who would rather be walked
+        through their tasks than write a report. It also works outside the
+        morning check-in, when someone wants to go through them again.
+
+        Args:
+            update: The incoming command
+            context: Telegram callback context
+        """
+        chat_id = update.effective_chat.id
+        user_config = self.user_config_repository.get_user_config(
+            update.effective_user.username,
+        )
+        if not user_config or not user_config.jira_username:
+            await update.message.reply_text(persian_messages.ERROR_MESSAGE)
+            return
+
+        session = self.digest_sessions.pop(chat_id, None)
+        if session:
+            tasks = session["tasks"]
+        else:
+            tasks = await self.get_user_daily_tasks.execute(
+                user_config.jira_username,
+            )
+            tasks = tasks[:MAX_TASKS_PER_REMINDER]
+
+        if not tasks:
+            await update.message.reply_text(
+                persian_messages.DIGEST_NOTHING.strip(),
+            )
+            return
+
+        self.queue_manager.create_queue(chat_id, tasks)
+        if self.task_sender:
+            await self.task_sender(chat_id)
 
     async def _send_next_task_for_user(self, chat_id: int) -> None:
         """Send next task for user.

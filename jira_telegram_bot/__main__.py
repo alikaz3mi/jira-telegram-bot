@@ -167,11 +167,17 @@ def setup_and_run():
     application.add_handler(advanced_task_creation_handler.get_handler())
     application.add_handler(get_current_stories_handler.get_handler())
     
+    # Offered by the digest for people who would rather be walked through
+    # their tasks than write a report.
+    application.add_handler(
+        CommandHandler("tasks", daily_task_tracking_handler.tasks_command)
+    )
+
     # Register daily task tracking callback handlers
     application.add_handler(
         CallbackQueryHandler(
             daily_task_tracking_handler.handle_callback,
-            pattern=r"^(delay_|hours_|worklog_|skip_task|request_subtasks|wlpick_|wlconfirm|wlcancel)"
+            pattern=r"^(delay_|hours_|worklog_|skip_task|finish_later|request_subtasks|wlpick_|wlconfirm|wlcancel)"
         )
     )
     

@@ -159,6 +159,19 @@ class TaskAssistantAgent:
                 ),
             ),
             StructuredTool.from_function(
+                coroutine=tools.sprint_epics,
+                name="sprint_epics",
+                description=(
+                    "اپیک‌های اسپرینت جاری یک پروژه، همراه با استوری‌های زیر "
+                    "هرکدام. project نام محصول همان‌طور که کاربر گفت (مثل "
+                    "«خردیار»). برای سؤال‌هایی مثل «چه اپیک‌هایی در اسپرینت "
+                    "جاری هستند؟» یا «از این اسپرینت چه چیزی آماده عرضه "
+                    "می‌شود؟» حتماً از این استفاده کن. "
+                    "اپیک‌ها assignee ندارند، پس هرگز با list_tasks پیدا "
+                    "نمی‌شوند؛ list_tasks فقط تسک‌های خودِ افراد را می‌بیند."
+                ),
+            ),
+            StructuredTool.from_function(
                 coroutine=tools.count_tasks,
                 name="count_tasks",
                 description=(

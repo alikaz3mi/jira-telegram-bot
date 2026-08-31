@@ -498,6 +498,204 @@ class AssistantTools:
         )
         return f"کاربر {self.context.jira_username} ({self.context.role.value}) — {scope}"
 
+    async def sprint_epics(self, project: str) -> str:
+        """Summarise the open sprint of a project by the epics it advances.
+
+        Epics carry no assignee, so they can never appear in an
+        assignee-scoped list. This is the only tool that queries a project
+        rather than a person, and it rolls the sprint's stories up to the
+        epics above them.
+
+        Args:
+            project: The product or project, as the user named it
+
+        Returns:
+            One line per epic with the stories under it, or why there are none.
+        """
+        match, error = self._resolve_project(project)
+        if error:
+            return error
+
+        if not self.task_manager_repository:
+            return "دسترسی به جیرا برای این پرسش در دسترس نیست."
+
+        allowed, denial = await self._may_read_project(match.canonical)
+        if not allowed:
+            return denial
+
+        try:
+            issues = self.task_manager_repository.search_issues(
+                jql=(
+                    f'project = "{match.canonical}" '
+                    f"AND sprint in openSprints() AND issuetype = Story"
+                ),
+                max_results=200,
+                fields=f"summary,status,{EPIC_LINK_FIELD}",
+            )
+        except Exception as exc:
+            LOGGER.error(f"Sprint epic lookup failed for {match.canonical}: {exc}")
+            return "خواندن اسپرینت جاری از جیرا ناموفق بود."
+
+        if not issues:
+            return (
+                f"در اسپرینت جاری {match.display_name} استوری‌ای نیست."
+            )
+
+        grouped, orphans = self._group_by_epic(issues)
+        if not grouped:
+            return (
+                f"{len(issues)} استوری در اسپرینت جاری {match.display_name} "
+                f"هست، اما هیچ‌کدام به اپیکی وصل نیستند."
+            )
+
+        return self._render_sprint_epics(match, grouped, orphans, len(issues))
+
+    def _group_by_epic(self, issues: Sequence) -> tuple[dict, List]:
+        """Group sprint stories under their epic.
+
+        Args:
+            issues: The sprint's stories
+
+        Returns:
+            A mapping of epic key to its stories, and the stories that carry
+            no epic link. Both are returned so a story without an epic is
+            reported rather than dropped.
+        """
+        grouped: dict = {}
+        orphans: List = []
+        for issue in issues:
+            epic_key = self._epic_key_of(issue)
+            if epic_key:
+                grouped.setdefault(epic_key, []).append(issue)
+            else:
+                orphans.append(issue)
+        return grouped, orphans
+
+    @staticmethod
+    def _epic_key_of(issue) -> Optional[str]:
+        """Read an issue's Epic Link, which Jira Server keeps in a custom field."""
+        value = getattr(getattr(issue, "fields", None), EPIC_LINK_FIELD, None)
+        if value is None:
+            return None
+        return str(getattr(value, "value", value)).strip() or None
+
+    def _render_sprint_epics(
+        self,
+        match,
+        grouped: dict,
+        orphans: List,
+        total: int,
+    ) -> str:
+        """Render the sprint's epics, largest first, with their stories.
+
+        Args:
+            match: The resolved project
+            grouped: Epic key mapped to its sprint stories
+            orphans: Sprint stories carrying no epic link
+            total: How many stories the sprint holds in all
+
+        Returns:
+            The rendered summary.
+        """
+        lines = [
+            f"اسپرینت جاری {match.display_name}: {total} استوری در "
+            f"{len(grouped)} اپیک.",
+        ]
+        ordered = sorted(grouped.items(), key=lambda item: -len(item[1]))
+        for epic_key, stories in ordered:
+            lines.append(
+                f"\n{self._link(epic_key)} — {self._epic_title(epic_key)} "
+                f"({len(stories)} استوری)",
+            )
+            for story in stories:
+                lines.append(f"   ↳ {self._story_line(story)}")
+
+        if orphans:
+            # A story with no epic is still sprint work; hiding it would make
+            # the epic counts look like the whole sprint when they are not.
+            lines.append(f"\n{len(orphans)} استوری بدون اپیک:")
+            for story in orphans:
+                lines.append(f"   ↳ {self._story_line(story)}")
+
+        return "\n".join(lines)
+
+    def _epic_title(self, epic_key: str) -> str:
+        """Read an epic's summary, falling back to its key.
+
+        Args:
+            epic_key: The epic to name
+
+        Returns:
+            The epic's summary, or an empty string when it cannot be read.
+        """
+        try:
+            epic = self.task_manager_repository.get_issue(epic_key)
+        except Exception as exc:
+            LOGGER.error(f"Could not read epic {epic_key}: {exc}")
+            return ""
+        summary = str(getattr(getattr(epic, "fields", None), "summary", "") or "")
+        return summary.strip()
+
+    def _story_line(self, issue) -> str:
+        """Render one sprint story as a linked line with its status."""
+        fields = getattr(issue, "fields", None)
+        summary = str(getattr(fields, "summary", "") or "").strip()
+        if len(summary) > 60:
+            summary = f"{summary[:59]}…"
+        status = getattr(getattr(fields, "status", None), "name", "") or "?"
+        return f"{self._link(str(issue.key))} — {summary} (وضعیت: {status})"
+
+    async def _may_read_project(self, project_key: str) -> tuple[bool, str]:
+        """Whether the caller may see a whole project's sprint.
+
+        Sprint contents are not scoped to one person, so ``may_read`` does
+        not answer this. Anyone who may read others keeps that right here;
+        everyone else must have work of their own in the project. The check
+        is made here in Python, never left to the prompt.
+
+        Args:
+            project_key: The project being asked about
+
+        Returns:
+            Whether to proceed, and the refusal to send when not.
+        """
+        if self.context.role.may_read_others:
+            return True, ""
+
+        own = await self._fetch(self.context.jira_username)
+        if any(task.project_key == project_key for task in own):
+            return True, ""
+
+        LOGGER.info(
+            f"{self.context.jira_username} ({self.context.role.value}) denied "
+            f"sprint view of {project_key}: no work of their own there",
+        )
+        return False, (
+            "شما در این پروژه تسکی ندارید، بنابراین دسترسی به اسپرینت آن "
+            "را ندارید."
+        )
+
+    def _resolve_project(self, project: str) -> tuple[Optional[object], Optional[str]]:
+        """Resolve a spoken product name to a project.
+
+        Args:
+            project: The name the user used
+
+        Returns:
+            The resolved project, and an error message when it is unclear.
+        """
+        resolution = self.aliases.resolve(project, EntityKind.PROJECT)
+        match = resolution.resolved
+        if match:
+            return match, None
+
+        options = "، ".join(
+            candidate.display_name for candidate in resolution.matches
+        )
+        if options:
+            return None, f"منظورتان از «{project}» را نفهمیدم. گزینه‌های نزدیک: {options}"
+        return None, f"«{project}» را پیدا نکردم."
+
     def _resolve_person(
         self,
         person: Optional[str],

@@ -11,6 +11,8 @@ from jira_telegram_bot.entities.constants.persian_messages import (
     DELAY_OTHER,
     REQUEST_SUBTASKS,
     SKIP_TASK,
+    FINISH_LATER,
+    CHECK_PAUSED,
     HOURS_1,
     HOURS_2,
     HOURS_3,
@@ -35,6 +37,7 @@ from jira_telegram_bot.entities.constants.persian_messages import (
     REASON_TEXT,
     TASK_HEADER,
     TASK_HEADER_WITH_DATES,
+    TASK_SPRINT,
     TASK_DESCRIPTION,
 )
 
@@ -99,6 +102,8 @@ __all__ = [
     "DELAY_OTHER",
     "REQUEST_SUBTASKS",
     "SKIP_TASK",
+    "FINISH_LATER",
+    "CHECK_PAUSED",
     "HOURS_1",
     "HOURS_2",
     "HOURS_3",
@@ -123,6 +128,7 @@ __all__ = [
     "REASON_TEXT",
     "TASK_HEADER",
     "TASK_HEADER_WITH_DATES",
+    "TASK_SPRINT",
     "TASK_DESCRIPTION",
     # Re-exported constants from constants.py
     "DONE_STATUSES",

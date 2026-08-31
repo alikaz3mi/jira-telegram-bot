@@ -17,6 +17,7 @@ from jira_telegram_bot.entities.constants.persian_messages import (
     REASON_TEXT,
     TASK_HEADER_WITH_DATES,
     TASK_HEADER,
+    TASK_SPRINT,
     TASK_DESCRIPTION,
 )
 from jira_telegram_bot.entities.daily_task_tracking.daily_task_check import (
@@ -50,8 +51,10 @@ from telegram import Bot
 
 
 # A daily check-in people finish. Beyond this the queue is abandoned,
-# and an abandoned queue collects no answers at all.
-MAX_TASKS_PER_REMINDER = 12
+# and an abandoned queue collects no answers at all. Eight is already a
+# couple of minutes of tapping; twelve was two dozen messages before the
+# separator was folded into the task itself.
+MAX_TASKS_PER_REMINDER = 8
 
 
 class SendDailyTaskRemindersUseCase:
@@ -68,6 +71,8 @@ class SendDailyTaskRemindersUseCase:
         daily_task_tracking_handler: Any,
         telegram_token: str,
         queue_manager: DailyTaskQueueManager,
+        build_daily_digest_use_case,
+        render_daily_digest_use_case,
         base_url: str = "",
     ):
         """Initialize the use case.
@@ -82,6 +87,8 @@ class SendDailyTaskRemindersUseCase:
             daily_task_tracking_handler: Handler for telegram keyboards
             telegram_token: Telegram bot token
             queue_manager: Task queue manager
+            build_daily_digest_use_case: Groups tasks into the morning digest
+            render_daily_digest_use_case: Renders that digest for Telegram
             base_url: Jira base URL, used to link the tasks left unasked
         """
         self.get_user_daily_tasks = get_user_daily_tasks_use_case
@@ -93,12 +100,15 @@ class SendDailyTaskRemindersUseCase:
         self.handler = daily_task_tracking_handler
         self.telegram_token = telegram_token
         self.queue_manager = queue_manager
+        self.build_digest = build_daily_digest_use_case
+        self.render_digest = render_daily_digest_use_case
         self.base_url = (base_url or "").rstrip("/")
         self.bot = Bot(token=telegram_token)
         self.welcome_sent_today = {}  # Track welcome messages per day per user
         
         # Set task sender callable
         self.handler.task_sender = self._send_task_or_complete
+        self.handler.message_sender = self.telegram_notifier._send_message
 
     async def execute(self) -> Dict[str, int]:
         """Send daily task reminders to all users.
@@ -182,50 +192,54 @@ class SendDailyTaskRemindersUseCase:
             LOGGER.debug(f"No tasks needing attention for {jira_username}")
             return
         
+        finished = [task for task in tasks if self._is_finished(task)]
+        if finished:
+            LOGGER.info(
+                f"Excluding {len(finished)} finished task(s) for "
+                f"{jira_username}: "
+                f"{', '.join(task.issue_key for task in finished)}",
+            )
+        live = [task for task in tasks if not self._is_finished(task)]
+        if not live:
+            LOGGER.debug(f"Nothing outstanding for {jira_username}")
+            return
+
         # Group tasks by project
         projects = {}
-        for task in tasks:
+        for task in live:
             if task.project_key not in projects:
                 projects[task.project_key] = 0
             projects[task.project_key] += 1
-        
+
         project_summary = ", ".join([f"{key}: {count}" for key, count in projects.items()])
-        
+
         # Backlog items with no sprint are the backlog, not a commitment
         # anyone took on for this fortnight. Asking about them daily buries
         # the work that is actually in flight.
-        total = len(tasks)
-        committed = [task for task in tasks if not self._is_loose_backlog(task)]
-        backlog = total - len(committed)
+        committed = [task for task in live if not self._is_loose_backlog(task)]
+        backlog = len(live) - len(committed)
 
         # Even after that, a few people carry more than anyone answers one at
         # a time, so the queue is capped and the rest is offered as a link.
         queued = self._most_pressing(committed)
-        overflow = len(committed) - len(queued)
 
-        summary = (
-            f"📋 شما {total} تسک باز دارید\n"
-            f"📦 پروژه‌ها: {project_summary}\n\n"
+        # One digest, then one open question. Asking about twelve tasks in
+        # sequence made the bot extract what the person already knew; this
+        # leads with what they could not know — a blocker that cleared, a
+        # task that moved backwards — and lets them answer in a sentence.
+        digest = self.build_digest.execute(committed, backlog_count=backlog)
+        await self.telegram_notifier._send_message(
+            chat_id,
+            self.render_digest.execute(digest),
         )
-        if backlog:
-            summary += f"({backlog} مورد در بک‌لاگ است و امروز پرسیده نمی‌شود.)\n"
-        if overflow > 0:
-            summary += (
-                f"از {len(committed)} تسک جاری، {len(queued)} مورد مهم‌تر را "
-                f"می‌پرسم.\n"
-            )
-        if backlog or overflow > 0:
-            summary += f"همه تسک‌ها: {self._board_link(jira_username)}\n"
-        summary += "\nلطفاً برای هر تسک پاسخ دهید."
 
-        await self.telegram_notifier._send_message(chat_id, summary)
+        # Remembered so a free-text reply is matched against exactly the
+        # tasks this digest offered, and only the rest is asked about.
+        self.handler.digest_sessions[chat_id] = {
+            "tasks": queued,
+            "limit": MAX_TASKS_PER_REMINDER,
+        }
 
-        # Create queue for this user
-        self.queue_manager.create_queue(chat_id, queued)
-        
-        # Send first task
-        await self._send_next_task_in_queue(chat_id)
-        
         stats["reminders_sent"] += 1
 
     async def _send_welcome_message(self, chat_id: int) -> None:
@@ -241,6 +255,25 @@ class SendDailyTaskRemindersUseCase:
             )
         except Exception as e:
             LOGGER.error(f"Error sending welcome message: {e}")
+
+    @staticmethod
+    def _is_finished(task) -> bool:
+        """Whether a task is already done, whatever its resolution says.
+
+        The JQL asks for `resolution = Unresolved`, but some workflows here
+        reach a Done status without setting a resolution, so finished work
+        still arrives. Asking someone why a completed task is delayed is
+        worse than not asking at all.
+
+        Args:
+            task: The task to judge
+
+        Returns:
+            True when the status means the work is over.
+        """
+        return (task.status or "").strip().lower() in {
+            "done", "closed", "resolved", "cancelled", "canceled",
+        }
 
     @staticmethod
     def _is_loose_backlog(task) -> bool:
@@ -311,14 +344,9 @@ class SendDailyTaskRemindersUseCase:
         
         LOGGER.info(f"Sending task {task.issue_key} to chat_id {chat_id} (index {queue.current_index})")
         
+        progress = queue.get_progress()
+
         try:
-            # Show progress
-            progress = queue.get_progress()
-            await self.telegram_notifier._send_message(
-                chat_id,
-                f"━━━━━━━━━━━━━━━━━━\n📌 تسک {progress}\n━━━━━━━━━━━━━━━━━━"
-            )
-            
             # Check for status regression
             regression = await self.detect_regression.execute(
                 task.issue_key,
@@ -333,7 +361,7 @@ class SendDailyTaskRemindersUseCase:
                 )
             
             # Send the task reminder with keyboard
-            await self._send_task_reminder(chat_id, task)
+            await self._send_task_reminder(chat_id, task, progress)
             LOGGER.info(f"Task {task.issue_key} sent successfully")
             
         except Exception as e:
@@ -384,18 +412,23 @@ class SendDailyTaskRemindersUseCase:
         self,
         chat_id: int,
         task: DailyTaskCheck,
+        progress: str = "",
     ) -> bool:
         """Send task reminder to user.
 
         Args:
             chat_id: User's chat ID
             task: Task check to send
+            progress: Position in the queue, shown as a heading rather than
+                as a separate banner message
 
         Returns:
             True if sent successfully
         """
         try:
             message = await self._format_task_header(task)
+            if progress:
+                message = f"📌 تسک {progress}\n{message}"
             keyboard = None
             
             if task.check_status == TaskCheckStatus.SHOULD_BE_STARTED:
@@ -494,7 +527,6 @@ class SendDailyTaskRemindersUseCase:
                 issue_url=issue_url,
                 summary=task.summary,
                 status=task.status,
-                sprint_name=task.sprint_name or "N/A",
                 target_start=task.target_start.strftime("%Y-%m-%d"),
                 target_end=task.target_end.strftime("%Y-%m-%d"),
             )
@@ -504,8 +536,10 @@ class SendDailyTaskRemindersUseCase:
                 issue_url=issue_url,
                 summary=task.summary,
                 status=task.status,
-                sprint_name=task.sprint_name or "N/A",
             )
+
+        if task.sprint_name:
+            header += TASK_SPRINT.format(sprint_name=task.sprint_name)
         
         # Add project name
         header += f"\n📁 پروژه: {project_name}\n"

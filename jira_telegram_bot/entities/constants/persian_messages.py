@@ -9,10 +9,9 @@ STATUS_REGRESSED = "⚠️ تسک شما از Review به Backlog برگشت"
 # Task header
 TASK_HEADER = """
 📋 تسک: {issue_key}
-� لینک: {issue_url}
+🔗 لینک: {issue_url}
 📝 عنوان: {summary}
 📊 وضعیت: {status}
-📅 اسپرینت: {sprint_name}
 """
 
 TASK_HEADER_WITH_DATES = """
@@ -20,10 +19,14 @@ TASK_HEADER_WITH_DATES = """
 🔗 لینک: {issue_url}
 📝 عنوان: {summary}
 📊 وضعیت: {status}
-📅 اسپرینت: {sprint_name}
 🎯 شروع هدف: {target_start}
 🏁 پایان هدف: {target_end}
 """
+
+# Added only when the issue is actually in a sprint. "اسپرینت: N/A" is
+# noise on the line meant to be most useful, and most issues here carry
+# no sprint at all.
+TASK_SPRINT = "📅 اسپرینت: {sprint_name}\n"
 
 TASK_DESCRIPTION = """
 📄 توضیحات: {description}
@@ -48,7 +51,43 @@ HOURS_CUSTOM = "سایر"
 
 # Actions
 REQUEST_SUBTASKS = "درخواست زیرتسک"
+# ── Daily digest ───────────────────────────────────────────
+DIGEST_GREETING = "☀️ صبح بخیر!"
+
+DIGEST_UNBLOCKED_HEADER = "🔓 بلاکر این تسک‌ها تمام شده — می‌توانید شروع کنید:"
+DIGEST_REGRESSED_HEADER = "⚠️ این تسک‌ها به عقب برگشته‌اند:"
+DIGEST_IN_FLIGHT_HEADER = "🔄 در جریان:"
+DIGEST_WAITING_HEADER = "📌 منتظر شروع:"
+DIGEST_BACKLOG_NOTE = "({count} مورد در بک‌لاگ است و امروز پرسیده نمی‌شود.)"
+
+DIGEST_ASK = """
+امروز چه کار کردید؟ همینجا بنویسید — مثلاً:
+«۳ ساعت روی فیلترهای تاریخچه کار کردم و ۲ ساعت ریموت روی ویجت»
+
+اگر ترجیح می‌دهید تسک‌به‌تسک بپرسم، /tasks را بزنید.
+"""
+
+DIGEST_NOTHING = """
+☀️ صبح بخیر!
+امروز تسکی که نیاز به بررسی داشته باشد ندارید.
+"""
+
+DIGEST_AFTER_REPORT = "ثبت شد. ✅"
+
+DIGEST_REMAINING = """
+برای {count} تسک باقی‌مانده هنوز چیزی ثبت نشده. یکی‌یکی می‌پرسم.
+"""
+
+DIGEST_ALL_COVERED = """
+همه تسک‌های امروز ثبت شد. ممنون! 🙏
+"""
+
 SKIP_TASK = "رد کردن"
+FINISH_LATER = "بقیه را بعداً"
+CHECK_PAUSED = """
+باشه، بقیه تسک‌ها را بعداً می‌پرسم.
+هر وقت خواستید /daily را بزنید تا ادامه دهیم.
+"""
 
 # Confirmations
 WORKLOG_RECORDED = "✅ ثبت شد: {} ساعت"

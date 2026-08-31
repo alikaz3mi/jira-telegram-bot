@@ -1032,10 +1032,40 @@ def _configure_daily_task_tracking(container: Container):
         lambda c: DailyTaskQueueManager()
     )
 
+    from jira_telegram_bot.adapters.repositories.file_storage.entity_alias_repository import (
+        EntityAliasRepository,
+    )
+
+    from jira_telegram_bot.adapters.ai_models.openai_embedding_service import (
+        OpenAIEmbeddingService,
+    )
+    from jira_telegram_bot.settings.embedding_settings import EmbeddingSettings
+    from jira_telegram_bot.use_cases.daily_task_tracking.rank_candidates_use_case import (
+        RankCandidatesUseCase,
+    )
+
+    container[EmbeddingSettings] = Singleton(lambda c: EmbeddingSettings())
+
+    container[OpenAIEmbeddingService] = Singleton(
+        lambda c: OpenAIEmbeddingService(
+            api_key=c[OpenAISettings].token,
+            settings=c[EmbeddingSettings],
+        )
+    )
+
+    container[RankCandidatesUseCase] = Singleton(
+        lambda c: RankCandidatesUseCase(
+            embedding_service=c[OpenAIEmbeddingService],
+            settings=c[EmbeddingSettings],
+        )
+    )
+
     container[ParseWorklogReportUseCase] = Singleton(
         lambda c: ParseWorklogReportUseCase(
             ai_service=c[AIServiceProtocol],
             prompt_catalog=c[PromptCatalogProtocol],
+            alias_repository=c[EntityAliasRepository],
+            rank_candidates_use_case=c[RankCandidatesUseCase],
         )
     )
 
@@ -1062,9 +1092,6 @@ def _configure_daily_task_tracking(container: Container):
         lambda c: CachedUserTasksUseCase(c[GetUserDailyTasksUseCase])
     )
 
-    from jira_telegram_bot.adapters.repositories.file_storage.entity_alias_repository import (
-        EntityAliasRepository,
-    )
     from jira_telegram_bot.use_cases.assistant.task_assistant_agent import (
         TaskAssistantAgent,
     )
@@ -1099,6 +1126,21 @@ def _configure_daily_task_tracking(container: Container):
         )
     )
 
+    from jira_telegram_bot.use_cases.daily_task_tracking.build_daily_digest_use_case import (
+        BuildDailyDigestUseCase,
+        RenderDailyDigestUseCase,
+    )
+
+    container[BuildDailyDigestUseCase] = Singleton(
+        lambda c: BuildDailyDigestUseCase()
+    )
+
+    container[RenderDailyDigestUseCase] = Singleton(
+        lambda c: RenderDailyDigestUseCase(
+            base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
+        )
+    )
+
     container[SendDailyTaskRemindersUseCase] = Singleton(
         lambda c: SendDailyTaskRemindersUseCase(
             get_user_daily_tasks_use_case=c[GetUserDailyTasksUseCase],
@@ -1110,6 +1152,8 @@ def _configure_daily_task_tracking(container: Container):
             daily_task_tracking_handler=c[DailyTaskTrackingHandler],
             telegram_token=c[TelegramConnectionSettings].HOOK_TOKEN,
             queue_manager=c[DailyTaskQueueManager],
+            build_daily_digest_use_case=c[BuildDailyDigestUseCase],
+            render_daily_digest_use_case=c[RenderDailyDigestUseCase],
             base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
         )
     )
