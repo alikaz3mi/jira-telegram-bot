@@ -9,6 +9,7 @@ similarity, which cannot promise it found everything.
 """
 from __future__ import annotations
 
+from datetime import date
 from datetime import datetime
 from datetime import timedelta
 from urllib.parse import quote
@@ -47,6 +48,7 @@ URGENT_PRIORITIES = ("Highest", "High")
 
 # A briefing is read on a phone before a standup.
 MAX_PURPOSE_EPICS = 5
+MAX_RELEASE_ISSUES = 8
 MAX_OWN_SHARE = 8
 MAX_MEDIA = 3
 
@@ -343,6 +345,10 @@ class AssistantTools:
         if task.worklog_hours:
             lines.append(f"ثبت‌شده: {self._hours(task.worklog_hours)} ساعت")
 
+        release = self._release_of(task.issue_key)
+        if release:
+            lines.append(release)
+
         description = (task.description or "").strip()
         if description:
             lines.append("")
@@ -464,6 +470,44 @@ class AssistantTools:
                 f"{relation}: {self._link(other.key)} — {summary}{suffix}",
             )
         return lines
+
+    def _release_of(self, issue_key: str) -> Optional[str]:
+        """Name the release a task ships in, and when it is due.
+
+        A task's own due date is often unset while the release it belongs to
+        carries the real commitment, so the deadline is invisible from the
+        task without this.
+
+        Args:
+            issue_key: The task to read
+
+        Returns:
+            The rendered line, or None when the task ships in no release.
+        """
+        if not self._jira():
+            return None
+
+        # The whole read is guarded, not just the fetch. A release line is a
+        # nice-to-have; losing the task's description because a version
+        # field was malformed is not a trade worth making.
+        try:
+            versions = getattr(
+                self._jira().issue(issue_key).fields, "fixVersions", None,
+            )
+            rendered = []
+            for version in versions or []:
+                name = str(getattr(version, "name", "") or "").strip()
+                if not name:
+                    continue
+                due = getattr(version, "releaseDate", None)
+                rendered.append(
+                    f"{name} (تا {self._spell_date(due)})" if due else name,
+                )
+        except Exception as exc:
+            LOGGER.warning(f"Could not read fixVersions of {issue_key}: {exc}")
+            return None
+
+        return f"ریلیز: {'، '.join(rendered)}" if rendered else None
 
     def _attachments(self, issue_key: str) -> List[str]:
         """List the task's attachments as links.
@@ -749,6 +793,172 @@ class AssistantTools:
         if hidden > 0:
             lines.append(f"   و {hidden} مورد دیگر")
         return "\n".join(lines)
+
+    async def releases(
+        self,
+        project: str,
+        topic: Optional[str] = None,
+    ) -> str:
+        """Say what is due to ship, when, and what still gates it.
+
+        A delivery date lives on a Jira version, not on a sprint or a task.
+        Nothing here read versions, so "when does Instagram get verified?"
+        was unanswerable — the date sat in the project the whole time while
+        the assistant searched sprint contents and reported finding nothing.
+
+        Args:
+            project: The product or project, as the user named it
+            topic: Narrow to releases about one subject, matched by meaning
+
+        Returns:
+            Each upcoming release with its date and the work still open
+            against it.
+        """
+        match, error = self._resolve_project(project)
+        if error:
+            return error
+
+        if not self.task_manager_repository:
+            return "دسترسی به جیرا برای این پرسش در دسترس نیست."
+
+        allowed, denial = await self._may_read_project(match.canonical)
+        if not allowed:
+            return denial
+
+        try:
+            versions = self.task_manager_repository.get_project_versions(
+                match.canonical,
+            )
+        except Exception as exc:
+            LOGGER.error(f"Version lookup failed for {match.canonical}: {exc}")
+            return "خواندن نسخه‌ها از جیرا ناموفق بود."
+
+        upcoming = [
+            version for version in versions
+            if not getattr(version, "released", False)
+            and not getattr(version, "archived", False)
+        ]
+        if not upcoming:
+            return f"برای {match.display_name} ریلیز برنامه‌ریزی‌شده‌ای ثبت نشده."
+
+        if topic:
+            upcoming, topic_error = await self._releases_about(topic, upcoming)
+            if topic_error:
+                return topic_error
+            if not upcoming:
+                return (
+                    f"ریلیزی درباره «{topic}» در {match.display_name} "
+                    f"پیدا نشد."
+                )
+
+        upcoming.sort(key=lambda version: getattr(version, "releaseDate", "") or "~")
+        return self._render_releases(match, upcoming)
+
+    async def _releases_about(self, topic: str, versions: List) -> tuple:
+        """Keep the releases that are about a subject, by meaning.
+
+        Args:
+            topic: The subject asked about
+            versions: The unreleased versions
+
+        Returns:
+            The matching versions, and an error when the search could not run.
+        """
+        if not self.rank_candidates:
+            return versions, None
+
+        texts = [
+            f"{getattr(version, 'name', '')} "
+            f"{getattr(version, 'description', '') or ''}"
+            for version in versions
+        ]
+        ranked = await self.rank_candidates.rank_texts(topic, texts)
+        if ranked is None:
+            return versions, None
+        return [versions[index] for index, _ in ranked], None
+
+    def _render_releases(self, match, versions: Sequence) -> str:
+        """Render upcoming releases with the work still open against each."""
+        lines = [f"ریلیزهای پیش‌روی {match.display_name}:"]
+
+        for version in versions:
+            name = str(getattr(version, "name", "") or "")
+            due = getattr(version, "releaseDate", None)
+            start = getattr(version, "startDate", None)
+
+            when = f"تا {self._spell_date(due)}" if due else "بدون تاریخ"
+            if getattr(version, "overdue", False):
+                when += " ⚠️ عقب‌افتاده"
+            window = f" (از {start})" if start else ""
+            lines.append(f"\n📦 {name} — {when}{window}")
+
+            description = str(getattr(version, "description", "") or "").strip()
+            if description:
+                lines.append(f"   {self._trim(description, 220)}")
+
+            open_issues = self._open_for_version(match.canonical, name)
+            if open_issues is None:
+                lines.append("   (خواندن تسک‌های این ریلیز ناموفق بود)")
+                continue
+            if not open_issues:
+                lines.append("   ✅ کار بازی روی این ریلیز نمانده.")
+                continue
+
+            lines.append(f"   {len(open_issues)} کار باز:")
+            for issue in open_issues[:MAX_RELEASE_ISSUES]:
+                owner = self._assignee_of(issue) or "بدون مسئول"
+                lines.append(f"      {self._story_line(issue)} — {owner}")
+            hidden = len(open_issues) - MAX_RELEASE_ISSUES
+            if hidden > 0:
+                lines.append(f"      و {hidden} مورد دیگر")
+
+        return "\n".join(lines)
+
+    def _open_for_version(self, project_key: str, name: str) -> Optional[List]:
+        """The unfinished issues assigned to one release.
+
+        Args:
+            project_key: The project the release belongs to
+            name: The version name, as Jira stores it
+
+        Returns:
+            The open issues, or None when the lookup failed — which is said
+            aloud rather than shown as an empty release.
+        """
+        escaped = name.replace('"', '\\"')
+        try:
+            return self.task_manager_repository.search_issues(
+                jql=(
+                    f'project = "{project_key}" AND fixVersion = "{escaped}" '
+                    f"AND statusCategory != Done"
+                ),
+                max_results=50,
+                fields="summary,status,assignee",
+            )
+        except Exception as exc:
+            LOGGER.error(f"Issues for version {name!r} failed: {exc}")
+            return None
+
+    @staticmethod
+    def _spell_date(value: str) -> str:
+        """Name the weekday alongside a delivery date.
+
+        A bare date is hard to place; "دوشنبه ۱۴ سپتامبر" is a commitment
+        somebody can picture.
+
+        Args:
+            value: The date as Jira stores it, YYYY-MM-DD
+
+        Returns:
+            The date with its Persian weekday, or unchanged when unparsable.
+        """
+        try:
+            day = date.fromisoformat(str(value))
+        except (ValueError, TypeError):
+            return str(value)
+        names = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه",
+                 "جمعه", "شنبه", "یکشنبه"]
+        return f"{names[day.weekday()]} {value}"
 
     async def sprint_board(
         self,
