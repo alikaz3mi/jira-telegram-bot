@@ -131,11 +131,38 @@ class ConfirmWorklogReportUseCase:
                 options=[],
             )
 
+        # Say why the question is being asked. "Which task?" with four
+        # buttons reads as the bot not having looked; naming what was found
+        # and where shows the work and makes the choice quicker.
+        chosen = [
+            candidates[position] for position in shortlist
+            if 0 <= position < len(candidates)
+        ]
+        projects = sorted({task.project_key for task in chosen})
+        where = (
+            f" در {projects[0]}" if len(projects) == 1
+            else f" در {'، '.join(projects)}"
+        )
+        reason = (
+            f"{self._digits(len(options))} تسک{where} به این توضیح می‌خورند "
+            f"و نتوانستم بین‌شان تصمیم بگیرم."
+            if len(options) > 1
+            else f"نزدیک‌ترین تسک{where} این است:"
+        )
+
         return WorklogQuestion(
             split_index=index,
-            text=f"«{self._subject(split)}» ({hours} ساعت) روی کدام تسک ثبت شود؟",
+            text=(
+                f"«{self._subject(split)}» ({hours} ساعت)\n"
+                f"{reason}\nکدام‌یک درست است؟"
+            ),
             options=options,
         )
+
+    @staticmethod
+    def _digits(value) -> str:
+        """Write a number in Persian digits, as the rest of the bot does."""
+        return str(value).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
 
     @staticmethod
     def _subject(split: ParsedWorklogSplit) -> str:
@@ -159,11 +186,18 @@ class ConfirmWorklogReportUseCase:
 
     @staticmethod
     def _option_label(task: DailyTaskCheck) -> str:
-        """Label a button with enough of the issue to recognise it."""
-        summary = task.summary or ""
+        """Label a button with enough of the issue to recognise it.
+
+        The summary leads, because that is what somebody recognises their
+        own work by; the key follows for the cases where two summaries read
+        alike.
+        """
+        summary = (task.summary or "").strip()
+        if not summary:
+            return task.issue_key
         if len(summary) > 40:
             summary = f"{summary[:39]}…"
-        return f"{task.issue_key} — {summary}" if summary else task.issue_key
+        return f"{summary} ({task.issue_key})"
 
     @staticmethod
     def _format_hours(hours: float) -> str:

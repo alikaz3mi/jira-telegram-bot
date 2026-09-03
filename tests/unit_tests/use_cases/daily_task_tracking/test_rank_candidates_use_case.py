@@ -64,18 +64,81 @@ class TestRankCandidatesUseCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(ranked[0][0].issue_key, "PARSCHAT-5980")
 
-    async def test_a_flat_field_is_reported_as_no_match(self):
-        """Everything scoring alike is what matching nothing looks like."""
+    async def test_a_flat_field_of_weak_scores_is_no_match(self):
+        """Everything scoring alike AND badly is what nothing looks like.
+
+        Measured on real text, a genuine non-match peaks around 0.38. These
+        vectors reproduce that: a tie between rows none of which is any good.
+        """
         self.embeddings.embed.return_value = [
-            _unit(1, 1, 1),
-            _unit(1, 1, 0.95),
-            _unit(1, 0.98, 1),
-            _unit(0.97, 1, 1),
+            _unit(1, 0, 0),
+            _unit(0.40, 1, 0),
+            _unit(0.38, 0, 1),
+            _unit(0.37, 1, 1),
         ]
 
         ranked = await self.use_case.execute("آشپزی و باغبانی", self.candidates)
 
         self.assertEqual(ranked, [])
+
+    async def test_a_tie_between_plausible_issues_becomes_a_question(self):
+        """Several issues that all fit is not the same as nothing fitting.
+
+        Reproduces a real report: the leader scored 0.496 and led by 0.055,
+        which the margin gate refused outright — so work the user had really
+        done went unrecorded, and they were asked to type an issue key.
+        """
+        self.embeddings.embed.return_value = [
+            _unit(1, 0, 0),
+            _unit(0.496, 1, 0),
+            _unit(0.441, 0, 1),
+            _unit(0.300, 1, 1),
+        ]
+
+        ranked = await self.use_case.execute("توضیح تسک‌ها به تیم", self.candidates)
+
+        self.assertEqual(len(ranked), 2)
+        self.assertEqual(ranked[0][0].issue_key, "PARSCHAT-5980")
+
+    async def test_a_candidate_far_behind_does_not_join_the_question(self):
+        """Padding the options makes the choice harder, not easier."""
+        self.embeddings.embed.return_value = [
+            _unit(1, 0, 0),
+            _unit(0.50, 1, 0),
+            _unit(0.46, 0, 1),
+            _unit(0.20, 1, 1),
+        ]
+
+        ranked = await self.use_case.execute("کار", self.candidates)
+
+        self.assertNotIn(
+            "PARSCHAT-5830", [task.issue_key for task, _ in ranked],
+        )
+
+    async def test_a_weak_tie_is_still_refused(self):
+        """The tie is only worth asking about when the rows are plausible."""
+        self.embeddings.embed.return_value = [
+            _unit(1, 0, 0),
+            _unit(0.30, 1, 0),
+            _unit(0.28, 0, 1),
+            _unit(0.27, 1, 1),
+        ]
+
+        ranked = await self.use_case.execute("چیز نامربوط", self.candidates)
+
+        self.assertEqual(ranked, [])
+
+    async def test_the_question_is_capped_to_a_readable_size(self):
+        many = [_task(f"PARSCHAT-{i}", f"تسک {i}") for i in range(10)]
+        self.embeddings.embed.return_value = [_unit(1, 0)] + [
+            _unit(0.50 - index * 0.002, 1) for index in range(10)
+        ]
+
+        ranked = await self.use_case.execute("کار", many)
+
+        self.assertLessEqual(
+            len(ranked), EmbeddingSettings().max_ambiguous_options,
+        )
 
     async def test_low_similarity_is_reported_as_no_match(self):
         self.embeddings.embed.return_value = [

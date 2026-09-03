@@ -113,6 +113,7 @@ class TestWorklogReportFlow(unittest.IsolatedAsyncioTestCase):
         query.message = _Message()
         query.from_user.username = "ali_tg"
         query.edit_message_text = AsyncMock(side_effect=query.message.edit_text)
+        query.answer = AsyncMock()
         return query
 
     async def test_clear_report_offers_confirmation(self):
@@ -148,6 +149,81 @@ class TestWorklogReportFlow(unittest.IsolatedAsyncioTestCase):
             for call in self.record_worklog.execute.await_args_list
         }
         self.assertEqual(logged, {"PARSCHAT-1": 3, "PARSCHAT-2": 2})
+
+    async def test_a_second_tap_writes_nothing_twice(self):
+        """Writing several worklogs takes seconds; the button stays live.
+
+        Reported: two worklogs went to Jira correctly, then a second tap on
+        the still-visible button reported "خطا رخ داد" — which reads as the
+        report having failed, and invites logging the same hours again.
+        """
+        self.context.user_data[self.handler.PENDING_REPORT] = {
+            "report": ParsedWorklogReport(
+                raw_text="...",
+                splits=[_split(4, "AK-13"), _split(4, "AK-16")],
+            ),
+            "candidates": {},
+            "candidate_objects": self.candidates,
+        }
+
+        await self.handler._handle_worklog_confirm(self._query(), self.context)
+        await self.handler._handle_worklog_confirm(self._query(), self.context)
+
+        self.assertEqual(self.record_worklog.execute.await_count, 2)
+
+    async def test_a_second_tap_is_not_called_an_error(self):
+        """The hours are in Jira; saying it failed is worse than silence."""
+        second = self._query()
+
+        await self.handler._handle_worklog_confirm(second, self.context)
+
+        second.answer.assert_awaited()
+        self.assertIn("قبلاً ثبت شده", second.answer.await_args.args[0])
+        second.edit_message_text.assert_not_awaited()
+
+    async def test_the_keyboard_is_taken_away_before_the_first_write(self):
+        """The tap that cannot happen is better than the one handled twice."""
+        self.context.user_data[self.handler.PENDING_REPORT] = {
+            "report": ParsedWorklogReport(
+                raw_text="...", splits=[_split(4, "AK-13")],
+            ),
+            "candidates": {},
+            "candidate_objects": self.candidates,
+        }
+        query = self._query()
+
+        await self.handler._handle_worklog_confirm(query, self.context)
+
+        first = query.edit_message_text.await_args_list[0]
+        self.assertIsNone(first.kwargs.get("reply_markup"))
+        self.record_worklog.execute.assert_awaited()
+
+    async def test_an_unknown_user_keeps_the_report_for_a_retry(self):
+        """Dropping the report on a config miss loses the parse entirely."""
+        self.user_config.get_user_config.return_value = None
+        self.context.user_data[self.handler.PENDING_REPORT] = {
+            "report": ParsedWorklogReport(
+                raw_text="...", splits=[_split(4, "AK-13")],
+            ),
+            "candidates": {},
+            "candidate_objects": self.candidates,
+        }
+
+        await self.handler._handle_worklog_confirm(self._query(), self.context)
+
+        self.assertIn(self.handler.PENDING_REPORT, self.context.user_data)
+        self.record_worklog.execute.assert_not_awaited()
+
+    async def test_a_stale_choice_is_not_called_an_error(self):
+        """A tap on an old question's keyboard, after the report is gone."""
+        query = self._query("wlpick_0_PARSCHAT-1")
+
+        await self.handler._handle_worklog_pick(
+            query, self.context, "wlpick_0_PARSCHAT-1",
+        )
+
+        query.answer.assert_awaited()
+        query.edit_message_text.assert_not_awaited()
 
     async def test_cancel_writes_nothing(self):
         """Cancelling clears the pending report without touching Jira."""

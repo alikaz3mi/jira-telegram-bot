@@ -195,7 +195,8 @@ class TestConfirmWorklogReportUseCase(unittest.TestCase):
 
         label = confirmation.questions[0].options[0].label
         self.assertLess(len(label), 60)
-        self.assertTrue(label.endswith("…"))
+        self.assertIn("…", label)
+        self.assertIn("PARSCHAT-9", label)
 
 
 if __name__ == "__main__":

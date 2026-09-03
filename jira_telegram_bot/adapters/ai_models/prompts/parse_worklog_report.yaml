@@ -1,6 +1,6 @@
 # ── metadata ───────────────────────────────────────────
 id: parse_worklog_report
-version: "2026-08-25"
+version: "2026-09-02"
 language: multi
 author: ai_agent_system
 temperature: 0.0
@@ -49,6 +49,18 @@ prompt: |
      — "میخوام تایمی که امروز کار کردم رو ثبت کنم" — emit no entries at all.
      Returning nothing is the signal that you need to ask them.
 
+     **A correction keeps the hours it corrects.** "تسک اول رو اشتباه تشخیص
+     دادی، AK-13 بود" or "نه، اونی نبود" names a different issue for work
+     the user already described. The hours, the day and the work type are
+     still whatever they said earlier — carry them over from the history and
+     emit the entry with the corrected issue. Asking "چند ساعت؟" for hours
+     they have already given twice is the single most annoying thing you can
+     do, and re-reading the history is always cheaper than asking.
+
+     A message that only confirms — "آره", "درسته", "بله همون" — refers to
+     whatever you last proposed. Combine it with any correction in the same
+     message before deciding you have nothing.
+
      **Resolve references to what you last said.** Ordinals and pointers all
      refer to the list in the history above, numbered in the order it was
      written — NOT to the numbering of the candidate list below:
@@ -88,31 +100,38 @@ prompt: |
 
   4. **Match by index, never by key.** For each entry, list the candidate
      indices whose summary, description, epic or project plausibly match what
+     the user described. Best match first. If nothing matches, return an empty
+     list. NEVER invent a Jira issue key — you have no way to know one.
+
      **A project name is not a match.** "برای پارسچت کار کردم" names a
      product, not a task: it narrows the candidates, it does not pick one.
      Return every plausible candidate, or none — never one arbitrary issue
      from that project.
+
+     **An issue key the user types IS a match.** "AK-13" or "PARSCHAT-5807"
+     names the issue outright. Find that key in the candidate list and return
+     its index alone, with confidence 1.0. This overrides every similarity
+     judgement — they know which task they worked on.
 
      **Believe the user when they say the task is missing.** "تسکش برام ثبت
      نشده"، "تسکی براش نیست"، "هنوز ساخته نشده" mean no candidate is correct.
      Return an empty `candidate_indices` for that entry no matter how close a
      summary looks. Guessing writes real hours to the wrong issue.
 
-     the user described. Best match first. If nothing matches, return an empty
-     list. NEVER invent a Jira issue key — you have no way to know one.
-
-  4. **confidence** is how sure you are that your FIRST index is right:
+  5. **confidence** is how sure you are that your FIRST index is right:
      - 0.9-1.0: the user effectively named the issue.
      - 0.5-0.8: a plausible match, but another row could fit.
      - 0.0-0.4: guessing, or nothing fits.
      When two rows fit roughly equally, list both and score below 0.5. It is
      far better to be asked than to log time against the wrong issue.
 
-  5. **description** is what the user said about that piece of work, in their
+  6. **description** is what the user said about that piece of work, in their
      own words and their own language. Do not translate or embellish it.
 
-  6. **project_hint** is the project or product they named ("پارس‌چت"), if any.
-     Empty string when they named none.
+  7. **project_hint** is the project or product they named ("پارس‌چت"), if any.
+     Empty string when they named none. A project named as the *audience* of
+     the work — "توضیح وظایف به تیم پارسچت" — is not where the task lives;
+     leave it empty unless they said which board or project the task is on.
 
   Hours are decimal ("۲ ساعت و نیم" -> 2.5). Persian digits are digits.
 

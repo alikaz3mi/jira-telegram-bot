@@ -17,19 +17,20 @@ flowchart TD
         DECIDE -->|no| DONE[final answer]
     end
 
-    subgraph PERSONAL[scoped to the caller · assignee = caller]
+    subgraph PERSONAL[scoped to one person · resolved and authorised in Python]
         T1[task_details]
         T2[list_tasks]
         T3[count_tasks]
         T4[logged_hours]
         T5[whoami]
         T6[board_link]
-        T7[my_briefing]
+        T7[my_briefing · person / project / within_days]
     end
 
     subgraph PROJECT[scoped to a project · no assignee filter]
         T8[sprint_epics]
         T9[sprint_board · unit / person / type / topic]
+        T10[releases · dates and what still gates them]
     end
 
     TOOLS --- PERSONAL
@@ -41,15 +42,25 @@ flowchart TD
     T9 -.->|unit| UNITS[(user_components · who does design)]
     T9 -.->|topic| TRANK[rank_texts · embedding · floor 0.38]
     T8 -.-> EPIC[roll stories up to Epic Link · cf_10100]
+    T10 -.->|topic| TRANK
+    T10 -.-> VDATE
 
     T7 --> URG[urgent bugs · Highest/High · statusCategory != Done]
-    T7 --> PURP[sprint purpose = its epics · no sprint goal is set]
-    T7 --> OWN[own share · sprint first]
+    T7 --> WHO[resolve person · may_read · directory spelling]
+    WHO --> PROJ[every project they touch · sprint commitment first]
+    PROJ --> WIN[within_days narrows the list · never the totals]
+    PROJ --> REL[group their issues by fixVersion]
+    REL --> VDATE[(project versions · releaseDate)]
+    VDATE --> SOON[nearest release leads · Jalali date]
+    PROJ --> DUE[due soonest · Target end · dated beats undated]
+    PROJ --> REST[link to the rest of the project]
     URG --> MEDIA[[queue screenshots]]
     MEDIA --> SEND[download bytes · send_photo / send_video]
 
     T1 -.-> PARENT[parent Story then Epic · description + attachments]
     T2 -.-> CACHE[(task cache · per user · 120s)]
+    T2 -.-> LINE[[one task line · linked title · status icon · escaped]]
+    DUE -.-> LINE
     CACHE --> JQL[Jira JQL · open sprint · unresolved]
     PARENT --> JIRA[(Jira)]
     JQL --> JIRA
@@ -63,14 +74,21 @@ flowchart TD
 
     subgraph EMB[retrieval · text-embedding-3-small]
         RANK --> GATE{margin over runner-up >= 0.08?}
-        GATE -->|no| NOMATCH[report no match · never guess]
         GATE -->|yes| SHORT[shortlist of 5]
+        GATE -->|no| TIE{is the leader plausible? >= 0.42}
+        TIE -->|no| NOMATCH[report no match · never guess]
+        TIE -->|yes| ASKABLE[tied options · within 0.06 · max 4]
         CACHE2[(vector cache · SHA-256 of text)] -.-> RANK
     end
 
+    SHORT --> SETTLE{clear leader? >= 0.45 AND leads by 0.08}
+    SETTLE -->|yes| RESOLVED[resolved · written without asking]
+    SETTLE -->|no| CONF
+    ASKABLE --> CONF
     NOMATCH --> CONF
-    SHORT --> CONF{all resolved?}
-    CONF -->|no| PICK[ask which task · tappable options]
+    RESOLVED --> CONF
+    CONF{all resolved?}
+    CONF -->|no| PICK[ask which task · what matched · which project]
     PICK --> CONF
     CONF -->|yes| PREVIEW[confirm · hours · weekday · work type]
     PREVIEW -->|confirmed| WRITE[write worklog · started = worked_on]
@@ -89,6 +107,14 @@ flowchart TD
     end
     ONEQ --> PARSE
     REMAIN --> QUEUE[per-task queue · max 8 · finish later]
+
+    DONE --> HTML[normalise to Telegram HTML]
+    subgraph OUT[the model relays · Python guarantees the markup]
+        HTML --> MD[Markdown links become anchors]
+        HTML --> EMPH[strip ** and __ · keep a lone *]
+        HTML --> DUPE[drop a URL repeated beside its own link]
+    end
+    OUT --> SENDMSG[parse_mode=HTML]
 
     DONE --> MEM
     HELP --> MEM

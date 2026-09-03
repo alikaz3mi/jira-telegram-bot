@@ -9,6 +9,9 @@ model has no way to influence.
 from __future__ import annotations
 
 import asyncio
+import re
+from html import escape
+from html import unescape
 from typing import List
 
 from langchain.agents import create_agent
@@ -36,8 +39,16 @@ SYSTEM_PROMPT = """\
 - همیشه از ابزارها استفاده کن. هرگز از حافظه‌ات درباره تسک‌ها حدس نزن.
 - وقتی کاربر نام محصول یا شخصی را می‌آورد، همان را عیناً به ابزار بده؛
   ابزار خودش آن را به کلید جیرا تبدیل می‌کند. تو کلید جیرا را حدس نزن.
-- خروجی ابزار را همان‌طور که هست برگردان. لینک‌های <a href> را دست‌نخورده
-  نگه دار و هیچ تگ HTML دیگری اضافه نکن.
+- خروجی ابزار را عیناً و کاراکتر‌به‌کاراکتر برگردان. این متن از قبل
+  HTML تلگرام است و آماده‌ی ارسال.
+- هرگز مارک‌داون ننویس. نه **بولد**، نه [عنوان](آدرس). قالب لینک فقط
+  <a href="آدرس">عنوان</a> است و باید همان‌طور که ابزار داده بماند.
+  تبدیل آن به [عنوان](آدرس) لینک را از بین می‌برد و آدرس خام را روی
+  صفحه‌ی کاربر می‌گذارد.
+- ترتیب خط‌ها، ایموجی‌ها و فاصله‌های خالی را عوض نکن و چیزی به آن‌ها
+  اضافه نکن.
+- هرگز آدرس خام را کنار لینک تکرار نکن. آدرس جست‌وجوی جیرا دویست
+  کاراکتر کوئری کدشده است؛ نوشتنش روی صفحه فقط شلوغی است.
 - کوتاه جواب بده. این پیام در تلگرام و روی موبایل خوانده می‌شود:
   بدون مقدمه، بدون تکرار سؤال، بدون جمع‌بندی اضافه.
 - وقتی توضیح یک تسک از استوری یا اپیک والد می‌آید، اول با یک جمله بگو آن
@@ -152,8 +163,82 @@ class TaskAssistantAgent:
 
         for message in reversed(result.get("messages", [])):
             if isinstance(message, AIMessage) and message.content:
-                return str(message.content).strip()
+                return self._as_telegram_html(str(message.content))
         return ""
+
+    @staticmethod
+    def _as_telegram_html(answer: str) -> str:
+        """Rewrite the Markdown the model adds while relaying an HTML answer.
+
+        The tools already emit Telegram HTML and the reply is sent with
+        ``parse_mode="HTML"``, so a model that rewrites an ``<a href>`` as
+        ``[title](url)`` puts a raw URL on screen and takes the link away.
+        Telling it not to is unreliable — the formatting is a habit, not a
+        decision — so the conversion happens here, where the guarantee can
+        actually be made.
+
+        Links are converted rather than stripped: the destination is the
+        point of the line. Emphasis is removed, and a ``*`` that is not
+        paired around text is left alone, since it may be content.
+
+        Args:
+            answer: What the model produced
+
+        Returns:
+            The answer as Telegram-ready HTML.
+        """
+        cleaned = re.sub(
+            r"\[([^\]]+)\]\(\s*(https?://[^\s)]+)\s*\)",
+            lambda match: (
+                f'<a href="{escape(match.group(2), quote=True)}">'
+                f"{escape(match.group(1))}</a>"
+            ),
+            answer,
+        )
+        cleaned = TaskAssistantAgent._collapse_bare_urls(cleaned)
+        cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned, flags=re.DOTALL)
+        cleaned = re.sub(r"__(.+?)__", r"\1", cleaned, flags=re.DOTALL)
+        cleaned = re.sub(
+            r"(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])", r"\1", cleaned,
+        )
+        return cleaned.strip()
+
+    @staticmethod
+    def _collapse_bare_urls(answer: str) -> str:
+        """Remove a raw URL the model pasted beside the link it belongs to.
+
+        A tool returns ``<a href="…">همه تسک‌ها</a>``; the model sometimes
+        relays the anchor and then repeats the destination as visible text.
+        A Jira search URL carries a percent-encoded JQL query, so that
+        repetition is two hundred characters of noise wrapped across a
+        phone screen — and the reader has no way to tell it is the same
+        link they already have.
+
+        Only a URL that duplicates an anchor's own href is removed, so a
+        link the model offers on its own still reaches the user.
+
+        Args:
+            answer: The answer, after Markdown links became anchors
+
+        Returns:
+            The answer with duplicated destinations removed.
+        """
+        hrefs = set(re.findall(r'<a href="([^"]+)"', answer))
+        if not hrefs:
+            return answer
+
+        for href in hrefs:
+            for candidate in {href, unescape(href)}:
+                # Tidy only around what was removed. Collapsing whitespace
+                # across the whole answer would eat the indent that puts a
+                # task's detail line under its own title.
+                answer = re.sub(
+                    r"[ \t]*[\(\[]?\s*" + re.escape(candidate)
+                    + r"\s*[\)\]]?(?![^<]*</a>)",
+                    "",
+                    answer,
+                )
+        return re.sub(r"[ \t]+\n", "\n", answer)
 
     @staticmethod
     def _build_tools(tools: AssistantTools) -> List[StructuredTool]:
@@ -192,26 +277,39 @@ class TaskAssistantAgent:
                 coroutine=tools.list_tasks,
                 name="list_tasks",
                 description=(
-                    "فهرست تسک‌های باز. person نام شخص همان‌طور که کاربر گفته "
-                    "(خالی یعنی خود کاربر)، project نام محصول همان‌طور که گفته "
-                    "(مثل «پارسچت» یا «آواخرد»)، status وضعیت جیرا، "
-                    "issue_type نوع آیتم مثل Story یا Bug، "
-                    "in_active_sprint=true فقط کارهای داخل اسپرینت جاری، "
-                    "due_within_days تعداد روز تا مهلت. "
+                    "فهرست خام تسک‌های باز، فقط وقتی کاربر یک فیلتر مشخص "
+                    "خواسته: status وضعیت جیرا، issue_type نوع آیتم مثل "
+                    "Story یا Bug، in_active_sprint=true فقط کارهای داخل "
+                    "اسپرینت جاری. person نام شخص همان‌طور که کاربر گفته "
+                    "(خالی یعنی خود کاربر)، project نام محصول همان‌طور که "
+                    "گفته (مثل «پارسچت» یا «آواخرد»). "
                     "دقت کن: «استوری‌های اسپرینت جاری» یعنی issue_type=Story "
-                    "و in_active_sprint=true — این ربطی به status ندارد."
+                    "و in_active_sprint=true — این ربطی به status ندارد. "
+                    "برای «تسک‌های من/فلانی چیه؟» یا هر بازه‌ی زمانی مثل "
+                    "«این هفته» از my_briefing استفاده کن، نه از این."
                 ),
             ),
             StructuredTool.from_function(
                 coroutine=tools.my_briefing,
                 name="my_briefing",
                 description=(
-                    "خلاصه‌ی کار کاربر: اول باگ‌های فوری، بعد هدف اسپرینت "
-                    "جاری بر اساس اپیک‌ها، بعد سهم خود کاربر با لینک. "
-                    "project اختیاری است. برای سؤال‌های کلی مثل «تسک‌های من "
-                    "چیه؟»، «امروز چیکار کنم؟»، «وضعیتم چطوره؟» از این "
-                    "استفاده کن، نه از list_tasks — این تصویر کامل‌تری "
-                    "می‌دهد و باگ فوری را جا نمی‌اندازد."
+                    "ابزار پیش‌فرض برای «تسک‌های ... چیه؟». خلاصه‌ی کار یک "
+                    "نفر: اول باگ‌های فوری، بعد پروژه به پروژه — نقش او در "
+                    "ریلیزهای هر پروژه با تاریخ تحویل، نزدیک‌ترین تسک‌ها بر "
+                    "اساس Target end، و لینک بقیه. "
+                    "person نام شخص همان‌طور که کاربر گفته (خالی یعنی خود "
+                    "کاربر) — برای «تسک‌های خانوم لطفیان چیه؟» هم از همین "
+                    "استفاده کن با person=«خانوم لطفیان». "
+                    "project اختیاری؛ وقتی کاربر پروژه‌ای نگفته خالی بگذار "
+                    "تا همه‌ی پروژه‌هایش بیاید. "
+                    "within_days برای بازه‌ی زمانی: «این هفته»=۷، «امروز»=۱، "
+                    "«این ماه»=۳۰. وقتی کاربر بازه نگفته خالی بگذار. "
+                    "برای «تسک‌های من چیه؟»، «این هفته چی دارم؟»، «امروز "
+                    "چیکار کنم؟»، «وضعیت فلانی چطوره؟» از این استفاده کن، "
+                    "نه از list_tasks — list_tasks فهرست بی‌ساختار می‌دهد و "
+                    "نه ریلیز دارد نه ددلاین. "
+                    "خروجی این ابزار را کامل و بدون خلاصه‌کردن منتقل کن؛ "
+                    "هیچ تسکی را حذف نکن و هیچ تاریخی را از خودت نساز."
                 ),
             ),
             StructuredTool.from_function(

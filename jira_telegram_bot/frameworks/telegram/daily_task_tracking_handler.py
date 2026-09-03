@@ -1072,7 +1072,13 @@ class DailyTaskTrackingHandler:
         """
         pending = context.user_data.get(self.PENDING_REPORT)
         if not pending:
-            await query.edit_message_text(persian_messages.ERROR_MESSAGE)
+            # The report was already written or cancelled. Answering a stale
+            # keyboard is not a failure, and calling it one makes the user
+            # think their hours were lost.
+            LOGGER.info("Worklog choice arrived after the report was gone")
+            await query.answer(
+                persian_messages.WORKLOG_ALREADY_SAVED, show_alert=True,
+            )
             return
 
         _, raw_index, choice = data.split("_", 2)
@@ -1115,15 +1121,28 @@ class DailyTaskTrackingHandler:
         """
         pending = context.user_data.pop(self.PENDING_REPORT, None)
         if not pending:
-            await query.edit_message_text(persian_messages.ERROR_MESSAGE)
+            # Writing several worklogs takes seconds, during which the
+            # buttons are still on screen and look unresponsive. A second
+            # tap arriving after the first has consumed the report is not
+            # an error: the work is already in Jira, and saying "خطا رخ داد"
+            # invites the user to report it again by hand.
+            LOGGER.info("Duplicate worklog confirmation ignored")
+            await query.answer(
+                persian_messages.WORKLOG_ALREADY_SAVED, show_alert=True,
+            )
             return
 
         user_config = self.user_config_repository.get_user_config(
             query.from_user.username,
         )
         if not user_config:
+            context.user_data[self.PENDING_REPORT] = pending
             await query.edit_message_text(persian_messages.ERROR_MESSAGE)
             return
+
+        # Take the buttons away before the first write, so the only tap that
+        # can reach here is the one already being served.
+        await self._disarm(query)
 
         lines = [persian_messages.WORKLOG_SAVED_HEADER]
         for split in pending["report"].splits:
@@ -1157,6 +1176,20 @@ class DailyTaskTrackingHandler:
 
         await query.edit_message_text("\n".join(lines), parse_mode="HTML")
         await self._follow_up_after_digest(query.message.chat_id, pending)
+
+    @staticmethod
+    async def _disarm(query) -> None:
+        """Remove a message's buttons so it cannot be tapped twice.
+
+        Args:
+            query: The callback query whose message is being served
+        """
+        try:
+            await query.edit_message_text(
+                persian_messages.WORKLOG_SAVING, reply_markup=None,
+            )
+        except Exception as exc:
+            LOGGER.warning(f"Could not clear the worklog keyboard: {exc}")
 
     async def _follow_up_after_digest(self, chat_id: int, pending: dict) -> None:
         """Ask about the work a digest reply did not account for.

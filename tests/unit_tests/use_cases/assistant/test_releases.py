@@ -89,7 +89,8 @@ class TestReleases(unittest.IsolatedAsyncioTestCase):
     async def test_the_delivery_date_is_stated(self):
         result = await self._tools().releases(project="پارسچت")
 
-        self.assertIn("2026-09-14", result)
+        self.assertIn("۲۳ شهریور", result)
+        self.assertNotIn("2026-09-14", result)
 
     async def test_the_date_carries_its_weekday(self):
         """A bare date is hard to place; a weekday is a commitment."""

@@ -225,12 +225,14 @@ class TestNestedRendering(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_subtasks_are_nested_under_their_parent(self):
+        """A task renders as a title line plus its own detail line."""
         lines = (await self.tools.list_tasks()).splitlines()
+        titles = [line for line in lines if "<a href" in line or "↳" in line]
 
-        self.assertFalse(lines[0].startswith("   ↳"))
-        self.assertIn("KHERADYAR-37", lines[0])
-        self.assertTrue(lines[1].startswith("   ↳"))
-        self.assertTrue(lines[2].startswith("   ↳"))
+        self.assertFalse(titles[0].startswith("   ↳"))
+        self.assertIn("KHERADYAR-37", lines[1])
+        self.assertTrue(titles[1].startswith("   ↳"))
+        self.assertTrue(titles[2].startswith("   ↳"))
 
     async def test_top_level_types_are_not_indented(self):
         """A Bug with no parent stays at the first level."""

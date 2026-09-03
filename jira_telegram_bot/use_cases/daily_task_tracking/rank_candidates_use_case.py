@@ -82,13 +82,21 @@ class RankCandidatesUseCase:
         runner_up = scored[1][1] if len(scored) > 1 else 0.0
         margin = best - runner_up
         if margin < self.settings.min_margin:
-            # Everything scored about the same, which is what a description
-            # matching nothing looks like: the top row is the winner of a
-            # tie, not an answer. Handing it over as a shortlist invites a
-            # confident pick from rows that are all equally unrelated.
+            # A thin margin means the top row won a tie rather than answered
+            # the question. What the tie means depends on how good the tied
+            # rows are: several plausible issues is a question for the person
+            # who did the work, while several unrelated ones is a genuine
+            # non-match, and refusing both loses real work.
+            if best >= self.settings.ambiguous_similarity:
+                tied = self._tied_with(scored, best)
+                LOGGER.info(
+                    f"Best {scored[0][0].issue_key} at {best:.3f} leads by "
+                    f"only {margin:.3f}; offering {len(tied)} for a choice",
+                )
+                return tied
             LOGGER.info(
                 f"Best {scored[0][0].issue_key} at {best:.3f} leads by only "
-                f"{margin:.3f}; reporting no match",
+                f"{margin:.3f} and is weak; reporting no match",
             )
             return []
 
@@ -101,6 +109,27 @@ class RankCandidatesUseCase:
             f"best {shortlist[0][0].issue_key} at {best:.3f}",
         )
         return shortlist
+
+    def _tied_with(
+        self,
+        scored: Sequence[Tuple[DailyTaskCheck, float]],
+        best: float,
+    ) -> List[Tuple[DailyTaskCheck, float]]:
+        """The candidates close enough to the leader to be worth asking about.
+
+        Args:
+            scored: Every candidate with its similarity, best first
+            best: The leader's score
+
+        Returns:
+            The leader and anything within ``ambiguous_spread`` of it, capped
+            so the question stays answerable.
+        """
+        tied = [
+            pair for pair in scored
+            if best - pair[1] <= self.settings.ambiguous_spread
+        ]
+        return tied[: self.settings.max_ambiguous_options]
 
     async def rank_texts(
         self,

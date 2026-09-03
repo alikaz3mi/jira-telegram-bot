@@ -39,6 +39,32 @@ class EmbeddingSettings(CustomizedSettings):
             "0.15-0.27, non-matches by 0.02-0.04."
         ),
     )
+    ambiguous_similarity: float = Field(
+        default=0.42,
+        description=(
+            "When the best match clears this but does not clear the margin, "
+            "the tie is worth asking about rather than refusing. Several "
+            "issues that all plausibly match is a different situation from "
+            "nothing matching, and only the person who did the work can "
+            "settle it. Below this the tie is between rows that are all "
+            "unrelated, and a question about them wastes their time."
+        ),
+    )
+    ambiguous_spread: float = Field(
+        default=0.06,
+        description=(
+            "How close a runner-up must be to the leader to join the "
+            "question. Anything further behind is not really in contention, "
+            "and padding the options makes the choice harder, not easier."
+        ),
+    )
+    max_ambiguous_options: int = Field(
+        default=4,
+        description=(
+            "A question with more options than this is not a question, it "
+            "is the list the user was trying to avoid reading."
+        ),
+    )
     min_topic_similarity: float = Field(
         default=0.38,
         description=(

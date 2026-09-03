@@ -63,7 +63,10 @@ instantiation.
   count it. A short list read as complete is worse than an error.
 - **Persian text belongs in `entities/constants/persian_messages.py`**, not
   inline in handlers.
-- Telegram HTML: `<a href>` only. Other tags are rejected by the API.
+- Telegram HTML: `<a href>`, `<b>`, `<i>` and `<code>` render; most other
+  tags are rejected by the API. Any user-supplied text placed inside markup
+  — a Jira summary, a release name — must be `html.escape`d first, or one
+  `&` in a summary costs the whole message.
 - A new dependency goes in `requirements.txt` in the same change that
   imports it.
 

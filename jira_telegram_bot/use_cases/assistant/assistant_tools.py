@@ -12,6 +12,9 @@ from __future__ import annotations
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
+from html import escape
+
+import jdatetime
 from urllib.parse import quote
 from typing import List
 from typing import Optional
@@ -47,10 +50,13 @@ EPIC_LINK_FIELD = "customfield_10100"
 URGENT_PRIORITIES = ("Highest", "High")
 
 # A briefing is read on a phone before a standup.
-MAX_PURPOSE_EPICS = 5
 MAX_RELEASE_ISSUES = 8
-MAX_OWN_SHARE = 8
 MAX_MEDIA = 3
+
+# A briefing names the release asking most of you, then a couple of others
+# so the shape of the quarter is visible without listing every version.
+MAX_BRIEFING_RELEASES = 4
+MAX_BRIEFING_DUE = 3
 
 # Spoken discipline -> the unit string recorded in `user_components`. These
 # issues carry no component or label in Jira, so a person's configured unit
@@ -121,7 +127,6 @@ class AssistantTools:
         status: Optional[str] = None,
         issue_type: Optional[str] = None,
         in_active_sprint: Optional[bool] = None,
-        due_within_days: Optional[int] = None,
     ) -> str:
         """List open tasks, filtered the way the question asked.
 
@@ -132,7 +137,6 @@ class AssistantTools:
             issue_type: Keep only this issue type, e.g. "Story" or "Bug"
             in_active_sprint: True keeps only work in an open sprint; False
                 keeps only work that belongs to no sprint
-            due_within_days: Keep only tasks due within this many days
 
         Returns:
             One line per task, or a message explaining why there are none.
@@ -182,13 +186,6 @@ class AssistantTools:
                 if bool(task.sprint_name) is in_active_sprint
             ]
 
-        if due_within_days is not None:
-            horizon = datetime.now() + timedelta(days=due_within_days)
-            tasks = [
-                task for task in tasks
-                if task.target_end and task.target_end <= horizon
-            ]
-
         if not tasks:
             return f"با این شرط‌ها تسکی برای {self._label(target, person)} نماند."
 
@@ -216,7 +213,7 @@ class AssistantTools:
             return error
 
         tasks = await self._fetch(target)
-        label = self._label(target, person)
+        label = self._proper_name(target, person, display)
 
         if project:
             resolution = self.aliases.resolve(project, EntityKind.PROJECT)
@@ -254,7 +251,7 @@ class AssistantTools:
         tasks = await self._fetch(target)
         logged = [task for task in tasks if task.worklog_hours]
         total = round(sum(task.worklog_hours for task in logged), 2)
-        label = self._label(target, person)
+        label = self._proper_name(target, person, display)
 
         if not logged:
             return f"روی تسک‌های باز {label} ساعتی ثبت نشده است."
@@ -581,19 +578,40 @@ class AssistantTools:
         )
         return f"کاربر {self.context.jira_username} ({self.context.role.value}) — {scope}"
 
-    async def my_briefing(self, project: Optional[str] = None) -> str:
+    async def my_briefing(
+        self,
+        person: Optional[str] = None,
+        project: Optional[str] = None,
+        within_days: Optional[int] = None,
+    ) -> str:
         """Open a check-in with what matters before what is merely assigned.
 
-        A bare list of issue keys makes somebody reconstruct the point of
-        their own sprint. This leads with anything on fire, then what the
-        sprint is actually for, and only then their own share of it.
+        Someone with work in three products cannot read one flat list of
+        issue keys and tell which product is asking something of them today.
+        So the briefing leads with anything on fire, then takes each product
+        in turn and frames that product's work by the releases it ships in —
+        because a release carries a date, and a task usually does not.
+
+        The same framing is what somebody wants when they ask about a
+        colleague, so ``person`` answers that too rather than sending the
+        question to a bare list.
 
         Args:
+            person: Whose briefing, as the user named them; None means the
+                caller
             project: Restrict to one product, as the user named it
+            within_days: Restrict to work due inside this many days. The
+                window narrows what is listed, never what is counted — a
+                horizon that silently shrank the totals would misreport how
+                much somebody is carrying.
 
         Returns:
             The briefing, ready to send as Telegram HTML.
         """
+        target, error, display = self._resolve_person_named(person)
+        if error:
+            return error
+
         project_key = None
         if project:
             match, error = self._resolve_project(project)
@@ -601,30 +619,388 @@ class AssistantTools:
                 return error
             project_key = match.canonical
 
-        tasks = await self._fetch(self.context.jira_username)
+        tasks = [
+            task
+            for task in await self._fetch(target)
+            if not self._is_finished(task)
+        ]
         if project_key:
             tasks = [task for task in tasks if task.project_key == project_key]
 
+        label = self._proper_name(target, person, display)
         sections: List[str] = []
-        urgent = await self._urgent_bugs(project_key)
+        urgent = await self._urgent_bugs(project_key, target)
         if urgent:
-            sections.append(self._render_urgent(urgent))
+            sections.append(self._render_urgent(urgent, label))
 
-        purpose = await self._sprint_purpose(project_key or self._busiest(tasks))
-        if purpose:
-            sections.append(purpose)
+        if not tasks:
+            sections.append(f"📋 تسک بازی روی {label} نیست.")
+            return "\n\n".join(sections)
 
-        sections.append(self._render_own_share(tasks))
+        for key in self._projects_by_load(tasks):
+            section = await self._project_section(
+                key,
+                [task for task in tasks if task.project_key == key],
+                target,
+                label,
+                within_days,
+            )
+            if section:
+                sections.append(section)
 
         if not sections:
             return "چیزی برای گزارش پیدا نکردم."
         return "\n\n".join(section for section in sections if section)
 
-    async def _urgent_bugs(self, project_key: Optional[str]) -> List:
-        """The caller's own unresolved bugs at a priority worth interrupting for.
+    @staticmethod
+    def _projects_by_load(tasks: Sequence[DailyTaskCheck]) -> List[str]:
+        """Order the caller's projects by how much of them they carry.
+
+        Sprint commitments decide the order, since those are what somebody
+        has actually promised for this fortnight; the overall count only
+        breaks ties between projects with no sprint work at all.
+
+        Args:
+            tasks: The caller's open tasks across every project
+
+        Returns:
+            The project keys, heaviest commitment first.
+        """
+        committed: dict = {}
+        overall: dict = {}
+        for task in tasks:
+            overall[task.project_key] = overall.get(task.project_key, 0) + 1
+            if task.sprint_name:
+                committed[task.project_key] = committed.get(task.project_key, 0) + 1
+
+        return sorted(
+            overall,
+            key=lambda key: (-committed.get(key, 0), -overall[key], key),
+        )
+
+    async def _project_section(
+        self,
+        project_key: str,
+        tasks: Sequence[DailyTaskCheck],
+        target: str,
+        label: str,
+        within_days: Optional[int] = None,
+    ) -> str:
+        """Frame one project's work by the releases it ships in.
+
+        Args:
+            project_key: The project to describe
+            tasks: The person's open tasks in that project
+            target: Whose tasks these are, as a Jira username
+            label: How to name them in the reply
+            within_days: Restrict the listed tasks to this horizon
+
+        Returns:
+            The rendered section for this project.
+        """
+        display = self._display_name(project_key)
+        lines = [f"📁 <b>{escape(display)}</b>"]
+
+        by_release = self._releases_of(project_key, tasks, target)
+        dated = await self._dates_for(project_key, by_release)
+
+        if by_release:
+            lines.append(
+                self._render_release_role(by_release, dated, tasks, label),
+            )
+
+        due, window = self._due_soonest(tasks, within_days)
+        if due:
+            lines.append("")
+            lines.append(f"⏰ <b>{window}</b>")
+            for task in due:
+                lines.append(self._deadline_line(task))
+        elif within_days is not None:
+            lines.append("")
+            lines.append(
+                f"✅ در {self._digits(within_days)} روز آینده مهلتی در این "
+                f"پروژه ندارید.",
+            )
+
+        lines.append("")
+        lines.append(
+            f"🔗 {self._all_tasks_link(project_key, display, target, label)}",
+        )
+        return "\n".join(lines)
+
+    def _display_name(self, project_key: str) -> str:
+        """Name a project the way a person says it, not the way Jira keys it."""
+        try:
+            resolution = self.aliases.resolve(project_key, EntityKind.PROJECT)
+        except Exception as exc:
+            LOGGER.warning(f"Could not resolve display name for {project_key}: {exc}")
+            return project_key
+        match = getattr(resolution, "resolved", None)
+        return getattr(match, "display_name", None) or project_key
+
+    def _releases_of(
+        self,
+        project_key: str,
+        tasks: Sequence[DailyTaskCheck],
+        target: str,
+    ) -> dict:
+        """Group the caller's tasks in one project by the release they ship in.
+
+        The entity carries no fixVersion, so this asks Jira for the caller's
+        own open issues in this project and reads the versions off them. One
+        query per project, not one per task.
+
+        Args:
+            project_key: The project to read
+            tasks: The person's open tasks there, used to keep the grouping
+                to work the briefing already knows about
+            target: Whose issues to read, as a Jira username
+
+        Returns:
+            Release name -> the issue keys of theirs riding on it. Empty when
+            the lookup fails or nothing carries a version, both of which are
+            reported as an absence of releases rather than as an error.
+        """
+        if not self.task_manager_repository:
+            return {}
+
+        known = {task.issue_key for task in tasks}
+        try:
+            issues = self.task_manager_repository.search_issues(
+                jql=(
+                    f'project = "{project_key}" '
+                    f'AND assignee = "{target}" '
+                    f"AND statusCategory != Done"
+                ),
+                max_results=100,
+                fields="summary,fixVersions",
+            )
+        except Exception as exc:
+            LOGGER.error(f"Release grouping for {project_key} failed: {exc}")
+            return {}
+
+        grouped: dict = {}
+        for issue in issues or []:
+            key = str(getattr(issue, "key", "") or "")
+            if known and key not in known:
+                continue
+            for version in getattr(issue.fields, "fixVersions", None) or []:
+                name = str(getattr(version, "name", "") or "").strip()
+                if name:
+                    grouped.setdefault(name, []).append(key)
+        return grouped
+
+    async def _dates_for(self, project_key: str, names: Sequence[str]) -> dict:
+        """Read the delivery date of each named release.
+
+        Args:
+            project_key: The project the releases belong to
+            names: The release names to look up
+
+        Returns:
+            Release name -> its release date as Jira stores it, for those
+            that carry one.
+        """
+        if not names or not self.task_manager_repository:
+            return {}
+
+        wanted = set(names)
+        try:
+            versions = self.task_manager_repository.get_project_versions(project_key)
+        except Exception as exc:
+            LOGGER.error(f"Versions of {project_key} unreadable: {exc}")
+            return {}
+
+        dates = {}
+        for version in versions or []:
+            name = str(getattr(version, "name", "") or "").strip()
+            due = getattr(version, "releaseDate", None)
+            if name in wanted and due:
+                dates[name] = str(due)
+        return dates
+
+    def _render_release_role(
+        self,
+        by_release: dict,
+        dates: dict,
+        tasks: Sequence[DailyTaskCheck],
+        label: str,
+    ) -> str:
+        """Say what one person is carrying, release by release, soonest first.
+
+        Args:
+            by_release: Release name -> their issue keys on it
+            dates: Release name -> delivery date, where one is set
+            tasks: The person's open tasks in this project
+            label: How to name them in the reply
+
+        Returns:
+            The rendered paragraph.
+        """
+        ordered = sorted(
+            by_release,
+            key=lambda name: (dates.get(name) or "9999-99-99", name),
+        )
+        lead = ordered[0]
+        share = len(by_release[lead])
+
+        carries = "دارید" if label == "شما" else "دارد"
+        counts_on = "شما" if label == "شما" else label
+
+        when = (
+            f" — تحویل {self._spell_date(dates[lead])}" if lead in dates else ""
+        )
+        lines = [
+            f"🚀 <b>{escape(lead)}</b>{when}",
+            f"   {self._digits(share)} کار باز {label} روی این ریلیز است — "
+            f"نزدیک‌ترین ریلیزی که روی {counts_on} حساب می‌کند.",
+        ]
+
+        if len(ordered) > 1:
+            lines.append(
+                f"   در مجموع {self._digits(len(tasks))} تسک باز در این "
+                f"پروژه {carries}، پخش‌شده بین "
+                f"{self._digits(len(ordered))} ریلیز:",
+            )
+            for name in ordered[1:MAX_BRIEFING_RELEASES]:
+                due = (
+                    f" — {self._jalali(date.fromisoformat(dates[name]))}"
+                    if name in dates else ""
+                )
+                lines.append(f"   ▫️ {escape(name)}{due}")
+            hidden = len(ordered) - MAX_BRIEFING_RELEASES
+            if hidden > 0:
+                lines.append(f"   ▫️ و {self._digits(hidden)} ریلیز دیگر")
+        else:
+            lines.append(
+                f"   در مجموع {self._digits(len(tasks))} تسک باز در این "
+                f"پروژه {carries}.",
+            )
+
+        return "\n".join(lines)
+
+    def _due_soonest(
+        self,
+        tasks: Sequence[DailyTaskCheck],
+        within_days: Optional[int] = None,
+    ) -> tuple[List[DailyTaskCheck], str]:
+        """The tasks whose own dates put them first in the queue.
+
+        Target end decides it. A task without one is not promoted ahead of a
+        task that carries a date, but it is still shown when nothing else
+        does — otherwise a project where nobody sets dates renders an empty
+        section.
+
+        When a horizon is given the heading says so. A list headed "due
+        soonest" that has quietly dropped everything past Friday reads as
+        the whole of somebody's work, which is how a four-item answer came
+        to stand in for twenty-nine.
+
+        Args:
+            tasks: The person's open tasks in one project
+            within_days: Keep only work due inside this many days
+
+        Returns:
+            The tasks, soonest first, and the heading that describes them.
+        """
+        dated = [task for task in tasks if task.target_end or task.target_start]
+
+        if within_days is not None:
+            horizon = datetime.now() + timedelta(days=within_days)
+            inside = [
+                task for task in dated
+                if (task.target_end or task.target_start) <= horizon
+            ]
+            heading = (
+                f"مهلت‌های {self._digits(within_days)} روز آینده "
+                f"({self._digits(len(inside))} مورد)"
+            )
+            return sorted(inside, key=self._due_key), heading
+
+        pool = dated or [task for task in tasks if task.sprint_name] or list(tasks)
+        pool = sorted(pool, key=self._due_key)
+        return pool[:MAX_BRIEFING_DUE], "نزدیک‌ترین تسک‌ها برای تحویل"
+
+    @staticmethod
+    def _due_key(task: DailyTaskCheck) -> tuple:
+        """Sort key putting the earliest committed date first."""
+        when = task.target_end or task.target_start
+        return (when is None, when or datetime.max, task.issue_key)
+
+    def _deadline_line(self, task: DailyTaskCheck) -> str:
+        """Render one task as a linked title above its own metadata.
+
+        A bare issue key is not what anyone recognises a task by, so the
+        summary carries the link and the key moves down to the detail line
+        beside the status and the date. Two short lines also survive a phone
+        screen without wrapping mid-sentence, which is what made the numbered
+        one-liners hard to scan.
+
+        Args:
+            task: The task to render
+
+        Returns:
+            Two lines: the linked title, then its status, key and deadline.
+        """
+        when = task.target_end or task.target_start
+        if when:
+            deadline = f"تا {self._jalali(when.date())}"
+        elif task.sprint_name:
+            deadline = f"اسپرینت {task.sprint_name}"
+        else:
+            deadline = None
+
+        return f"• {self._one_line(task, deadline=deadline)}"
+
+    @staticmethod
+    def _status_icon(status: Optional[str]) -> str:
+        """Mark a status so its stage reads before the word does.
+
+        Args:
+            status: The Jira status name
+
+        Returns:
+            One emoji standing for the stage that status belongs to.
+        """
+        name = (status or "").strip().lower()
+        if name in {"in progress", "in-progress", "inprogress"}:
+            return "🔵"
+        if name in {"review", "in review", "code review", "testing", "test"}:
+            return "🟣"
+        if name in {"blocked", "on hold", "paused"}:
+            return "🔴"
+        if name in {"done", "closed", "resolved"}:
+            return "🟢"
+        return "⚪️"
+
+    def _all_tasks_link(
+        self,
+        project_key: str,
+        display: str,
+        target: str,
+        label: str,
+    ) -> str:
+        """Link to every open task one person has in one project."""
+        jql = (
+            f'assignee = "{target}" '
+            f'AND project = "{project_key}" AND resolution = Unresolved '
+            f"ORDER BY updated DESC"
+        )
+        if not self.base_url:
+            return display
+        url = f"{self.base_url}/issues/?jql={quote(jql)}"
+        return f'<a href="{url}">همه تسک‌های {display}</a>'
+
+    async def _urgent_bugs(
+        self,
+        project_key: Optional[str],
+        target: str,
+    ) -> List:
+        """One person's unresolved bugs at a priority worth interrupting for.
 
         Args:
             project_key: Restrict to one project, or None for all
+            target: Whose bugs, as a Jira username
 
         Returns:
             The bugs, highest priority first.
@@ -633,7 +1009,7 @@ class AssistantTools:
             return []
 
         clauses = [
-            f'assignee = "{self.context.jira_username}"',
+            f'assignee = "{target}"',
             "issuetype = Bug",
             "resolution = Unresolved",
             # Some workflows reach Cancel or Done without ever setting a
@@ -655,21 +1031,32 @@ class AssistantTools:
             LOGGER.error(f"Urgent bug lookup failed: {exc}")
             return []
 
-    def _render_urgent(self, bugs: Sequence) -> str:
+    def _render_urgent(self, bugs: Sequence, label: str) -> str:
         """Render the urgent bugs, queueing any screenshot they carry."""
-        lines = [f"🔴 {len(bugs)} باگ فوری روی شماست:"]
+        lines = [
+            f"🔴 <b>{self._digits(len(bugs))} باگ فوری روی "
+            f"{escape(label)}</b>",
+        ]
         for bug in bugs:
+            key = str(bug.key)
             priority = getattr(
                 getattr(bug.fields, "priority", None), "name", "",
             )
-            summary = str(getattr(bug.fields, "summary", "") or "").strip()
-            if len(summary) > 55:
-                summary = f"{summary[:54]}…"
+            summary = str(getattr(bug.fields, "summary", "") or "").strip() or key
+            if len(summary) > 70:
+                summary = f"{summary[:69]}…"
+            summary = escape(summary)
             status = getattr(getattr(bug.fields, "status", None), "name", "?")
-            lines.append(
-                f"   {self._link(str(bug.key))} — {summary} "
-                f"({priority}، {status})",
+
+            title = (
+                f'<a href="{self.base_url}/browse/{key}">{summary}</a>'
+                if self.base_url
+                else summary
             )
+            detail = " · ".join(
+                part for part in (priority, status, key) if part
+            )
+            lines.append(f"• {title}\n   {detail}")
             self._queue_media(bug)
         return "\n".join(lines)
 
@@ -694,105 +1081,12 @@ class AssistantTools:
                 "attachment": item,
             })
 
-    async def _sprint_purpose(self, project_key: Optional[str]) -> str:
-        """Say what the current sprint is for, in terms of its epics.
-
-        No sprint here carries a goal, so the epics its stories belong to
-        are the only statement of intent the data holds.
-
-        Args:
-            project_key: The project whose sprint to describe
-
-        Returns:
-            The rendered section, or an empty string when unavailable.
-        """
-        if not project_key or not self.task_manager_repository:
-            return ""
-
-        try:
-            stories = self.task_manager_repository.search_issues(
-                jql=(
-                    f'project = "{project_key}" '
-                    f"AND sprint in openSprints() AND issuetype = Story"
-                ),
-                max_results=100,
-                fields=f"summary,{EPIC_LINK_FIELD}",
-            )
-        except Exception as exc:
-            LOGGER.error(f"Sprint purpose lookup failed: {exc}")
-            return ""
-
-        if not stories:
-            return ""
-
-        grouped, _ = self._group_by_epic(stories)
-        if not grouped:
-            return ""
-
-        lines = [f"🎯 اسپرینت جاری {project_key} روی این‌ها متمرکز است:"]
-        ordered = sorted(grouped.items(), key=lambda item: -len(item[1]))
-        for epic_key, epic_stories in ordered[:MAX_PURPOSE_EPICS]:
-            title = self._epic_title(epic_key) or epic_key
-            lines.append(
-                f"   • {title} ({len(epic_stories)} استوری) "
-                f"{self._link(epic_key)}",
-            )
-        return "\n".join(lines)
-
     @staticmethod
     def _is_finished(task: DailyTaskCheck) -> bool:
         """Whether a task is over, whatever its resolution field says."""
         return (task.status or "").strip().lower() in {
             "done", "closed", "resolved", "cancel", "cancelled", "canceled",
         }
-
-    @staticmethod
-    def _busiest(tasks: Sequence[DailyTaskCheck]) -> Optional[str]:
-        """The project whose current sprint the person is most committed to.
-
-        Counting all open work picks whichever project has the largest
-        backlog, which is usually not the one running a sprint. Sprint
-        commitments decide it, and only when there are none does the
-        overall count stand in.
-
-        Args:
-            tasks: The person's open tasks
-
-        Returns:
-            The project key, or None when they have no open work.
-        """
-        committed: dict = {}
-        overall: dict = {}
-        for task in tasks:
-            overall[task.project_key] = overall.get(task.project_key, 0) + 1
-            if task.sprint_name:
-                committed[task.project_key] = committed.get(task.project_key, 0) + 1
-
-        pool = committed or overall
-        return max(pool, key=pool.get) if pool else None
-
-    def _render_own_share(self, tasks: Sequence[DailyTaskCheck]) -> str:
-        """Render the caller's own work, sprint commitments first."""
-        tasks = [task for task in tasks if not self._is_finished(task)]
-        if not tasks:
-            return "📋 تسک بازی روی شما نیست."
-
-        in_sprint = [task for task in tasks if task.sprint_name]
-        shown = in_sprint or list(tasks)
-
-        heading = (
-            f"📋 سهم شما از اسپرینت ({len(in_sprint)} مورد):"
-            if in_sprint
-            else f"📋 کارهای باز شما ({len(tasks)} مورد):"
-        )
-        lines = [heading]
-        for task in shown[:MAX_OWN_SHARE]:
-            lines.append(f"   {self._one_line(task)}")
-
-        hidden = len(shown) - MAX_OWN_SHARE
-        if hidden > 0:
-            lines.append(f"   و {hidden} مورد دیگر")
-        return "\n".join(lines)
 
     async def releases(
         self,
@@ -889,7 +1183,7 @@ class AssistantTools:
             when = f"تا {self._spell_date(due)}" if due else "بدون تاریخ"
             if getattr(version, "overdue", False):
                 when += " ⚠️ عقب‌افتاده"
-            window = f" (از {start})" if start else ""
+            window = f" (از {self._spell_date(start)})" if start else ""
             lines.append(f"\n📦 {name} — {when}{window}")
 
             description = str(getattr(version, "description", "") or "").strip()
@@ -941,24 +1235,55 @@ class AssistantTools:
 
     @staticmethod
     def _spell_date(value: str) -> str:
-        """Name the weekday alongside a delivery date.
+        """Say a delivery date the way the team says dates.
 
-        A bare date is hard to place; "دوشنبه ۱۴ سپتامبر" is a commitment
-        somebody can picture.
+        Jira stores Gregorian, but nobody here plans in it — a sprint is
+        named for a Jalali half-month and a deadline is spoken as «۲۴
+        شهریور». Rendering 2026-09-15 makes the reader convert, and a date
+        somebody has to convert is a date they misread.
 
         Args:
             value: The date as Jira stores it, YYYY-MM-DD
 
         Returns:
-            The date with its Persian weekday, or unchanged when unparsable.
+            The weekday and Jalali date, or the input unchanged when it
+            cannot be parsed.
         """
         try:
             day = date.fromisoformat(str(value))
         except (ValueError, TypeError):
             return str(value)
-        names = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه",
-                 "جمعه", "شنبه", "یکشنبه"]
-        return f"{names[day.weekday()]} {value}"
+        weekdays = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه",
+                    "جمعه", "شنبه", "یکشنبه"]
+        return f"{weekdays[day.weekday()]} {AssistantTools._jalali(day)}"
+
+    @staticmethod
+    def _jalali(day: date) -> str:
+        """Render one date as a Jalali day and month name.
+
+        Args:
+            day: The Gregorian date to convert
+
+        Returns:
+            Something like «۲۴ شهریور», or the ISO date when conversion
+            fails — a wrong date would be worse than an unconverted one.
+        """
+        months = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+                  "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"]
+        try:
+            converted = jdatetime.GregorianToJalali(day.year, day.month, day.day)
+            return (
+                f"{AssistantTools._digits(converted.jday)} "
+                f"{months[converted.jmonth - 1]}"
+            )
+        except Exception as exc:
+            LOGGER.warning(f"Jalali conversion of {day} failed: {exc}")
+            return day.isoformat()
+
+    @staticmethod
+    def _digits(value) -> str:
+        """Write a number in Persian digits, as the rest of the bot does."""
+        return str(value).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
 
     async def sprint_board(
         self,
@@ -1441,8 +1766,24 @@ class AssistantTools:
             The Jira username, and an error message when the request is
             refused or the name could not be resolved.
         """
+        username, error, _ = self._resolve_person_named(person)
+        return username, error
+
+    def _resolve_person_named(
+        self,
+        person: Optional[str],
+    ) -> tuple[str, Optional[str], Optional[str]]:
+        """Resolve a person, keeping the display name the directory holds.
+
+        Args:
+            person: The name the user used, or None for themselves
+
+        Returns:
+            The Jira username, an error when refused or unresolved, and the
+            directory's spelling of their name.
+        """
         if not person:
-            return self.context.jira_username, None
+            return self.context.jira_username, None, None
 
         resolution = self.aliases.resolve(person, EntityKind.PERSON)
         match = resolution.resolved
@@ -1451,17 +1792,17 @@ class AssistantTools:
                 options = "، ".join(
                     candidate.display_name for candidate in resolution.matches
                 )
-                return "", f"منظورتان کدام‌یک است؟ {options}"
-            return "", f"«{person}» را پیدا نکردم."
+                return "", f"منظورتان کدام‌یک است؟ {options}", None
+            return "", f"«{person}» را پیدا نکردم.", None
 
         if not self.context.may_read(match.canonical):
             LOGGER.info(
                 f"{self.context.jira_username} ({self.context.role.value}) "
                 f"denied access to {match.canonical}",
             )
-            return "", DENIED
+            return "", DENIED, None
 
-        return match.canonical, None
+        return match.canonical, None, getattr(match, "display_name", None)
 
     async def _fetch(self, jira_username: str) -> Sequence[DailyTaskCheck]:
         """Fetch a person's open tasks.
@@ -1485,6 +1826,35 @@ class AssistantTools:
         if jira_username.lower() == self.context.jira_username.lower():
             return "شما"
         return spoken or jira_username
+
+    def _proper_name(
+        self,
+        jira_username: str,
+        spoken: Optional[str],
+        display: Optional[str] = None,
+    ) -> str:
+        """Name the person as the directory spells them, not as they were typed.
+
+        ``_label`` echoes the user's own wording, which is right for a short
+        confirmation. A briefing is a document about somebody, and echoing
+        «خانوم لطفیان» back when the directory says «خانم لطفیان» reads as
+        carelessness about the person it is describing.
+
+        The display name comes from the resolution already performed, never
+        from a second lookup: resolving a Jira username through a fuzzy
+        alias search could land on a different person entirely.
+
+        Args:
+            jira_username: The resolved Jira username
+            spoken: What the user called them
+            display: The display name from the resolution, when there was one
+
+        Returns:
+            The display name, falling back to the spoken form.
+        """
+        if jira_username.lower() == self.context.jira_username.lower():
+            return "شما"
+        return display or spoken or jira_username
 
     def _render(self, tasks: Sequence[DailyTaskCheck]) -> str:
         """Render tasks with sub-tasks nested under the work they belong to.
@@ -1512,16 +1882,16 @@ class AssistantTools:
 
         lines: List[str] = []
         for task in top:
-            lines.append(self._one_line(task))
+            lines.append(f"• {self._one_line(task)}")
             for child in children.pop(task.issue_key, []):
-                lines.append(f"   ↳ {self._one_line(child)}")
+                lines.append(f"   ↳ {self._one_line(child, indent='   ')}")
 
         # Sub-tasks whose parent is not in this list still have to appear, or
         # the count stops matching what the user was told.
         for parent_key, orphans in children.items():
-            lines.append(f"{self._link(parent_key)}:")
+            lines.append(f"• {self._link(parent_key)}")
             for child in orphans:
-                lines.append(f"   ↳ {self._one_line(child)}")
+                lines.append(f"   ↳ {self._one_line(child, indent='   ')}")
 
         return "\n".join(lines)
 
@@ -1530,19 +1900,43 @@ class AssistantTools:
         """Whether this issue is a sub-task of something else."""
         return (task.issue_type or "").strip().lower() in {"sub-task", "subtask"}
 
-    def _one_line(self, task: DailyTaskCheck) -> str:
-        """Render a single task as one line.
+    def _one_line(
+        self,
+        task: DailyTaskCheck,
+        indent: str = "",
+        deadline: Optional[str] = None,
+    ) -> str:
+        """Render a single task as a linked title above its own detail.
+
+        The title carries the link, not the key: nobody recognises their own
+        work by ``PARSCHAT-5807``. The key stays on the detail line, since
+        it is still what somebody quotes when they talk about the task.
 
         Args:
             task: The task to render
+            indent: Leading whitespace, so a sub-task's detail line lines up
+                under its own title rather than under its parent's
+            deadline: A commitment to show between the status and the key
 
         Returns:
-            The linked key, a trimmed summary, and the status.
+            Two lines: the linked title, then its status, deadline and key.
         """
-        summary = (task.summary or "").strip()
-        if len(summary) > 60:
-            summary = f"{summary[:59]}…"
-        return f"{self._link(task.issue_key)} — {summary} (وضعیت: {task.status})"
+        summary = (task.summary or "").strip() or task.issue_key
+        if len(summary) > 70:
+            summary = f"{summary[:69]}…"
+        summary = escape(summary)
+
+        title = (
+            f'<a href="{self.base_url}/browse/{task.issue_key}">{summary}</a>'
+            if self.base_url
+            else summary
+        )
+        detail = [f"{self._status_icon(task.status)} {task.status}"]
+        if deadline:
+            detail.append(deadline)
+        detail.append(task.issue_key)
+
+        return f"{title}\n{indent}   {' · '.join(detail)}"
 
     def _link(self, issue_key: str) -> str:
         """Render an issue key as a Telegram HTML link."""

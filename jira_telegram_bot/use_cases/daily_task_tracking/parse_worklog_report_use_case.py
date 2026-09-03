@@ -38,7 +38,23 @@ _PROMPT_TASK = "parse_worklog_report"
 CONFIDENCE_THRESHOLD = 0.75
 
 # A similarity this high is the user having effectively named the issue.
+# A project name after one of these is who the work was for, not the board
+# it lives on: "به تیم پارسچت", "برای پارسچت", "with the parschat team".
+_AUDIENCE_MARKERS = (
+    "تیم", "بچه‌های", "بچه های",
+    "to the", "for the", "with the", "to team", "for team", "with team",
+)
+
+# English names the team after the product: "parschat's team", "the parschat
+# team". Looked for just after the alias rather than before it.
+_TRAILING_AUDIENCE = ("'s team", "' team", " team", "s team")
+
 _STRONG_MATCH = 0.45
+
+# A strong score settles a split only when it also stands clear of the rest.
+# Without this a 0.50 that leads a 0.49 is written straight to Jira, which is
+# the one mistake in this flow that is painful to unwind.
+_STRONG_LEAD = 0.08
 
 # Persian and Arabic-Indic digits, so "۲.۵" survives float().
 _DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
@@ -120,8 +136,12 @@ class ParseWorklogReportUseCase:
             self._build_split(raw, shown, ordinal_key, weekday)
             for raw in self._as_list(result.get("splits"))
         ]
+        # Rank inside the same set the model chose from. Ranking against the
+        # full list while the model saw a narrowed one produced a single
+        # report whose splits came from two different universes: one issue
+        # from the narrowed 24, the next from all 30.
+        await self._rerank_splits(report, shown)
         self._reindex_onto(report, shown, candidates)
-        await self._rerank_splits(report, candidates)
         report.splits = [split for split in report.splits if split.hours > 0]
         return report
 
@@ -172,7 +192,12 @@ class ParseWorklogReportUseCase:
                 if task.issue_key in position
             ]
             best_task, best_score = ranked[0]
-            if len(ranked) == 1 or best_score >= _STRONG_MATCH:
+            runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
+            settled = len(ranked) == 1 or (
+                best_score >= _STRONG_MATCH
+                and best_score - runner_up >= _STRONG_LEAD
+            )
+            if settled:
                 split.issue_key = best_task.issue_key
                 split.status = WorklogSplitStatus.RESOLVED
                 LOGGER.info(
@@ -180,7 +205,16 @@ class ParseWorklogReportUseCase:
                     f"at {best_score:.3f}",
                 )
             else:
+                # A high score is not on its own an answer. The ranker hands
+                # back several rows precisely when they are close, and
+                # writing hours to the first of them is the one mistake that
+                # is painful to undo.
                 split.status = WorklogSplitStatus.AMBIGUOUS
+                LOGGER.info(
+                    f"Split left for the user: {best_task.issue_key} at "
+                    f"{best_score:.3f} leads {len(ranked) - 1} others by "
+                    f"{best_score - runner_up:.3f}",
+                )
 
     def _restrict_to_named_project(
         self,
@@ -249,13 +283,72 @@ class ParseWorklogReportUseCase:
 
         haystack = text.replace("\u200c", "").casefold()
         best: Optional[str] = None
+        best_position = len(haystack) + 1
         for entry in aliases:
             written = str(entry.alias)
             needle = written.replace("\u200c", "").casefold()
-            if len(needle) > 2 and needle in haystack:
-                if best is None or len(needle) > len(best):
-                    best = written
+            position = self._alias_position(haystack, needle)
+            if position < 0 or self._is_audience(haystack, position):
+                continue
+            # The project a report is *about* is named before the work is
+            # described. "برد خودم ... توضیح وظایف به تیم پارسچت" names the
+            # caller's own board first and ParsChat only as who the work was
+            # for; taking the longest match read it the other way round.
+            if position < best_position:
+                best, best_position = written, position
         return best
+
+    @staticmethod
+    def _alias_position(haystack: str, needle: str) -> int:
+        """Where a project alias occurs, if it occurs as a name at all.
+
+        A short key like "AK" matches inside ordinary words, so it only
+        counts as a whole word. Longer aliases are matched as substrings,
+        because Persian attaches suffixes directly to a name.
+
+        Args:
+            haystack: The message, folded and stripped of ZWNJ
+            needle: The alias, folded the same way
+
+        Returns:
+            The index where the alias occurs, or -1 when it does not.
+        """
+        if not needle:
+            return -1
+        if len(needle) > 3:
+            return haystack.find(needle)
+
+        for match in re.finditer(re.escape(needle), haystack):
+            start, end = match.start(), match.end()
+            before = haystack[start - 1] if start else " "
+            after = haystack[end] if end < len(haystack) else " "
+            if not before.isalnum() and not after.isalnum():
+                return start
+        return -1
+
+    @staticmethod
+    def _is_audience(haystack: str, position: int) -> bool:
+        """Whether a project name here is who the work was for, not where.
+
+        "توضیح وظایف به تیم پارسچت" is work on the caller's own board about
+        ParsChat's team. Narrowing to ParsChat there hides every issue the
+        report actually meant.
+
+        Args:
+            haystack: The message, folded
+            position: Where the project name starts
+
+        Returns:
+            True when the name is preceded by a phrase that makes it an
+            audience rather than a location.
+        """
+        prefix = haystack[max(0, position - 14):position]
+        if any(marker in prefix for marker in _AUDIENCE_MARKERS):
+            return True
+        # English puts the team after the name — "parschat's team", "the
+        # parschat team" — so the marker is a suffix there, not a prefix.
+        suffix = haystack[position:position + 40]
+        return any(marker in suffix for marker in _TRAILING_AUDIENCE)
 
     @staticmethod
     def _reindex_onto(
