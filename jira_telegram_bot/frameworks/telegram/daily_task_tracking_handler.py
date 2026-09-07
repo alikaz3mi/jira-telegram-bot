@@ -60,6 +60,68 @@ from jira_telegram_bot.use_cases.speech.transcribe_voice_use_case import (
 # the message stops being readable on a phone.
 MAX_TASKS_OFFERED = 10
 
+# Phrases that ask for time to be logged rather than describe the work. The
+# worklog comment is read in Tempo months later by somebody who does not want
+# the sentence that produced it, so these come off.
+_LOGGING_FRAMING = (
+    r"می\s*خوام", r"میخوام", r"می\s*خواهم", r"لطفا", r"لطفاً",
+    r"ثبت\s*کن(م|ید)?", r"ثبت\s*بشه", r"تایم\s*بزن(م|ید)?",
+    r"تایم\s*گذاشتم", r"وقت\s*گذاشتم", r"کار\s*کردم", r"زمان\s*ثبت",
+    r"i\s+want\s+to\s+log", r"please\s+log", r"log\s+time",
+    r"i\s+worked\s+on", r"i\s+spent",
+    # Where the task lives and how the time was worked are their own fields.
+    r"توی\s*برد\s*خودم", r"در\s*برد\s*خودم", r"توی\s*برد\s*من",
+    r"تایم\s*ریموت", r"ساعت\s*ریموت", r"تایم\s*اضافه\s*کاری",
+)
+
+
+def _strip_logging_framing(description: str) -> str:
+    """Reduce a spoken request down to the work it describes.
+
+    "میخوام روی تسکهای برنامه ریزیم ۴ ساعت تایم ریموت ثبت کنم" is a request
+    to record time, not a description of work. Written to Jira verbatim it
+    becomes a worklog comment that says nothing about what was done — and
+    repeats the hours, the day and the work type, which are separate fields
+    on the same worklog.
+
+    Args:
+        description: What the parser extracted
+
+    Returns:
+        The work itself, or the original when nothing is left to keep.
+    """
+    trimmed = description.strip()
+    if not trimmed:
+        return ""
+
+    # Persian digits first, so the hour patterns below see numbers.
+    trimmed = trimmed.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+
+    # Hours come off before the framing phrases. Removing "تایم ریموت" first
+    # would split "۲ ساعت ریموت", stranding the number in the comment.
+    trimmed = re.sub(
+        r"\d+([.,]\d+)?\s*ساعت(\s*و\s*(نیم|ربع))?"
+        r"(\s*(ریموت|اضافه\s*کاری))?",
+        " ", trimmed,
+    )
+
+    for pattern in _LOGGING_FRAMING:
+        trimmed = re.sub(pattern, " ", trimmed, flags=re.IGNORECASE)
+
+    trimmed = re.sub(r"(?<![\w؀-ۿ])(ریموت|اضافه\s*کاری)(?![\w؀-ۿ])", " ", trimmed)
+    trimmed = re.sub(r"\b\d+([.,]\d+)?\s*hours?\b", " ", trimmed, flags=re.IGNORECASE)
+    trimmed = re.sub(
+        r"(برای\s*)?(روز\s*)?(امروز|دیروز|پریروز|شنبه|یکشنبه|دوشنبه|"
+        r"سه\s*شنبه|چهارشنبه|پنج\s*شنبه|جمعه)",
+        " ", trimmed,
+    )
+    trimmed = re.sub(r"^\s*(روی|بر\s*روی|on|for)\s+", " ", trimmed)
+    trimmed = re.sub(r"[\s،,.]+$", "", re.sub(r"\s{2,}", " ", trimmed)).strip()
+    trimmed = re.sub(r"^\s*(روی|بر\s*روی|و|then|and)\s+", "", trimmed).strip()
+
+    # Never hand back nothing: an unhelpful comment beats an empty one.
+    return trimmed or description.strip()
+
 
 class _TranscribedMessage:
     """A Telegram message whose text is a transcript.
@@ -1484,7 +1546,8 @@ class DailyTaskTrackingHandler:
         Returns:
             The comment to store, or None when there is nothing to say.
         """
-        parts = [part for part in (split.work_type, split.description) if part]
+        description = _strip_logging_framing(split.description or "")
+        parts = [part for part in (split.work_type, description) if part]
         return " — ".join(parts) or None
 
     @staticmethod

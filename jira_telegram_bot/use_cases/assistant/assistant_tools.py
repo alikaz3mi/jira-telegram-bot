@@ -1198,15 +1198,98 @@ class AssistantTools:
                 lines.append("   ✅ کار بازی روی این ریلیز نمانده.")
                 continue
 
-            lines.append(f"   {len(open_issues)} کار باز:")
-            for issue in open_issues[:MAX_RELEASE_ISSUES]:
-                owner = self._assignee_of(issue) or "بدون مسئول"
-                lines.append(f"      {self._story_line(issue)} — {owner}")
-            hidden = len(open_issues) - MAX_RELEASE_ISSUES
-            if hidden > 0:
-                lines.append(f"      و {hidden} مورد دیگر")
+            lines.extend(self._render_release_work(open_issues))
 
         return "\n".join(lines)
+
+    def _render_release_work(self, open_issues: Sequence) -> List[str]:
+        """List a release's open work as epics with their stories under them.
+
+        A flat list of issue keys makes somebody reconstruct the shape of
+        the release themselves. The epic is the deliverable a reader
+        recognises; the stories are how far along it is.
+
+        Args:
+            open_issues: The unfinished issues tagged with this release
+
+        Returns:
+            The rendered lines.
+        """
+        grouped, orphans = self._group_by_epic(open_issues)
+        lines = [f"   {self._digits(len(open_issues))} کار باز:"]
+
+        ordered = sorted(grouped.items(), key=lambda item: -len(item[1]))
+        for epic_key, stories in ordered:
+            title = escape(self._epic_title(epic_key) or epic_key)
+            done, total = self._epic_progress(epic_key, stories)
+            lines.append(
+                f"   ▪️ <b>{title}</b> — {self._digits(done)} از "
+                f"{self._digits(total)} انجام شده",
+            )
+            for issue in stories[:MAX_RELEASE_ISSUES]:
+                lines.append(f"      {self._story_line(issue, indent='      ')}")
+            hidden = len(stories) - MAX_RELEASE_ISSUES
+            if hidden > 0:
+                lines.append(f"      و {self._digits(hidden)} استوری دیگر")
+
+        if orphans:
+            lines.append("   ▪️ <b>بدون اپیک</b>")
+            for issue in orphans[:MAX_RELEASE_ISSUES]:
+                lines.append(f"      {self._story_line(issue, indent='      ')}")
+            hidden = len(orphans) - MAX_RELEASE_ISSUES
+            if hidden > 0:
+                lines.append(f"      و {self._digits(hidden)} مورد دیگر")
+
+        return lines
+
+    def _epic_progress(self, epic_key: str, open_stories: Sequence) -> tuple:
+        """How much of an epic is finished, counting everything under it.
+
+        The release query returns only unfinished work, so the open stories
+        alone cannot say how far along an epic is. This asks for the whole
+        epic once.
+
+        Args:
+            epic_key: The epic to measure
+            open_stories: Its unfinished stories, used when the count fails
+
+        Returns:
+            Stories done and stories in total.
+        """
+        try:
+            everything = self.task_manager_repository.search_issues(
+                jql=f'"Epic Link" = "{epic_key}"',
+                max_results=100,
+                fields="status",
+            )
+        except Exception as exc:
+            LOGGER.warning(f"Could not count progress of {epic_key}: {exc}")
+            return 0, len(open_stories)
+
+        total = len(everything or [])
+        if not total:
+            return 0, len(open_stories)
+        done = sum(1 for issue in everything if self._is_done(issue))
+        return done, total
+
+    @staticmethod
+    def _is_done(issue) -> bool:
+        """Whether an issue sits in Jira's Done category.
+
+        The category is read rather than the status name, because `Cancel`
+        is a Done status here and a released epic should count it as closed
+        rather than outstanding.
+
+        Args:
+            issue: The issue to inspect
+
+        Returns:
+            Whether it is finished.
+        """
+        status = getattr(getattr(issue, "fields", None), "status", None)
+        category = getattr(status, "statusCategory", None)
+        name = getattr(category, "name", None) or getattr(status, "name", "")
+        return str(name).strip().lower() in {"done", "complete", "closed"}
 
     def _open_for_version(self, project_key: str, name: str) -> Optional[List]:
         """The unfinished issues assigned to one release.
@@ -1227,7 +1310,7 @@ class AssistantTools:
                     f"AND statusCategory != Done"
                 ),
                 max_results=50,
-                fields="summary,status,assignee",
+                fields=f"summary,status,assignee,issuetype,{EPIC_LINK_FIELD}",
             )
         except Exception as exc:
             LOGGER.error(f"Issues for version {name!r} failed: {exc}")
@@ -1693,14 +1776,32 @@ class AssistantTools:
         summary = str(getattr(getattr(epic, "fields", None), "summary", "") or "")
         return summary.strip()
 
-    def _story_line(self, issue) -> str:
-        """Render one sprint story as a linked line with its status."""
+    def _story_line(self, issue, indent: str = "") -> str:
+        """Render one story as a linked title above its own detail line.
+
+        Nobody recognises their work by ``PARSCHAT-5999``, so the summary
+        carries the link and the key moves down beside the status and the
+        owner — the same shape every other list in the bot uses.
+        """
         fields = getattr(issue, "fields", None)
-        summary = str(getattr(fields, "summary", "") or "").strip()
+        key = str(issue.key)
+        summary = str(getattr(fields, "summary", "") or "").strip() or key
         if len(summary) > 60:
             summary = f"{summary[:59]}…"
+        summary = escape(summary)
+
+        title = (
+            f'<a href="{self.base_url}/browse/{key}">{summary}</a>'
+            if self.base_url
+            else summary
+        )
         status = getattr(getattr(fields, "status", None), "name", "") or "?"
-        return f"{self._link(str(issue.key))} — {summary} (وضعیت: {status})"
+        detail = [f"{self._status_icon(status)} {status}"]
+        owner = self._assignee_of(issue)
+        if owner:
+            detail.append(escape(str(owner)))
+        detail.append(key)
+        return f"• {title}\n{indent}   {' · '.join(detail)}"
 
     async def _may_read_project(self, project_key: str) -> tuple[bool, str]:
         """Whether the caller may see a whole project's sprint.

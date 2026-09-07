@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, Mock
 from jira_telegram_bot.entities.assistant_entities import UserRole
 from jira_telegram_bot.use_cases.assistant.agent_context import AssistantContext
 from jira_telegram_bot.use_cases.assistant.assistant_tools import AssistantTools
+from jira_telegram_bot.use_cases.assistant.assistant_tools import EPIC_LINK_FIELD
 
 
 def _version(name, released=False, due="2026-09-14", start=None,
@@ -109,12 +110,17 @@ class TestReleases(unittest.IsolatedAsyncioTestCase):
         self.assertIn("PARSCHAT-5999", result)
 
     async def test_only_unfinished_work_counts_as_gating(self):
-        jql = None
+        """Rendering also counts epic progress, so find the release query."""
         await self._tools().releases(project="پارسچت")
-        jql = self.repo.search_issues.call_args.kwargs["jql"]
 
-        self.assertIn("statusCategory != Done", jql)
-        self.assertIn("fixVersion", jql)
+        version_queries = [
+            call.kwargs["jql"]
+            for call in self.repo.search_issues.call_args_list
+            if "fixVersion" in call.kwargs.get("jql", "")
+        ]
+
+        self.assertTrue(version_queries)
+        self.assertIn("statusCategory != Done", version_queries[0])
 
     async def test_a_release_with_no_open_work_says_so(self):
         self.repo.search_issues.return_value = []
@@ -226,3 +232,105 @@ class TestReleases(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReleaseWorkIsGroupedByEpic(unittest.TestCase):
+    """A release lists its epics, not a flat run of issue keys.
+
+    Reported: the release report ran stories and epics together in one list,
+    so the shape of the release — which deliverable is where — had to be
+    reconstructed by the reader.
+    """
+
+    def setUp(self):
+        self.tools = AssistantTools.__new__(AssistantTools)
+        self.tools.base_url = "https://jira.example.com"
+        self.tools.task_manager_repository = Mock()
+        self.tools.task_manager_repository.search_issues = Mock(return_value=[])
+        self.tools.task_manager_repository.get_issue = Mock(
+            return_value=Mock(**{"fields.summary": "اعتبارسنجی اینستاگرام"}),
+        )
+
+    def _issue(self, key, summary, epic, status="Backlog", assignee="a_kazemi"):
+        issue = Mock()
+        issue.key = key
+        issue.fields.summary = summary
+        issue.fields.status.name = status
+        issue.fields.status.statusCategory.name = "To Do"
+        issue.fields.assignee.displayName = assignee
+        issue.fields.assignee.name = assignee
+        setattr(issue.fields, EPIC_LINK_FIELD, Mock(value=epic))
+        return issue
+
+    def test_stories_sit_under_their_epic(self):
+        issues = [
+            self._issue("PARSCHAT-1", "کار یک", "E1"),
+            self._issue("PARSCHAT-2", "کار دو", "E1"),
+        ]
+
+        rendered = "\n".join(self.tools._render_release_work(issues))
+
+        self.assertLess(
+            rendered.index("اعتبارسنجی اینستاگرام"),
+            rendered.index("کار یک"),
+        )
+
+    def test_the_epic_carries_its_progress(self):
+        self.tools.task_manager_repository.search_issues = Mock(
+            return_value=[Mock(**{"fields.status.statusCategory.name": "Done"})] * 2
+            + [Mock(**{"fields.status.statusCategory.name": "To Do"})] * 3,
+        )
+
+        rendered = "\n".join(
+            self.tools._render_release_work([self._issue("P-1", "کار", "E1")]),
+        )
+
+        self.assertIn("۲ از ۵ انجام شده", rendered)
+
+    def test_the_title_carries_the_link_not_the_key(self):
+        rendered = "\n".join(
+            self.tools._render_release_work([self._issue("P-1", "کار یک", "E1")]),
+        )
+
+        self.assertIn(
+            '<a href="https://jira.example.com/browse/P-1">کار یک</a>', rendered,
+        )
+        self.assertNotIn('">P-1</a>', rendered)
+
+    def test_the_key_still_appears_on_the_detail_line(self):
+        rendered = "\n".join(
+            self.tools._render_release_work([self._issue("P-1", "کار", "E1")]),
+        )
+
+        detail = [line for line in rendered.split("\n") if "Backlog" in line]
+        self.assertTrue(detail)
+        self.assertIn("P-1", detail[0])
+
+    def test_work_without_an_epic_is_still_reported(self):
+        """A story with no epic link must not vanish from the release."""
+        orphan = self._issue("P-9", "بدون اپیک", None)
+        setattr(orphan.fields, EPIC_LINK_FIELD, None)
+
+        rendered = "\n".join(self.tools._render_release_work([orphan]))
+
+        self.assertIn("بدون اپیک", rendered)
+        self.assertIn("P-9", rendered)
+
+    def test_a_summary_with_html_characters_is_escaped(self):
+        rendered = "\n".join(
+            self.tools._render_release_work([self._issue("P-1", "A & B", "E1")]),
+        )
+
+        self.assertIn("A &amp; B", rendered)
+
+    def test_an_unreadable_epic_count_falls_back_to_what_is_known(self):
+        self.tools.task_manager_repository.search_issues = Mock(
+            side_effect=Exception("504"),
+        )
+
+        rendered = "\n".join(
+            self.tools._render_release_work([self._issue("P-1", "کار", "E1")]),
+        )
+
+        self.assertIn("۰ از ۱", rendered)
+

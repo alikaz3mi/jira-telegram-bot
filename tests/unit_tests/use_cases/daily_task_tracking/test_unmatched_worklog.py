@@ -77,3 +77,62 @@ class TestUnmatchedSplit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnmatchedSplitShowsTheBoard(unittest.TestCase):
+    """A description that names work, but matches nothing, still gets help.
+
+    Reported: "میخوام روی تسکهای برنامه ریزیم ... ۴ ساعت تایم ریموت ثبت کنم"
+    was answered with "تسکی پیدا نکردم — کلید تسک را بنویسید". There is no
+    planning task on that board, so refusing to guess was right; asking for
+    an issue key while showing nothing was not. Somebody who cannot recall
+    their own keys has nowhere to go from there.
+    """
+
+    def setUp(self):
+        self.use_case = ConfirmWorklogReportUseCase()
+        self.candidates = [
+            _task("AK-13"), _task("AK-23"), _task("AK-16"),
+        ]
+
+    def _ask(self, description):
+        report = ParsedWorklogReport(
+            raw_text="...",
+            splits=[
+                ParsedWorklogSplit(
+                    hours=4, description=description, candidate_indices=[],
+                    confidence=0.2, status=WorklogSplitStatus.UNMATCHED,
+                ),
+            ],
+        )
+        return self.use_case.execute(report, self.candidates).questions[0]
+
+    def test_a_described_subject_gets_the_open_tasks_as_options(self):
+        question = self._ask("تسکهای برنامه ریزی")
+
+        self.assertTrue(question.options)
+        self.assertIn("AK-13", [option.issue_key for option in question.options])
+
+    def test_the_number_of_open_tasks_is_stated(self):
+        self.assertIn("۳ تسک باز", self._ask("تسکهای برنامه ریزی").text)
+
+    def test_typing_a_key_is_still_offered(self):
+        """The list is a shortcut, not the only way out."""
+        self.assertIn("PARSCHAT-123", self._ask("تسکهای برنامه ریزی").text)
+
+    def test_a_bare_work_type_still_offers_nothing(self):
+        """«ریموت» names no subject, so buttons there are a guess."""
+        self.assertEqual(self._ask("ریموت").options, [])
+
+    def test_a_bare_day_still_offers_nothing(self):
+        self.assertEqual(self._ask("دیروز").options, [])
+
+    def test_an_empty_description_offers_nothing(self):
+        self.assertEqual(self._ask("").options, [])
+
+    def test_the_options_are_capped(self):
+        self.candidates = [_task(f"AK-{index}") for index in range(20)]
+
+        question = self._ask("تسکهای برنامه ریزی")
+
+        self.assertLessEqual(len(question.options), 4)

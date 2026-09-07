@@ -195,6 +195,7 @@ class TaskAssistantAgent:
             ),
             answer,
         )
+        cleaned = TaskAssistantAgent._plain_spaces(cleaned)
         cleaned = TaskAssistantAgent._collapse_bare_urls(cleaned)
         cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned, flags=re.DOTALL)
         cleaned = re.sub(r"__(.+?)__", r"\1", cleaned, flags=re.DOTALL)
@@ -202,6 +203,26 @@ class TaskAssistantAgent:
             r"(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])", r"\1", cleaned,
         )
         return cleaned.strip()
+
+    @staticmethod
+    def _plain_spaces(answer: str) -> str:
+        """Turn HTML space entities back into spaces.
+
+        Indented lines come back from the model as ``&nbsp;&nbsp;&nbsp;``,
+        which Telegram renders literally — the reader sees the entity text
+        rather than the indent. The model is treating the answer as HTML it
+        should escape, which it is not: the tools already emit exactly the
+        markup Telegram accepts.
+
+        Args:
+            answer: The relayed answer
+
+        Returns:
+            The answer with space entities restored to spaces.
+        """
+        for entity in ("&nbsp;", "&#160;", "&#xa0;", "\u00a0"):
+            answer = answer.replace(entity, " ")
+        return answer
 
     @staticmethod
     def _collapse_bare_urls(answer: str) -> str:

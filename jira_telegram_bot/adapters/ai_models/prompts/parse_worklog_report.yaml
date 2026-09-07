@@ -1,6 +1,6 @@
 # ── metadata ───────────────────────────────────────────
 id: parse_worklog_report
-version: "2026-09-02"
+version: "2026-09-07"
 language: multi
 author: ai_agent_system
 temperature: 0.0
@@ -125,8 +125,24 @@ prompt: |
      When two rows fit roughly equally, list both and score below 0.5. It is
      far better to be asked than to log time against the wrong issue.
 
-  6. **description** is what the user said about that piece of work, in their
-     own words and their own language. Do not translate or embellish it.
+  6. **description** is the WORK ITSELF, in the user's own words and their
+     own language. Do not translate or embellish it.
+
+     This value is written into Jira as the worklog comment, where a
+     colleague reads it months later. So it must name what was done, not
+     the request to record it. Strip the framing:
+
+       "میخوام روی تسکهای برنامه ریزیم ۴ ساعت تایم ریموت ثبت کنم"
+         -> description: "تسکهای برنامه ریزی"
+       "امروز ۳ ساعت روی رفع باگ ورود کار کردم"
+         -> description: "رفع باگ ورود"
+       "I want to log 2 hours for the quota refactor"
+         -> description: "quota refactor"
+
+     Drop "میخوام", "ثبت کنم", "تایم گذاشتم", "کار کردم", "I want to log",
+     the hours, the day, and the way of working — hours, `worked_on` and
+     `work_type` are separate fields and repeating them in the description
+     duplicates them in the comment. What is left is the subject.
 
   7. **project_hint** is the project or product they named ("پارس‌چت"), if any.
      Empty string when they named none. A project named as the *audience* of

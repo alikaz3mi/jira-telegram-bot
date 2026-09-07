@@ -108,6 +108,23 @@ class TestTelegramHtmlOutput(unittest.TestCase):
 
         self.assertEqual(self._clean(markup), markup)
 
+    def test_space_entities_become_spaces(self):
+        """Indented lines came back as literal &nbsp; on the user's screen."""
+        result = self._clean(
+            "📦 R-1405-06\n&nbsp;&nbsp;&nbsp;5 کار باز:",
+        )
+
+        self.assertEqual(result, "📦 R-1405-06\n   5 کار باز:")
+
+    def test_numeric_space_entities_are_handled_too(self):
+        self.assertEqual(
+            self._clean("x\n&#160;&#160;y"), "x\n  y",
+        )
+
+    def test_other_entities_are_left_alone(self):
+        """An escaped ampersand is correct HTML and must survive."""
+        self.assertEqual(self._clean("a &amp; b"), "a &amp; b")
+
     def test_a_rendered_briefing_passes_through_unchanged(self):
         briefing = (
             "🔴 <b>۱ باگ فوری روی شما</b>\n"

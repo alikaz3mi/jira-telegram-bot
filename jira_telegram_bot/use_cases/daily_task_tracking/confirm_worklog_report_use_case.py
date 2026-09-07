@@ -24,6 +24,17 @@ HOURS_TOLERANCE = 0.05
 # Telegram inline keyboards get unreadable past a handful of buttons.
 MAX_OPTIONS = 4
 
+# Words that say how or when the work happened, never what it was. A split
+# carrying only these names no subject to match against.
+_NON_SUBJECTS = frozenset({
+    "ریموت", "اضافه‌کاری", "اضافه", "کاری", "امروز", "دیروز", "پریروز",
+    "صبح", "بعدازظهر", "عصر", "شب", "remote", "overtime", "today",
+    "yesterday", "ساعت", "کار", "کردم", "روی",
+})
+
+# Shorter than this and there is nothing for somebody to recognise.
+_MIN_SUBJECT_LENGTH = 4
+
 
 class WorklogQuestionOption(BaseModel):
     """One tappable answer to a disambiguation question."""
@@ -117,18 +128,49 @@ class ConfirmWorklogReportUseCase:
         hours = self._format_hours(split.hours)
 
         if not options:
-            # Nothing matched. Offering the first few of the user's issues
-            # looks like a choice but is a guess wearing a keyboard: the user
-            # may have just said the task does not exist. Say so and let them
-            # name it or drop the entry.
+            # Nothing matched what they described. Naming the closest few is
+            # not a guess dressed as a choice — the buttons are their own
+            # open issues, and picking one is the only way to record work on
+            # a task the description did not name. Asking for a typed key
+            # while showing nothing leaves somebody who cannot recall their
+            # own issue keys with nowhere to go.
+            # A description that names no work at all — "ریموت", "امروز" —
+            # gives nothing to choose against, so buttons there would be a
+            # guess dressed as a choice. A description that names work the
+            # ranker simply could not place is different: the person knows
+            # which task they meant, and only needs to see the list.
+            nearest = (
+                [
+                    WorklogQuestionOption(
+                        label=self._option_label(task),
+                        issue_key=task.issue_key,
+                    )
+                    for task in candidates[:MAX_OPTIONS]
+                ]
+                if self._describes_work(split)
+                else []
+            )
+            if not nearest:
+                return WorklogQuestion(
+                    split_index=index,
+                    text=(
+                        f"برای «{self._subject(split)}» ({hours} ساعت) تسکی "
+                        f"پیدا نکردم.\nکلید تسک را بنویسید (مثل "
+                        f"PARSCHAT-123)، یا اگر تسکی برایش ثبت نشده این مورد "
+                        f"را رد کنید."
+                    ),
+                    options=[],
+                )
             return WorklogQuestion(
                 split_index=index,
                 text=(
-                    f"برای «{self._subject(split)}» ({hours} ساعت) تسکی پیدا "
-                    f"نکردم.\nکلید تسک را بنویسید (مثل PARSCHAT-123)، یا اگر "
-                    f"تسکی برایش ثبت نشده این مورد را رد کنید."
+                    f"«{self._subject(split)}» ({hours} ساعت)\n"
+                    f"تسکی که دقیقاً به این بخورد پیدا نکردم. "
+                    f"{self._digits(len(candidates))} تسک باز دارید — "
+                    f"اگر یکی از این‌هاست انتخاب کنید، یا کلید تسک را "
+                    f"بنویسید (مثل PARSCHAT-123)، یا این مورد را رد کنید."
                 ),
-                options=[],
+                options=nearest,
             )
 
         # Say why the question is being asked. "Which task?" with four
@@ -163,6 +205,26 @@ class ConfirmWorklogReportUseCase:
     def _digits(value) -> str:
         """Write a number in Persian digits, as the rest of the bot does."""
         return str(value).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
+
+    @staticmethod
+    def _describes_work(split: ParsedWorklogSplit) -> bool:
+        """Whether the split says what was worked on, not just how or when.
+
+        "ریموت" is a way of working and "دیروز" is a day; neither narrows
+        anything, so a list of tasks beside one is noise. Anything longer
+        names a subject the person can match against their own board.
+
+        Args:
+            split: The unresolved piece of work
+
+        Returns:
+            Whether it is worth showing candidates for.
+        """
+        description = (split.description or "").strip()
+        if not description:
+            return False
+        words = [word for word in description.split() if word not in _NON_SUBJECTS]
+        return len(" ".join(words)) >= _MIN_SUBJECT_LENGTH
 
     @staticmethod
     def _subject(split: ParsedWorklogSplit) -> str:

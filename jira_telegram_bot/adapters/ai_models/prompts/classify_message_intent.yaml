@@ -1,6 +1,6 @@
 # ── metadata ───────────────────────────────────────────
 id: classify_message_intent
-version: "2026-09-03"
+version: "2026-09-07"
 language: multi
 author: ai_agent_system
 temperature: 0.0
@@ -48,7 +48,12 @@ prompt: |
 
     "تسکامو بگو" / "بهم تسکامو بگو بهت میگم"   -> show me my tasks
     "تسکام توی برد خودمو بهم میگی؟"            -> show me my board
+    "تسکهای برد خودم رو چک کن" / "تو اونجاست"  -> look at my board
     "چه تسکایی دارم؟" / "what are my tasks"    -> show me my tasks
+
+  Telling you to go and look — "چک کن", "ببین", "نگاه کن", "توی برد من هست",
+  "اونجاست" — is asking you to read the board, not reporting time. Answer it
+  as a "question" even when it arrives in the middle of logging work.
 
   Someone who cannot see their task list cannot tell you which task they
   worked on. Answering "بگویید چند ساعت و روی چه کاری" to a request for that
