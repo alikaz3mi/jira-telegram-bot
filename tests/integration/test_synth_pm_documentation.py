@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import Mock
 
 from jira_telegram_bot.entities.synth_pm.pm_board_features import SynthPMFeatureEntity
-from jira_telegram_bot.use_cases.synth_pm import SynthPMUseCase
+from jira_telegram_bot.use_cases.synth_pm_usecase import SynthPMUseCase
 
 
 class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
@@ -89,7 +89,9 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         # Assert
         self.assertEqual(result["status"], "success")
         self.assertIn("documentation", result)
-        self.assertIn("یوزر استوری (User Story)", result["documentation"])
+        # The user-story section is headed «توضیح کوتاه» in the template;
+        # this asserted a heading the generator has not written for a while.
+        self.assertIn("توضیح کوتاه", result["documentation"])
         self.assertIn("معیارهای پذیرش (Acceptance Criteria)", result["documentation"])
         self.assertIn("روش تست (Test Scenarios)", result["documentation"])
 
@@ -115,6 +117,9 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
             sheet_row_number=1,
             task_title="تست آپدیت مستندات",
             jira_issue_key="PC-456",
+            # The Jira update is gated on the developer-board key, not the
+            # jira_issue_key this fixture used to set alone.
+            developer_board_issue_key="DEV-456",
         )
 
         self.mock_settings.pm_project_key = "MYPROJECT"
@@ -157,15 +162,21 @@ class TestSynthPMDocumentationIntegration(unittest.IsolatedAsyncioTestCase):
         # Verify repository calls
         self.mock_repository.get_project_info.assert_called_once_with("MYPROJECT")
         self.mock_repository.update_jira_task_description.assert_called_once()
-        self.mock_repository.update_developer_board_feature.assert_called_once()
+        # The sheet write-back is commented out in the use case, so asserting
+        # it happens asserts the opposite of the code.
+        self.mock_repository.update_developer_board_feature.assert_not_called()
 
     async def test_documentation_generation_error_handling(self):
         """Test error handling in documentation generation."""
         # Arrange
+        # A feature with no description, acceptance criteria or test cases
+        # is skipped before the AI is ever called, so without content this
+        # test never reached the error path it was written for.
         feature = SynthPMFeatureEntity(
             row_number=1,
             sheet_row_number=1,
             task_title="تست خطا",
+            description="کاربر باید بتواند وارد شود",
         )
 
         project_info = {}

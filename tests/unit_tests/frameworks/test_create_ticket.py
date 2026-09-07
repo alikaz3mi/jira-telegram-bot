@@ -211,7 +211,9 @@ class TestCreateTaskData(unittest.TestCase):
 
         task_data = create_task_data("test_user", parsed_fields, "")
 
-        self.assertEqual(task_data.labels, [""])
+        # No label is an empty list, not a list holding a blank string: a
+        # blank label is a real label in Jira, and nobody asked for one.
+        self.assertEqual(task_data.labels, [])
 
     def test_create_task_with_unassigned_user(self):
         """Test task creation when user is not found (assignee/reporter = None)."""
@@ -582,13 +584,23 @@ class TestEdgeCases(unittest.TestCase):
 class TestProjectKeyConstant(unittest.TestCase):
     """Test project key constant usage."""
 
-    def test_project_key_is_proj1(self):
-        """Test that JIRA_PROJECT_KEY is set to PROJ1."""
+    def test_the_project_key_comes_from_sync_settings(self):
+        """The key is configuration, not a constant baked into the module.
+
+        This asserted a literal "PROJ1" that no longer appears anywhere in
+        the project: the key is the first configured sync project, so
+        hardcoding one made the test fail whenever settings changed.
+        """
         from jira_telegram_bot.frameworks.fast_api.create_ticket import (
             JIRA_PROJECT_KEY,
         )
+        from jira_telegram_bot.settings.jira_sync_settings import (
+            JiraSyncSettings,
+        )
 
-        self.assertEqual(JIRA_PROJECT_KEY, "PROJ1")
+        configured = JiraSyncSettings().sync_project_keys
+
+        self.assertEqual(JIRA_PROJECT_KEY, configured[0])
 
     def test_task_data_uses_correct_project_key(self):
         """Test that created task uses the correct project key."""
@@ -609,7 +621,11 @@ class TestProjectKeyConstant(unittest.TestCase):
 
             task_data = create_task_data("test_user", parsed_fields, "")
 
-            self.assertEqual(task_data.project_key, "PROJ1")
+            from jira_telegram_bot.frameworks.fast_api.create_ticket import (
+                JIRA_PROJECT_KEY,
+            )
+
+            self.assertEqual(task_data.project_key, JIRA_PROJECT_KEY)
 
 
 class TestLabelHandling(unittest.TestCase):
@@ -655,7 +671,7 @@ class TestLabelHandling(unittest.TestCase):
 
             task_data = create_task_data("test_user", parsed_fields, "")
 
-            self.assertEqual(task_data.labels, [""])
+            self.assertEqual(task_data.labels, [])
 
     def test_label_with_special_characters(self):
         """Test task creation with label containing special characters."""

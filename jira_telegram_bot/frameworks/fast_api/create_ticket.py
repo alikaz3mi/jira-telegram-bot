@@ -1354,6 +1354,14 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
             if issue_key:
                 break
     
+    # Read the channel this was forwarded from once, up front. The save
+    # below referenced channel_chat_id thirteen lines before it was assigned,
+    # so any forwarded message not already in the data store raised
+    # UnboundLocalError and the webhook returned an error.
+    channel_chat_id, channel_message_id = extract_channel_info_from_forward(
+        message,
+    )
+
     if issue_key:
         # Always update the group_chat_id and reply_message_id in the data store
         data_local = telegram_post_data_store.load_data_store()
@@ -1383,9 +1391,6 @@ async def handle_auto_forward_message(message: Dict[str, Any]) -> Dict[str, Any]
         
         # Send message only if issue is not pending
         if issue_key != "pending":
-            # Extract channel info from the forwarded message
-            channel_chat_id, channel_message_id = extract_channel_info_from_forward(message)
-            
             # Build message with both Jira and Telegram links if available
             if channel_chat_id and channel_message_id:
                 telegram_post_link = build_telegram_channel_post_link(channel_chat_id, channel_message_id)

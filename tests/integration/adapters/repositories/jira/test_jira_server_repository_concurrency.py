@@ -39,7 +39,13 @@ class TestJiraServerRepositoryConcurrency(unittest.TestCase):
         cls.test_project_key = "TEST"
         
         # Patch the JIRA client to avoid real API calls
-        cls.patcher = mock.patch('jira.JIRA')
+        # The repository does `from jira import JIRA`, binding the class
+        # into its own module, so patching `jira.JIRA` leaves it untouched:
+        # a real client was built and hung retrying against a fake domain.
+        cls.patcher = mock.patch(
+            "jira_telegram_bot.adapters.repositories.jira."
+            "jira_server_repository.JIRA",
+        )
         cls.mock_jira = cls.patcher.start()
         
         # Configure the mock JIRA client

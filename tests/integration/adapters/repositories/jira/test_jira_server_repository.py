@@ -40,7 +40,13 @@ class TestJiraServerRepository(unittest.TestCase):
         cls.test_project_key = "TEST"
         
         # Patch the JIRA client to avoid real API calls
-        cls.patcher = mock.patch('jira.JIRA')
+        # The repository does `from jira import JIRA`, binding the class
+        # into its own module, so patching `jira.JIRA` leaves it untouched:
+        # a real client was built and hung retrying against a fake domain.
+        cls.patcher = mock.patch(
+            "jira_telegram_bot.adapters.repositories.jira."
+            "jira_server_repository.JIRA",
+        )
         cls.mock_jira = cls.patcher.start()
         
         # Configure the mock JIRA client
@@ -77,9 +83,39 @@ class TestJiraServerRepository(unittest.TestCase):
         cls.mock_jira_instance.priorities.return_value = [mock_priority]
         
         # Mock issue creation
+        # The tests read fields back off the created issue, which a real Jira
+        # echoes. Only `.key` was configured, so every field assertion
+        # compared against an auto-generated MagicMock.
         mock_issue = mock.MagicMock()
         mock_issue.key = "TEST-123"
-        cls.mock_jira_instance.create_issue.return_value = mock_issue
+        mock_issue.fields.project.key = cls.test_project_key
+        mock_issue.fields.summary = "Integration Test Task"
+        mock_issue.fields.description = (
+            "This is a test task created by integration tests"
+        )
+        mock_issue.fields.issuetype.name = "Task"
+        mock_issue.fields.priority.name = "Medium"
+        mock_issue.fields.labels = ["integration-test"]
+
+        def create_issue(fields=None, **kwargs):
+            """Echo the summary back, the way a real create does."""
+            if fields and fields.get("summary"):
+                mock_issue.fields.summary = fields["summary"]
+            if fields and fields.get("labels"):
+                mock_issue.fields.labels = list(fields["labels"])
+            return mock_issue
+
+        def update_issue(fields=None, **kwargs):
+            """Write the update onto the issue, the way a real one does."""
+            for name, value in (fields or {}).items():
+                if name in {"summary", "description"}:
+                    setattr(mock_issue.fields, name, value)
+                elif name == "labels":
+                    mock_issue.fields.labels = list(value)
+
+        mock_issue.update.side_effect = update_issue
+
+        cls.mock_jira_instance.create_issue.side_effect = create_issue
         cls.mock_jira_instance.issue.return_value = mock_issue
         
         # Mock search
@@ -351,13 +387,19 @@ class TestJiraServerRepository(unittest.TestCase):
         new_issue = self.repository.create_task(task_data)
         self.created_issues.append(new_issue.key)
         
-        # Get labels for the project
+        # get_labels prefers a cached settings file and only falls back to
+        # searching issues. A sibling test writes that cache, so reading it
+        # here made the result depend on test order — remove it first and
+        # this test measures the search path it was written for.
+        cache = os.path.join(
+            DEFAULT_PATH, "jira_telegram_bot/settings/project_labels.json",
+        )
+        if os.path.exists(cache):
+            os.remove(cache)
+
         labels = self.repository.get_labels(self.test_project_key)
-        
-        # Verify we got some labels back
+
         self.assertIsNotNone(labels)
-        
-        # The labels we added to our test issue should be in the results
         for label in ["integration-test", "custom-label-1", "custom-label-2"]:
             self.assertIn(label, labels)
     

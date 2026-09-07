@@ -1,6 +1,6 @@
 # ── metadata ───────────────────────────────────────────
 id: classify_message_intent
-version: "2026-08-25"
+version: "2026-09-03"
 language: multi
 author: ai_agent_system
 temperature: 0.0
@@ -42,6 +42,22 @@ prompt: |
   Decide on what they want, not on keywords. A message that merely contains a
   number is not a worklog unless they say they SPENT that time. When a message
   both reports time and asks something, choose "worklog".
+
+  **An ASK is a question even inside a worklog conversation.** These are all
+  "question", however much the conversation has been about logging time:
+
+    "تسکامو بگو" / "بهم تسکامو بگو بهت میگم"   -> show me my tasks
+    "تسکام توی برد خودمو بهم میگی؟"            -> show me my board
+    "چه تسکایی دارم؟" / "what are my tasks"    -> show me my tasks
+
+  Someone who cannot see their task list cannot tell you which task they
+  worked on. Answering "بگویید چند ساعت و روی چه کاری" to a request for that
+  list is a dead end they cannot get out of.
+
+  **An intent to log time, with no time and no task, is "worklog" only when
+  they say nothing else.** "میخوام تایممو ثبت کنم" alone is "worklog" — you
+  will ask them for the details. But "میخوام تایممو ثبت کنم، تسکامو بگو"
+  asks for something first: that is a "question".
 
   **Read the message against the history.** A short fragment usually continues
   what came before rather than starting something new:

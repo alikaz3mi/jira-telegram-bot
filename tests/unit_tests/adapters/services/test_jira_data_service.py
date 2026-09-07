@@ -149,8 +149,17 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
     """Test cases for JiraDataService."""
 
     def setUp(self):
-        """Set up test dependencies."""
+        """Set up test dependencies.
+
+        The custom-field ids must be real strings: production code passes
+        them to ``getattr``, and a bare MagicMock attribute raises
+        ``TypeError: attribute name must be string``.
+        """
         self.mock_repository = MagicMock()
+        self.mock_repository.jira_actual_start_id = "customfield_10702"
+        self.mock_repository.jira_actual_end_id = "customfield_10703"
+        self.mock_repository.jira_target_start_id = "customfield_10109"
+        self.mock_repository.jira_target_end_id = "customfield_10110"
         self.service = JiraDataService(self.mock_repository)
 
     async def test_a_fetch_project_issues_success(self):
@@ -195,8 +204,12 @@ class TestJiraDataService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.fetch_project_issues(project_key)
 
         self.assertEqual(len(result), 150)
-        # Expect 2 pagination calls + 150 epic lookup calls = 152 total
-        self.assertEqual(self.mock_repository.search_issues.call_count, 152)
+        # Paging stops on a short batch, so a full batch is always followed
+        # by another request: 100 then 50 then the empty third call that
+        # ends the loop, plus one epic lookup per issue.
+        self.assertEqual(
+            self.mock_repository.search_issues.call_count, 3 + 150,
+        )
 
     async def test_a_fetch_project_issues_no_issues(self):
         """Test project issues fetching with no issues."""

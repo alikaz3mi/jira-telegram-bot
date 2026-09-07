@@ -7,6 +7,11 @@ from datetime import date
 from typing import TYPE_CHECKING
 from typing import Optional
 
+import shutil
+import tempfile
+from html import escape
+from pathlib import Path
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, MessageHandler, filters
 
@@ -44,6 +49,58 @@ from jira_telegram_bot.entities.daily_task_tracking.conversation_turn import (
     ConversationMemory,
 )
 from jira_telegram_bot.entities.assistant_entities import UserRole
+from jira_telegram_bot.use_cases.interfaces.transcriber_interface import (
+    TranscriptionError,
+)
+from jira_telegram_bot.use_cases.speech.transcribe_voice_use_case import (
+    TranscribeVoiceUseCase,
+)
+
+# A list offered inside a prompt is a reminder, not a report. Past this many
+# the message stops being readable on a phone.
+MAX_TASKS_OFFERED = 10
+
+
+class _TranscribedMessage:
+    """A Telegram message whose text is a transcript.
+
+    ``Message.text`` is read-only and empty on a voice update, while every
+    downstream branch of the text flow reads it. Wrapping rather than
+    reimplementing means voice keeps whatever the text path does next,
+    including anything added to it later.
+    """
+
+    def __init__(self, message, text: str):
+        """Initialize the stand-in.
+
+        Args:
+            message: The real message, which still serves the replies
+            text: What the recording said
+        """
+        self._message = message
+        self.text = text
+
+    def __getattr__(self, name: str):
+        """Defer everything else — reply methods included — to the real message."""
+        return getattr(self._message, name)
+
+
+class _TranscribedUpdate:
+    """An update whose ``message`` is the transcribed stand-in."""
+
+    def __init__(self, update, message):
+        """Initialize the stand-in.
+
+        Args:
+            update: The real update
+            message: The stand-in message carrying the transcript
+        """
+        self._update = update
+        self.message = message
+
+    def __getattr__(self, name: str):
+        """Defer everything else to the real update."""
+        return getattr(self._update, name)
 from jira_telegram_bot.use_cases.assistant.agent_context import AssistantContext
 from jira_telegram_bot.use_cases.assistant.task_assistant_agent import (
     TaskAssistantAgent,
@@ -101,6 +158,7 @@ class DailyTaskTrackingHandler:
         classify_message_intent_use_case: ClassifyMessageIntentUseCase = None,
         answer_task_question_use_case: AnswerTaskQuestionUseCase = None,
         task_assistant_agent: TaskAssistantAgent = None,
+        transcribe_voice_use_case: TranscribeVoiceUseCase = None,
         base_url: str = "",
     ):
         """Initialize the handler.
@@ -119,6 +177,8 @@ class DailyTaskTrackingHandler:
             answer_task_question_use_case: Answers questions about own tasks
             task_assistant_agent: Tool-using agent; preferred when available,
                 since it can look up other people and count as well as list
+            transcribe_voice_use_case: Turns a voice note into text; when
+                absent, voice messages are declined rather than ignored
             base_url: Jira base URL, used to hyperlink issue keys
         """
         self.record_delay = record_delay_reason_use_case
@@ -133,6 +193,7 @@ class DailyTaskTrackingHandler:
         self.classify_message_intent = classify_message_intent_use_case
         self.answer_task_question = answer_task_question_use_case
         self.task_assistant_agent = task_assistant_agent
+        self.transcribe_voice = transcribe_voice_use_case
         self.base_url = (base_url or "").rstrip("/")
         self.task_sender = None  # Will be set by SendDailyTaskRemindersUseCase
         # Also set by SendDailyTaskRemindersUseCase, which owns the bot the
@@ -557,6 +618,100 @@ class DailyTaskTrackingHandler:
         else:
             await self._handle_free_text(update, context)
 
+    async def handle_voice_message(
+        self,
+        update: Update,
+        context: CallbackContext,
+    ) -> None:
+        """Turn a voice note into text and route it like anything typed.
+
+        Speaking is how somebody reports a day's work while walking to a
+        meeting. Once transcribed the message goes through exactly the same
+        classify-and-route path as typed text, so voice gains every
+        behaviour that flow has rather than a parallel one that drifts.
+
+        Args:
+            update: Telegram update carrying the voice or audio
+            context: Callback context
+        """
+        message = update.message
+        voice = getattr(message, "voice", None) or getattr(message, "audio", None)
+        if not voice:
+            return
+
+        if not self.transcribe_voice:
+            await message.reply_text(persian_messages.VOICE_UNAVAILABLE)
+            return
+
+        notice = await message.reply_text(persian_messages.VOICE_TRANSCRIBING)
+        directory = Path(tempfile.mkdtemp(prefix="voice-"))
+        try:
+            transcript = await self._transcribe(voice, directory)
+        except TranscriptionError as exc:
+            LOGGER.warning(f"Could not transcribe a voice message: {exc}")
+            await notice.edit_text(persian_messages.VOICE_FAILED)
+            return
+        except Exception as exc:
+            LOGGER.error(f"Voice message failed: {exc}", exc_info=True)
+            await notice.edit_text(persian_messages.VOICE_FAILED)
+            return
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
+        # Show what was heard before acting on it. A misheard report that is
+        # acted on silently writes the wrong hours to the wrong task, and the
+        # user never sees the sentence that caused it.
+        await notice.edit_text(
+            persian_messages.VOICE_HEARD.format(text=escape(transcript.text)),
+            parse_mode="HTML",
+        )
+        await self._route_transcribed(update, context, transcript.text)
+
+    async def _transcribe(self, voice, directory: Path):
+        """Download one voice message and transcribe it.
+
+        Args:
+            voice: Telegram's Voice or Audio object
+            directory: A scratch directory to download into
+
+        Returns:
+            The transcript.
+
+        Raises:
+            TranscriptionError: When the recording could not become text.
+        """
+        telegram_file = await voice.get_file()
+        suffix = Path(telegram_file.file_path or "voice.oga").suffix or ".oga"
+        target = directory / f"voice{suffix}"
+        await telegram_file.download_to_drive(custom_path=str(target))
+
+        return await self.transcribe_voice.execute(
+            path=target,
+            mime_type=getattr(voice, "mime_type", None),
+            duration_seconds=getattr(voice, "duration", None),
+        )
+
+    async def _route_transcribed(
+        self,
+        update: Update,
+        context: CallbackContext,
+        text: str,
+    ) -> None:
+        """Send transcribed text down the path a typed message would take.
+
+        The state machine reads ``update.message.text``, which is read-only
+        on a voice update, so the transcript is presented through a stand-in
+        message carrying the same reply methods.
+
+        Args:
+            update: The original voice update
+            context: Callback context
+            text: What the transcript said
+        """
+        spoken = _TranscribedMessage(update.message, text)
+        stand_in = _TranscribedUpdate(update, spoken)
+        await self.handle_text_message(stand_in, context)
+
     async def _handle_custom_hours(
         self,
         update: Update,
@@ -909,12 +1064,17 @@ class DailyTaskTrackingHandler:
                 text, candidates, history=self._memory(context).render(),
             )
             if not report.splits:
-                # They mean to log time but have not said how much or on what.
+                # They mean to log time but have not said how much or on
+                # what. Asking blindly is a dead end: somebody who cannot
+                # see their tasks cannot name one, and repeating the same
+                # prompt leaves them no way forward. Show the list they
+                # would have to ask for anyway — it is already loaded.
                 await self._reply_and_remember(
                     context,
                     notice.edit_text,
                     text,
-                    persian_messages.WORKLOG_NEEDS_DETAIL,
+                    self._offer_the_task_list(candidates),
+                    parse_mode="HTML",
                 )
                 return
 
@@ -930,6 +1090,44 @@ class DailyTaskTrackingHandler:
             "candidate_objects": list(candidates),
         }
         await self._prompt_next_worklog_step(notice.edit_text, context, confirmation)
+
+    def _offer_the_task_list(self, candidates) -> str:
+        """Show what they could log against, instead of asking them to guess.
+
+        Args:
+            candidates: The caller's open tasks, already fetched
+
+        Returns:
+            The prompt with their own tasks under it.
+        """
+        shown = list(candidates)[:MAX_TASKS_OFFERED]
+        lines = [persian_messages.WORKLOG_NEEDS_DETAIL, ""]
+        lines.append(persian_messages.WORKLOG_YOUR_TASKS)
+        for task in shown:
+            lines.append(f"• {self._task_line(task)}")
+
+        hidden = len(candidates) - len(shown)
+        if hidden > 0:
+            lines.append(persian_messages.WORKLOG_MORE_TASKS.format(
+                count=self._digits(hidden),
+            ))
+        return "\n".join(lines)
+
+    def _task_line(self, task) -> str:
+        """One open task, named the way its owner recognises it."""
+        summary = escape((task.summary or "").strip() or task.issue_key)
+        if len(summary) > 60:
+            summary = f"{summary[:59]}…"
+        title = (
+            f'<a href="{self.base_url}/browse/{task.issue_key}">{summary}</a>'
+            if self.base_url else summary
+        )
+        return f"{title}\n   {task.issue_key}"
+
+    @staticmethod
+    def _digits(value) -> str:
+        """Write a number in Persian digits, as the rest of the bot does."""
+        return str(value).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
 
     async def _prompt_next_worklog_step(
         self,

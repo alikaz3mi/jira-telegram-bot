@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# ffmpeg normalises voice notes before transcription. Telegram sends Opus in
+# an .oga container; not every backend accepts it, and a local model will not.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY requirements.txt setup.py ./
 COPY jira_telegram_bot/__init__.py ./jira_telegram_bot/

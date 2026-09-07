@@ -2,7 +2,8 @@
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
+from unittest.mock import Mock, patch
 from concurrent.futures import ThreadPoolExecutor
 
 from jira_telegram_bot.frameworks.api.endpoints.metrics.metrics_webhook_endpoint import MetricsWebhookEndpoint
@@ -15,12 +16,21 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
     
     def setUp(self):
         """Set up test fixtures."""
+        # The endpoint collaborates with controllers now, not use cases, and
+        # calls one method — process_webhook — on each. The tests still named
+        # the older seam, so nothing they asserted on was ever called.
         self.process_jira_use_case = AsyncMock()
         self.process_gitlab_use_case = AsyncMock()
-        
+        self.process_jira_use_case.process_webhook.return_value = Mock(
+            status="success", message="",
+        )
+        self.process_gitlab_use_case.process_webhook.return_value = Mock(
+            status="success", message="",
+        )
+
         self.endpoint = MetricsWebhookEndpoint(
-            process_jira_event_use_case=self.process_jira_use_case,
-            process_gitlab_event_use_case=self.process_gitlab_use_case
+            jira_webhook_controller=self.process_jira_use_case,
+            gitlab_webhook_controller=self.process_gitlab_use_case,
         )
     
     async def test_concurrent_jira_webhooks_idempotency(self):
@@ -40,7 +50,9 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
         }
         
         # Configure use case to succeed
-        self.process_jira_use_case.process_jira_webhook.return_value = True
+        self.process_jira_use_case.process_webhook.return_value = Mock(
+            status="success", message="",
+        )
         
         # Act - Send 20 concurrent webhooks with same event
         tasks = []
@@ -57,7 +69,7 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result)  # No exceptions raised
         
         # Use case should be called 20 times (once per webhook)
-        self.assertEqual(self.process_jira_use_case.process_jira_webhook.call_count, 20)
+        self.assertEqual(self.process_jira_use_case.process_webhook.call_count, 20)
     
     async def test_concurrent_gitlab_webhooks_different_events(self):
         """Test processing concurrent GitLab webhooks with different events."""
@@ -88,7 +100,9 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
         }
         
         # Configure use case to succeed
-        self.process_gitlab_use_case.process_gitlab_webhook.return_value = True
+        self.process_gitlab_use_case.process_webhook.return_value = Mock(
+            status="success", message="",
+        )
         
         # Act - Send concurrent different webhooks
         tasks = []
@@ -104,7 +118,7 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result)  # No exceptions raised
         
         # Use case should be called 20 times total
-        self.assertEqual(self.process_gitlab_use_case.process_gitlab_webhook.call_count, 20)
+        self.assertEqual(self.process_gitlab_use_case.process_webhook.call_count, 20)
     
     async def test_webhook_processing_with_failures(self):
         """Test webhook processing when some events fail."""
@@ -125,9 +139,10 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
         def side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            return call_count % 2 == 0  # Succeed on even calls
+            status = "success" if call_count % 2 == 0 else "error"
+            return Mock(status=status, message="alternating failure")
         
-        self.process_jira_use_case.process_jira_webhook.side_effect = side_effect
+        self.process_jira_use_case.process_webhook.side_effect = side_effect
         
         # Act - Send 10 webhooks
         tasks = []
@@ -143,7 +158,7 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result)  # No exceptions raised from background tasks
         
         # Use case should be called 10 times
-        self.assertEqual(self.process_jira_use_case.process_jira_webhook.call_count, 10)
+        self.assertEqual(self.process_jira_use_case.process_webhook.call_count, 10)
     
     async def test_mixed_webhook_types_concurrent_processing(self):
         """Test concurrent processing of mixed webhook types."""
@@ -173,8 +188,12 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
         }
         
         # Configure use cases to succeed
-        self.process_jira_use_case.process_jira_webhook.return_value = True
-        self.process_gitlab_use_case.process_gitlab_webhook.return_value = True
+        self.process_jira_use_case.process_webhook.return_value = Mock(
+            status="success", message="",
+        )
+        self.process_gitlab_use_case.process_webhook.return_value = Mock(
+            status="success", message="",
+        )
         
         # Act - Send mixed webhooks concurrently
         tasks = []
@@ -190,8 +209,8 @@ class TestMetricsWebhookIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result)
         
         # Both use cases should be called 5 times each
-        self.assertEqual(self.process_jira_use_case.process_jira_webhook.call_count, 5)
-        self.assertEqual(self.process_gitlab_use_case.process_gitlab_webhook.call_count, 5)
+        self.assertEqual(self.process_jira_use_case.process_webhook.call_count, 5)
+        self.assertEqual(self.process_gitlab_use_case.process_webhook.call_count, 5)
     
     async def _process_jira_webhook_background(self, payload):
         """Helper method to simulate background Jira webhook processing."""

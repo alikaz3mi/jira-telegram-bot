@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 from datetime import datetime
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from jira_telegram_bot.adapters.repositories.postgres.jira_report_repository import JiraReportRepository
@@ -25,18 +26,29 @@ class TestJiraReportSystemIntegration(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         """Set up each test."""
-        # Mock database connections
-        self.db_patch = patch('jira_telegram_bot.adapters.repositories.jira_report_repository.create_engine')
-        self.session_patch = patch('jira_telegram_bot.adapters.repositories.jira_report_repository.sessionmaker')
+        # The repository takes an injected DatabaseConnectionInterface now
+        # and no longer builds its own engine, so the create_engine and
+        # sessionmaker patches targeted names the module does not have.
+        # Stubbing schema creation is what those patches were really for.
         self.schema_patch = patch.object(JiraReportRepository, '_ensure_schema_exists')
-        
-        self.mock_engine = self.db_patch.start()
-        self.mock_sessionmaker = self.session_patch.start()
         self.schema_patch.start()
+
+        # The repository asks its connection for a session per call, so one
+        # mock connection stands in for the engine and sessionmaker that the
+        # tests used to patch inside the module.
+        self.mock_session = MagicMock()
+        self.db_connection = MagicMock()
+        self.db_connection.get_session.return_value = self.mock_session
         
         # Mock Jira repository
         self.jira_repo_patch = patch('jira_telegram_bot.adapters.services.jira_data_service.TaskManagerRepositoryInterface')
         self.mock_jira_repo = self.jira_repo_patch.start()
+        # These ids are passed to getattr, which rejects a MagicMock.
+        instance = self.mock_jira_repo.return_value
+        instance.jira_actual_start_id = "customfield_10702"
+        instance.jira_actual_end_id = "customfield_10703"
+        instance.jira_target_start_id = "customfield_10109"
+        instance.jira_target_end_id = "customfield_10110"
         
         # Mock scheduler
         self.scheduler_patch = patch('jira_telegram_bot.frameworks.scheduler.ap_scheduler_service.AsyncIOScheduler')
@@ -59,14 +71,14 @@ class TestJiraReportSystemIntegration(unittest.IsolatedAsyncioTestCase):
         ]
         
         # Mock database session
-        mock_session = self.mock_sessionmaker.return_value.return_value
+        mock_session = self.mock_session
         mock_session.merge.return_value = None
         mock_session.commit.return_value = None
         mock_session.query.return_value.filter.return_value.all.return_value = []
         
         # Create services
         jira_service = JiraDataService(mock_jira_repo_instance)
-        repository = JiraReportRepository()
+        repository = JiraReportRepository(self.db_connection)
         use_case = GenerateJiraReportUseCase(jira_service, repository)
         
         # Act
@@ -92,7 +104,7 @@ class TestJiraReportSystemIntegration(unittest.IsolatedAsyncioTestCase):
         ]
         
         # Mock database
-        mock_session = self.mock_sessionmaker.return_value.return_value
+        mock_session = self.mock_session
         mock_session.merge.return_value = None
         mock_session.commit.return_value = None
         mock_session.query.return_value.filter.return_value.all.return_value = []
@@ -103,7 +115,7 @@ class TestJiraReportSystemIntegration(unittest.IsolatedAsyncioTestCase):
         
         # Create services
         jira_service = JiraDataService(mock_jira_repo_instance)
-        repository = JiraReportRepository()
+        repository = JiraReportRepository(self.db_connection)
         report_use_case = GenerateJiraReportUseCase(jira_service, repository)
         scheduler_service = APSchedulerService()
         scheduled_use_case = ScheduledReportUseCase(
@@ -138,14 +150,14 @@ class TestJiraReportSystemIntegration(unittest.IsolatedAsyncioTestCase):
         ]
         
         # Mock database
-        mock_session = self.mock_sessionmaker.return_value.return_value
+        mock_session = self.mock_session
         mock_session.merge.return_value = None
         mock_session.commit.return_value = None
         mock_session.query.return_value.filter.return_value.all.return_value = []
         
         # Create services
         jira_service = JiraDataService(mock_jira_repo_instance)
-        repository = JiraReportRepository()
+        repository = JiraReportRepository(self.db_connection)
         use_case = GenerateJiraReportUseCase(jira_service, repository)
         
         # Act - Generate reports concurrently
@@ -172,20 +184,33 @@ class TestJiraReportSystemIntegration(unittest.IsolatedAsyncioTestCase):
         
         # Mock Jira responses - simulate failures for some projects
         mock_jira_repo_instance = self.mock_jira_repo.return_value
-        mock_jira_repo_instance.search_issues.side_effect = [
-            Exception("Network error"),  # FAIL1
-            [self._create_mock_jira_issue("SUCCESS-1")],  # SUCCESS
-            Exception("Timeout error"),  # FAIL2
-        ]
+        # One outcome per project, not per call: fetching a project makes
+        # several calls (pagination, then an epic lookup per issue), so a
+        # flat list was consumed by the first project alone.
+        outcomes = {
+            "FAIL1": Exception("Network error"),
+            "SUCCESS": [self._create_mock_jira_issue("SUCCESS-1")],
+            "FAIL2": Exception("Timeout error"),
+        }
+
+        def search_issues(jql, start_at=0, max_results=25, **kwargs):
+            for project, outcome in outcomes.items():
+                if f"project = {project}" in jql or f'project = "{project}"' in jql:
+                    if isinstance(outcome, Exception):
+                        raise outcome
+                    return outcome if start_at == 0 else []
+            return []
+
+        mock_jira_repo_instance.search_issues.side_effect = search_issues
         
         # Mock database
-        mock_session = self.mock_sessionmaker.return_value.return_value
+        mock_session = self.mock_session
         mock_session.merge.return_value = None
         mock_session.commit.return_value = None
         
         # Create services
         jira_service = JiraDataService(mock_jira_repo_instance)
-        repository = JiraReportRepository()
+        repository = JiraReportRepository(self.db_connection)
         use_case = GenerateJiraReportUseCase(jira_service, repository)
         
         # Act & Assert - Test individual project failures
@@ -209,26 +234,31 @@ class TestJiraReportSystemIntegration(unittest.IsolatedAsyncioTestCase):
         mock_jira_repo_instance = self.mock_jira_repo.return_value
         
         # Create batches for pagination simulation
-        batch_size = 100
-        batches = []
-        for i in range(0, len(mock_large_issues), batch_size):
-            batch = [
-                self._create_mock_jira_issue(issue.key) 
-                for issue in mock_large_issues[i:i + batch_size]
-            ]
-            batches.append(batch)
-        
-        mock_jira_repo_instance.search_issues.side_effect = batches
+        # Pagination pulls 25 at a time and then makes one epic lookup per
+        # issue, so a fixed list of batches runs out and the mock raises
+        # StopIteration. Serving pages on demand tracks whatever the
+        # repository actually asks for.
+        issues = [
+            self._create_mock_jira_issue(issue.key)
+            for issue in mock_large_issues
+        ]
+
+        def search_issues(jql, start_at=0, max_results=25, **kwargs):
+            if "project = " in jql and "key" not in jql:
+                return issues[start_at:start_at + max_results]
+            return []
+
+        mock_jira_repo_instance.search_issues.side_effect = search_issues
         
         # Mock database
-        mock_session = self.mock_sessionmaker.return_value.return_value
+        mock_session = self.mock_session
         mock_session.merge.return_value = None
         mock_session.commit.return_value = None
         mock_session.query.return_value.filter.return_value.all.return_value = []
         
         # Create services
         jira_service = JiraDataService(mock_jira_repo_instance)
-        repository = JiraReportRepository()
+        repository = JiraReportRepository(self.db_connection)
         use_case = GenerateJiraReportUseCase(jira_service, repository)
         
         # Act

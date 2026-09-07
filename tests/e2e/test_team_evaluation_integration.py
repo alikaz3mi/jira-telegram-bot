@@ -13,12 +13,20 @@ from jira_telegram_bot.use_cases.team_evaluation import (
     SprintClosedTeamEvaluationUseCase,
 )
 
-os.environ["TEAM_EVALUATION_SHEET_ID"] = "test_sheet_id_12345"
-os.environ["TEAM_EVALUATION_DRY_RUN"] = "true"
+# These were set at import time, so merely collecting this module turned on
+# dry-run for every TeamEvaluationSettings built afterwards — and a later
+# test that asserts logs ARE saved then failed, but only when run as part of
+# the whole suite. Scoped to this test and restored on the way out.
+_TEST_ENVIRONMENT = {
+    "TEAM_EVALUATION_SHEET_ID": "test_sheet_id_12345",
+    "TEAM_EVALUATION_DRY_RUN": "true",
+}
 
 
 async def test_team_evaluation_integration():
     """Test the complete team evaluation integration."""
+    previous = {key: os.environ.get(key) for key in _TEST_ENVIRONMENT}
+    os.environ.update(_TEST_ENVIRONMENT)
     try:
         LOGGER.info("🚀 Starting Team Evaluation Integration Test...")
 
@@ -54,6 +62,17 @@ async def test_team_evaluation_integration():
     except Exception as e:
         LOGGER.error(f"❌ Integration test failed: {e}")
         return False
+    finally:
+        _restore_environment(previous)
+
+
+def _restore_environment(previous: dict) -> None:
+    """Put the environment back the way this module found it."""
+    for key, value in previous.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 if __name__ == "__main__":

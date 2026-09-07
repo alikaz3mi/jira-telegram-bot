@@ -188,6 +188,15 @@ def setup_and_run():
             daily_task_tracking_handler.handle_text_message
         )
     )
+
+    # A voice note is transcribed and then routed exactly like typed text,
+    # so speaking gains every behaviour the text flow has.
+    application.add_handler(
+        MessageHandler(
+            filters.VOICE | filters.AUDIO,
+            daily_task_tracking_handler.handle_voice_message
+        )
+    )
     
     application.add_error_handler(error)
     startup()

@@ -297,6 +297,9 @@ class TestCreateTicketE2E(unittest.TestCase):
         mock_user = Mock()
         mock_user.jira_username = "test_user"
         mock_user.telegram_id = 123456
+        # Production reads telegram_user_chat_id, not telegram_id. Left as an
+        # auto-Mock it reached the fake sender, which compares chat_id < 0.
+        mock_user.telegram_user_chat_id = 123456
         self.mock_user_config.get_user_config.return_value = mock_user
         self.mock_user_config.get_user_by_jira_username.return_value = mock_user
 

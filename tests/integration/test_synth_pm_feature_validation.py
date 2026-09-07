@@ -16,8 +16,12 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        # Create mocks
-        self.repository = MagicMock()
+        # Create mocks. The repository is async: the use case awaits most of
+        # its methods, and a plain MagicMock raises "can't be used in 'await'
+        # expression" — which the use case catches and reports as a failed
+        # sync, so a test asserting on the result measured an error rather
+        # than the behaviour it named.
+        self.repository = AsyncMock()
         self.settings = MagicMock()
         self.user_config = MagicMock()
         self.notification_gateway = MagicMock()
@@ -29,7 +33,12 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
         self.project_config.sync_settings.minimum_status_for_task_creation = (
             "۵. آماده پیاده سازی فنی"
         )
+        # These reach SynthPMSheetSyncStatus, a Pydantic model that rejects
+        # a MagicMock where it expects a string.
+        self.project_config.spreadsheet_id = "sheet-1"
+        self.project_config.boards.developer_board.sheet_name = "Developer Board"
         self.repository.project_config = self.project_config
+        self.repository.validate_feature_for_task_creation = MagicMock()
         
         # Create use case
         self.use_case = SynthPMUseCase(
@@ -45,6 +54,7 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
         """Test that empty rows are skipped without error."""
         feature = SynthPMFeatureEntity(
             row_number=1,
+            sheet_row_number=1,
             task_title="",  # Empty
         )
         
@@ -66,11 +76,12 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
         """Test that features with low status are skipped."""
         feature = SynthPMFeatureEntity(
             row_number=5,
+            sheet_row_number=5,
             task_title="Early Stage Feature",
             status="۲. تحلیل مسئله و RFP",  # Below minimum
             involved_people="User1",
             sprint="Sprint-1",
-            ai=True,
+            ai="1",
             implementation_start_date="2024-01-01",
         )
         
@@ -96,11 +107,12 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
         """Test that features without assignees are skipped."""
         feature = SynthPMFeatureEntity(
             row_number=10,
+            sheet_row_number=10,
             task_title="Unassigned Feature",
             status="۶. در حال پیاده سازی",
             involved_people="",  # Empty
             sprint="Sprint-1",
-            ai=True,
+            ai="1",
             implementation_start_date="2024-01-01",
         )
         
@@ -124,12 +136,13 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
         """Test that valid features create tasks successfully."""
         feature = SynthPMFeatureEntity(
             row_number=15,
+            sheet_row_number=15,
             task_title="Valid Feature",
             status="۶. در حال پیاده سازی",
             involved_people="User1, User2",
             sprint="Sprint-1",
-            ai=True,
-            backend=True,
+            ai="1",
+            backend="1",
             implementation_start_date="2024-01-01",
             deadline="2024-01-31",
             jira_issue_key=None,  # No task created yet
@@ -164,29 +177,32 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
         features = [
             SynthPMFeatureEntity(
                 row_number=1,
+                sheet_row_number=1,
                 task_title="Feature 1",
                 status="۱. ثبت و اولویت بندی",  # Low status
                 involved_people="User1",
                 sprint="Sprint-1",
-                ai=True,
+                ai="1",
                 implementation_start_date="2024-01-01",
             ),
             SynthPMFeatureEntity(
                 row_number=2,
+                sheet_row_number=2,
                 task_title="Feature 2",
                 status="۶. در حال پیاده سازی",
                 involved_people="",  # No assignees
                 sprint="Sprint-1",
-                ai=True,
+                ai="1",
                 implementation_start_date="2024-01-01",
             ),
             SynthPMFeatureEntity(
                 row_number=3,
+                sheet_row_number=3,
                 task_title="Feature 3",
                 status="۶. در حال پیاده سازی",
                 involved_people="User1",
                 sprint="",  # No sprint
-                ai=True,
+                ai="1",
                 implementation_start_date="2024-01-01",
             ),
         ]
@@ -219,38 +235,63 @@ class TestSynthPMFeatureProcessingIntegration(unittest.TestCase):
         features = [
             SynthPMFeatureEntity(
                 row_number=1,
+                sheet_row_number=1,
                 task_title="Valid Feature",
                 status="۶. در حال پیاده سازی",
                 involved_people="User1",
                 sprint="Sprint-1",
-                ai=True,
+                ai="1",
                 implementation_start_date="2024-01-01",
                 jira_issue_key="PROJ-1",
                 developer_board_issue_key="DEV-1",
             ),
             SynthPMFeatureEntity(
                 row_number=2,
+                sheet_row_number=2,
                 task_title="Invalid Feature",
                 status="۲. تحلیل مسئله و RFP",
                 involved_people="User1",
                 sprint="Sprint-1",
-                ai=True,
+                ai="1",
                 implementation_start_date="2024-01-01",
             ),
         ]
         
         self.repository.get_developer_board_features = AsyncMock(return_value=features)
+        # Every feature is treated as new, so _process_feature runs for each
+        # and the skip counting under test actually happens.
+        self.repository.detect_feature_changes = AsyncMock(
+            return_value={
+                "new": features, "modified": [], "needs_docs": [],
+            },
+        )
         self.repository.get_change_tracker = AsyncMock(return_value=Mock(snapshots={}))
         self.repository.update_change_tracker = AsyncMock()
         self.repository.update_sync_status = AsyncMock()
         
-        # Mock validation
+        # Mock validation. The sync validates through two entry points —
+        # features that already carry a board issue go to
+        # validate_feature_for_update, the rest to
+        # validate_feature_for_task_creation — so stubbing only one leaves
+        # the other returning a truthy MagicMock and nothing is ever skipped.
         def mock_validate(feature, minimum_status=None):
             if feature.row_number == 2:
                 return False, "Row 2: Status below minimum"
             return True, None
-        
-        self.repository.validate_feature_for_task_creation.side_effect = mock_validate
+
+        self.repository.validate_feature_for_task_creation = MagicMock(
+            side_effect=mock_validate,
+        )
+        self.repository.validate_feature_for_update = MagicMock(
+            side_effect=mock_validate,
+        )
+
+        # The sync also awaits these two passes. Left as plain MagicMocks
+        # they raise "can't be used in 'await' expression", which the use
+        # case catches and reports as a failed sync — so the assertion below
+        # was measuring an error, not a skip.
+        self.use_case._sync_remaining_hours = AsyncMock()
+        self.use_case._sync_jira_statuses_to_sheet = AsyncMock()
         
         # Run sync
         result = await self.use_case.sync_developer_board_features()

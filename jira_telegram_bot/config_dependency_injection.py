@@ -15,6 +15,13 @@ from jira_telegram_bot.adapters.ai_models.ai_agents.langchain_ai_agent import (
 )
 from jira_telegram_bot.adapters.ai_models.llm_models import LLMModels
 from jira_telegram_bot.adapters.ai_models.speech_to_text import SpeechProcessor
+from jira_telegram_bot.adapters.speech.registry import build_audio_stages
+from jira_telegram_bot.adapters.speech.registry import build_text_stages
+from jira_telegram_bot.adapters.speech.registry import build_transcriber
+from jira_telegram_bot.settings.speech_settings import SpeechSettings
+from jira_telegram_bot.use_cases.speech.transcribe_voice_use_case import (
+    TranscribeVoiceUseCase,
+)
 from jira_telegram_bot.adapters.controllers.gitlab_webhook_controller import (
     GitlabWebhookController,
 )
@@ -198,6 +205,9 @@ from jira_telegram_bot.use_cases.interfaces.scheduler_service_interface import (
 )
 from jira_telegram_bot.use_cases.interfaces.speech_processor_interface import (
     SpeechProcessorInterface,
+)
+from jira_telegram_bot.use_cases.interfaces.transcriber_interface import (
+    TranscriberInterface,
 )
 from jira_telegram_bot.use_cases.interfaces.synth_pm_repository_interface import (
     SynthPMRepositoryInterface,
@@ -521,6 +531,21 @@ def _configure_ai_agents_and_models(container: Container) -> None:
     )
     container[SpeechProcessorInterface] = Singleton(
         lambda c: SpeechProcessor(c[OpenAISettings]),
+    )
+
+    # Speech to text, assembled from settings so the backend and the stages
+    # around it are a configuration choice rather than a code change.
+    container[SpeechSettings] = Singleton(lambda c: SpeechSettings())
+    container[TranscriberInterface] = Singleton(
+        lambda c: build_transcriber(c[OpenAISettings], c[SpeechSettings]),
+    )
+    container[TranscribeVoiceUseCase] = Singleton(
+        lambda c: TranscribeVoiceUseCase(
+            transcriber=c[TranscriberInterface],
+            settings=c[SpeechSettings],
+            audio_stages=build_audio_stages(c[SpeechSettings]),
+            text_stages=build_text_stages(c[SpeechSettings]),
+        ),
     )
 
     # AI services
@@ -1124,6 +1149,7 @@ def _configure_daily_task_tracking(container: Container):
             classify_message_intent_use_case=c[ClassifyMessageIntentUseCase],
             answer_task_question_use_case=c[AnswerTaskQuestionUseCase],
             task_assistant_agent=c[TaskAssistantAgent],
+            transcribe_voice_use_case=c[TranscribeVoiceUseCase],
             base_url=str(c[JiraConnectionSettings].domain).rstrip("/"),
         )
     )
