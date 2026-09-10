@@ -1135,7 +1135,7 @@ class DailyTaskTrackingHandler:
                     context,
                     notice.edit_text,
                     text,
-                    self._offer_the_task_list(candidates),
+                    self._offer_the_task_list(candidates, text),
                     parse_mode="HTML",
                 )
                 return
@@ -1153,15 +1153,22 @@ class DailyTaskTrackingHandler:
         }
         await self._prompt_next_worklog_step(notice.edit_text, context, confirmation)
 
-    def _offer_the_task_list(self, candidates) -> str:
+    def _offer_the_task_list(self, candidates, text: str = "") -> str:
         """Show what they could log against, instead of asking them to guess.
+
+        When the message names a project, the list is narrowed to it. Showing
+        every project after somebody said "سمت آواخرد" answers a question
+        they did not ask and buries the four rows they meant under thirty
+        they did not.
 
         Args:
             candidates: The caller's open tasks, already fetched
+            text: The message, which may name a project
 
         Returns:
             The prompt with their own tasks under it.
         """
+        candidates = self._narrow_to_named_project(candidates, text)
         shown = list(candidates)[:MAX_TASKS_OFFERED]
         lines = [persian_messages.WORKLOG_NEEDS_DETAIL, ""]
         lines.append(persian_messages.WORKLOG_YOUR_TASKS)
@@ -1174,6 +1181,42 @@ class DailyTaskTrackingHandler:
                 count=self._digits(hidden),
             ))
         return "\n".join(lines)
+
+    def _narrow_to_named_project(self, candidates, text: str):
+        """Keep only the project the message named, when it named one.
+
+        Args:
+            candidates: The caller's open tasks
+            text: The message, which may name a project
+
+        Returns:
+            The narrowed tasks, or all of them when no project resolves or
+            the named one holds none — an empty list helps nobody.
+        """
+        parser = getattr(self, "parse_worklog_report", None)
+        if not text or not parser:
+            return candidates
+
+        try:
+            project_key = parser.project_named_in(text)
+        except Exception as exc:
+            LOGGER.warning(f"Could not read a project from the message: {exc}")
+            return candidates
+
+        if not project_key:
+            return candidates
+
+        narrowed = [
+            task for task in candidates if task.project_key == project_key
+        ]
+        if not narrowed:
+            LOGGER.info(
+                f"Offer narrowed to {project_key} found nothing; "
+                f"showing all {len(candidates)}",
+            )
+            return candidates
+
+        return narrowed
 
     def _task_line(self, task) -> str:
         """One open task, named the way its owner recognises it."""

@@ -261,6 +261,21 @@ class ParseWorklogReportUseCase:
             )
         return narrowed
 
+    def project_named_in(self, text: str) -> Optional[str]:
+        """The project key a message names, if it names one.
+
+        The handler needs this too, to narrow the task list it offers when a
+        report cannot be parsed. Exposed rather than reached into, since two
+        callers make it a capability rather than an internal step.
+
+        Args:
+            text: The user's message
+
+        Returns:
+            The canonical project key, or None when none is named.
+        """
+        return self._resolve_project_key(self._spoken_project(text))
+
     def _spoken_project(self, text: str) -> Optional[str]:
         """Find a known project name in the user's own words.
 

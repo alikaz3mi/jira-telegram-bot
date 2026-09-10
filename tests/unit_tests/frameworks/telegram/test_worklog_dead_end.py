@@ -106,3 +106,65 @@ class TestTheTaskListIsOffered(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheOfferRespectsANamedProject(unittest.TestCase):
+    """Naming a project must narrow the list offered back.
+
+    Reported: "دیروز سمت آواخرد تایم گذاشتم. برد رو پاکسازی کردم" could not be
+    parsed into splits, and the fallback then listed every open task across
+    every project — thirty rows, with the one Avakherad task buried among
+    them, after the user had said which project they meant.
+    """
+
+    def setUp(self):
+        self.handler = DailyTaskTrackingHandler.__new__(DailyTaskTrackingHandler)
+        self.handler.base_url = "https://jira.example.com"
+        self.handler.parse_worklog_report = Mock()
+        self.handler.parse_worklog_report.project_named_in = Mock(
+            return_value="FOLLOWUP",
+        )
+        self.tasks = [
+            _task("FOLLOWUP-109", "زمان پاسخ API پایان جلسه"),
+            _task("PARSCHAT-5807", "گیت سرویس بر پایه Plan DB"),
+            _task("PARSCHAT-5809", "ممیزی تست‌های قدیمی"),
+        ]
+
+    def test_only_the_named_projects_tasks_are_offered(self):
+        offer = self.handler._offer_the_task_list(self.tasks, "سمت آواخرد")
+
+        self.assertIn("FOLLOWUP-109", offer)
+        self.assertNotIn("PARSCHAT-5807", offer)
+
+    def test_without_a_named_project_everything_is_offered(self):
+        self.handler.parse_worklog_report.project_named_in.return_value = None
+
+        offer = self.handler._offer_the_task_list(self.tasks, "دیروز کار کردم")
+
+        self.assertIn("FOLLOWUP-109", offer)
+        self.assertIn("PARSCHAT-5807", offer)
+
+    def test_a_named_project_with_no_open_work_falls_back(self):
+        """An empty list helps nobody; show what there is."""
+        self.handler.parse_worklog_report.project_named_in.return_value = "EMPTY"
+
+        offer = self.handler._offer_the_task_list(self.tasks, "سمت جایی")
+
+        self.assertIn("FOLLOWUP-109", offer)
+        self.assertIn("PARSCHAT-5807", offer)
+
+    def test_a_resolver_failure_never_costs_the_list(self):
+        self.handler.parse_worklog_report.project_named_in.side_effect = (
+            RuntimeError("boom")
+        )
+
+        offer = self.handler._offer_the_task_list(self.tasks, "سمت آواخرد")
+
+        self.assertIn("FOLLOWUP-109", offer)
+
+    def test_without_a_parser_the_list_still_renders(self):
+        self.handler.parse_worklog_report = None
+
+        offer = self.handler._offer_the_task_list(self.tasks, "سمت آواخرد")
+
+        self.assertIn("FOLLOWUP-109", offer)

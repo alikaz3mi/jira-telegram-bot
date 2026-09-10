@@ -1,6 +1,7 @@
 """Use case for getting user's daily tasks that need attention."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional
 
@@ -18,6 +19,12 @@ from jira_telegram_bot.use_cases.interfaces.task_manager_repository_interface im
 
 # How long a finished blocker still counts as news worth mentioning.
 BLOCKER_RECENCY_DAYS = 3
+
+
+# How far into a future sprint counts as "now". A fortnight covers the sprint
+# about to start, which people are already asked about, without dragging in
+# work committed two months out.
+UPCOMING_SPRINT_DAYS = 14
 
 
 class GetUserDailyTasksUseCase:
@@ -58,7 +65,18 @@ class GetUserDailyTasksUseCase:
             jql_parts = [
                 f'assignee = "{jira_username}"',
                 'resolution = Unresolved',
-                '(Sprint in openSprints() AND ("Target start" <= now() OR "Target start" is EMPTY) OR Sprint is EMPTY AND ("Target start" <= now() OR "Target start" is EMPTY))'
+                # A sprint is open, future, or closed. Naming only the first
+                # two states dropped everything in a future sprint: work
+                # committed to the next fortnight was invisible, and asking
+                # about that project answered "no open tasks". Closed sprints
+                # are excluded here; how far ahead a future sprint may be is
+                # decided below, where the sprint's start date is readable.
+                # `Sprint not in closedSprints()` alone excludes issues with
+                # no sprint at all — Jira treats an empty field as failing
+                # the comparison — so Kanban and backlog work must be named
+                # explicitly alongside it.
+                '(Sprint not in closedSprints() OR Sprint is EMPTY)',
+                '("Target start" <= now() OR "Target start" is EMPTY)',
             ]
             
             if project_keys:
@@ -79,6 +97,8 @@ class GetUserDailyTasksUseCase:
             
             skipped = 0
             for issue in issues:
+                if self._starts_too_far_ahead(issue):
+                    continue
                 task_check = await self._evaluate_task(issue)
                 if task_check is None:
                     skipped += 1
@@ -228,6 +248,65 @@ class GetUserDailyTasksUseCase:
         except Exception as e:
             LOGGER.debug(f"Error getting {field_name} for {issue.key}: {e}")
             return None
+
+    def _starts_too_far_ahead(self, issue) -> bool:
+        """Whether an issue's sprint begins beyond the near horizon.
+
+        JQL can say a sprint is not closed but cannot say when a future one
+        starts, so the horizon is applied here. Work in the sprint that
+        begins next week is worth seeing; work in a sprint two months out is
+        not a daily task, and listing it buries what is.
+
+        Args:
+            issue: The Jira issue to judge
+
+        Returns:
+            True when every sprint it belongs to starts beyond the horizon.
+        """
+        starts = self._future_sprint_starts(issue)
+        if not starts:
+            return False
+
+        horizon = datetime.now(starts[0].tzinfo) + timedelta(
+            days=UPCOMING_SPRINT_DAYS,
+        )
+        return all(start > horizon for start in starts)
+
+    def _future_sprint_starts(self, issue) -> List[datetime]:
+        """When each of an issue's not-yet-started sprints begins.
+
+        Args:
+            issue: The Jira issue to read
+
+        Returns:
+            One start date per FUTURE sprint. Empty when the issue is in an
+            active sprint, no sprint, or the field cannot be parsed — all of
+            which mean the horizon does not apply.
+        """
+        field_id = getattr(
+            self.task_manager_repository, "jira_sprint_id", "customfield_10104",
+        )
+        sprints = getattr(issue.fields, field_id, None)
+        if not isinstance(sprints, list):
+            return []
+
+        starts = []
+        for sprint in sprints:
+            text = str(sprint)
+            if "state=FUTURE" not in text:
+                # An active sprint means the issue is current whatever else
+                # it also belongs to.
+                return []
+            match = re.search(r"startDate=([^,\]]+)", text)
+            if not match or match.group(1) == "<null>":
+                continue
+            try:
+                starts.append(datetime.fromisoformat(match.group(1)))
+            except ValueError:
+                LOGGER.debug(
+                    f"Unparsable sprint start on {issue.key}: {match.group(1)}",
+                )
+        return starts
 
     def _extract_sprint_name(self, issue) -> Optional[str]:
         """Extract active sprint name from issue.
